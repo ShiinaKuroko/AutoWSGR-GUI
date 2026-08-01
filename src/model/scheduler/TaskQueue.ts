@@ -268,6 +268,7 @@ export class TaskQueue {
       if (req.plan) {
         req.plan.fleet = fleet;
         req.plan.fleet_rules = fleetRules;
+        req.plan.fleet_id = task.fleetId;
       } else {
         (req as any).plan = { fleet, fleet_rules: fleetRules, fleet_id: task.fleetId };
       }

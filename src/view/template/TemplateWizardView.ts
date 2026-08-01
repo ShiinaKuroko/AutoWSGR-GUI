@@ -92,10 +92,11 @@ export class TemplateWizardView {
 
   /** 根据模板类型显示对应的配置面板 */
   setConfigPanel(type: string): void {
+    const panelType = type === 'event_fight' ? 'normal_fight' : type;
     const panels = ['normal_fight', 'exercise', 'campaign', 'decisive'];
     for (const p of panels) {
       const el = document.getElementById(`wizard-cfg-${p}`);
-      if (el) el.style.display = p === type ? '' : 'none';
+      if (el) el.style.display = p === panelType ? '' : 'none';
     }
   }
 
@@ -162,7 +163,8 @@ export class TemplateWizardView {
     }
 
     switch (data.type) {
-      case 'normal_fight': {
+      case 'normal_fight':
+      case 'event_fight': {
         if (data.fleet_id) (document.getElementById('tpl-fleet') as HTMLSelectElement).value = String(data.fleet_id);
         if (data.fleet?.length) this.fillFleetGrid('nf', data.fleet);
         break;
@@ -238,6 +240,7 @@ export class TemplateWizardView {
 
     switch (type) {
       case 'normal_fight':
+      case 'event_fight':
         data.planPath = (document.getElementById('tpl-plan-path') as HTMLInputElement).value;
         data.fleetId = parseInt((document.getElementById('tpl-fleet') as HTMLSelectElement).value);
         data.fleetNf = this.readFleetGrid('nf');

@@ -323,7 +323,7 @@ export async function startBackend(): Promise<void> {
     mainWindow?.webContents.send('backend-log', '[GUI] 未启用本地后端仓库覆盖，使用 site-packages 中的 autowsgr');
   }
   mainWindow?.webContents.send('backend-log', `[GUI] OCR 加速模式: ${ocrGpuMode}`);
-  mainWindow?.webContents.send('backend-log', `[GUI] CUDA Toolkit: ${configuredCudaRoot ?? '系统自动检测'}`);
+  mainWindow?.webContents.send('backend-log', `[GUI] CUDA 路径: ${configuredCudaRoot ?? '系统自动检测'}`);
   mainWindow?.webContents.send('backend-log', `[GUI] 保存识别异常截图: ${saveBackendScreenshots ? '开启' : '关闭'}`);
 
   // 将内置 ADB 目录加入 PATH，使后端 shutil.which('adb') 能找到
