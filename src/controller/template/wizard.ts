@@ -80,7 +80,8 @@ export async function finishWizard(
   };
 
   switch (type) {
-    case 'normal_fight': {
+    case 'normal_fight':
+    case 'event_fight': {
       if (wizardPlanPaths.length === 0) {
         const planPath = form.planPath;
         if (!planPath) { wizardView.setStep(2); return; }

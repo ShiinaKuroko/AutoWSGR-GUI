@@ -676,6 +676,16 @@
         </div>
 
         <div class="form-group">
+          <label>CUDA 路径 <span class="config-tip" title="可指定 CUDA Toolkit 根目录/bin，或 PyTorch CUDA Runtime DLL 目录。留空时使用系统环境。路径本身不能把 CPU 版 PyTorch 转换为 CUDA 版。修改后重启生效。">?</span></label>
+          <div class="input-row">
+            <input type="text" id="cfg-cuda-path" class="input" placeholder="Toolkit 根目录，或 ...\torch\lib">
+            <button class="btn btn-small" id="btn-browse-cuda">浏览</button>
+            <button class="btn btn-small" id="btn-validate-cuda">检测</button>
+            <span id="cfg-cuda-status" class="adb-status adb-status-unknown"></span>
+          </div>
+        </div>
+
+        <div class="form-group">
           <label class="auto-toggle"><input type="checkbox" id="cfg-debug-mode"> 调试模式 <span class="config-tip" title="开启后输出完整log，并且可启用调试用功能">?</span></label>
         </div>
 
@@ -776,6 +786,14 @@
               <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor"><path d="M14.5 3a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h13zm-13-1A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2h-13z"/><path d="M7 5.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5zm-1.496-.854a.5.5 0 0 1 0 .708l-1.5 1.5a.5.5 0 0 1-.708 0l-.5-.5a.5.5 0 1 1 .708-.708l.146.147 1.146-1.147a.5.5 0 0 1 .708 0zM7 9.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5zm-1.496-.854a.5.5 0 0 1 0 .708l-1.5 1.5a.5.5 0 0 1-.708 0l-.5-.5a.5.5 0 1 1 .708-.708l.146.147 1.146-1.147a.5.5 0 0 1 .708 0z"/></svg>
               <span>普通出击</span>
               <small>选择地图方案文件</small>
+            </div>
+          </label>
+          <label class="template-type-card">
+            <input type="radio" name="tpl-type" value="event_fight">
+            <div class="template-type-inner">
+              <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a.75.75 0 0 1 .67.415l1.64 3.28 3.623.527a.75.75 0 0 1 .416 1.279l-2.621 2.555.619 3.608a.75.75 0 0 1-1.088.79L8 10.742l-3.24 1.703a.75.75 0 0 1-1.088-.79l.619-3.608L1.67 5.492a.75.75 0 0 1 .416-1.279l3.623-.527 1.64-3.28A.75.75 0 0 1 8 0z"/></svg>
+              <span>活动出击</span>
+              <small>选择活动方案文件</small>
             </div>
           </label>
           <label class="template-type-card">

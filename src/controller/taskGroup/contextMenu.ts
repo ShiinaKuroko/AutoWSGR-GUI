@@ -4,7 +4,7 @@
 import type { TaskGroupModel } from '../../model/TaskGroupModel';
 import type { Scheduler } from '../../model/scheduler';
 import { PlanModel } from '../../model/PlanModel';
-import { loadMapData, loadExMapData } from '../../model/MapDataLoader';
+import { loadMapData, loadExMapData, loadEventMapData } from '../../model/MapDataLoader';
 import type { MapData } from '../../model/MapDataLoader';
 import type { TaskPreset } from '../../types/model';
 import { Logger } from '../../utils/Logger';
@@ -97,9 +97,11 @@ export async function openItemForEdit(
     } else {
       const plan = PlanModel.fromYaml(content, filePath);
       const { chapter, map } = plan.data;
-      const mapData = chapter === 99
-        ? await loadExMapData(map)
-        : await loadMapData(chapter, map);
+      const mapData = plan.isEvent
+        ? await loadEventMapData(plan.data.event ?? '', chapter, map)
+        : chapter === 99
+          ? await loadExMapData(Number(map))
+          : await loadMapData(Number(chapter), Number(map));
       host.setCurrentPlan(plan, mapData);
       host.renderPlanPreview();
     }

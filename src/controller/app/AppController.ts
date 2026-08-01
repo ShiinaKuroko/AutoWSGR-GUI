@@ -313,6 +313,35 @@ export class AppController {
       if (dir) this.configView.setBackendRepoPath(dir);
     });
 
+    document.getElementById('btn-browse-cuda')?.addEventListener('click', async () => {
+      const bridge = window.electronBridge;
+      if (!bridge) return;
+      const dir = await bridge.openDirectoryDialog('选择 CUDA Toolkit 根目录/bin 或 PyTorch torch\\lib 目录');
+      if (dir) this.configView.setCudaPath(dir);
+    });
+
+    document.getElementById('btn-validate-cuda')?.addEventListener('click', async () => {
+      const bridge = window.electronBridge;
+      if (!bridge?.validateCudaPath) return;
+      const cudaPath = this.configView.getCudaPath();
+      if (!cudaPath) { this.configView.setCudaStatus('留空将使用系统环境', 'unknown'); return; }
+      this.configView.setCudaValidateLoading(true);
+      try {
+        const result = await bridge.validateCudaPath(cudaPath);
+        if (result.valid) {
+          this.configView.setCudaPath(result.path);
+          const kind = result.kind === 'runtime' ? 'Runtime' : 'Toolkit';
+          this.configView.setCudaStatus(`✓ CUDA ${result.version ?? ''} ${kind}`.replace(/\s+/g, ' ').trim(), 'ok');
+        } else {
+          this.configView.setCudaStatus(result.error ?? '无效路径', 'error');
+        }
+      } catch {
+        this.configView.setCudaStatus('检测失败', 'error');
+      } finally {
+        this.configView.setCudaValidateLoading(false);
+      }
+    });
+
     document.getElementById('btn-validate-python')?.addEventListener('click', async () => {
       const bridge = window.electronBridge;
       if (!bridge?.validatePython) return;

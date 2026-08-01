@@ -3,7 +3,7 @@
  */
 import type { PlanPreviewView } from '../../view/plan/PlanPreviewView';
 import { PlanModel } from '../../model/PlanModel';
-import { loadMapData, loadExMapData } from '../../model/MapDataLoader';
+import { loadMapData, loadExMapData, loadEventMapData } from '../../model/MapDataLoader';
 import type { MapData } from '../../model/MapDataLoader';
 import type { TaskPreset } from '../../types/model';
 import { Logger } from '../../utils/Logger';
@@ -52,9 +52,11 @@ export async function importPlanFlow(
       const plan = PlanModel.fromYaml(result.content, result.path);
       Logger.debug(`方案已导入: ${result.path}`);
       const { chapter, map } = plan.data;
-      const mapData = chapter === 99
-        ? await loadExMapData(map)
-        : await loadMapData(chapter, map);
+      const mapData = plan.isEvent
+        ? await loadEventMapData(plan.data.event ?? '', chapter, map)
+        : chapter === 99
+          ? await loadExMapData(Number(map))
+          : await loadMapData(Number(chapter), Number(map));
       setters.setCurrentPlan(plan);
       setters.setCurrentMapData(mapData);
       setters.renderPlanPreview();

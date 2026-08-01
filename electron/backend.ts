@@ -62,6 +62,78 @@ function readOcrGpuModeFromSettings(): OcrGpuMode {
   return 'auto';
 }
 
+function normalizeCudaRoot(candidate: string): string {
+  const resolved = path.resolve(candidate.trim());
+  if (isCudaRuntimeDirectory(resolved)) return resolved;
+  return path.basename(resolved).toLowerCase() === 'bin' ? path.dirname(resolved) : resolved;
+}
+
+function isCudaRuntimeDirectory(candidate: string): boolean {
+  try {
+    const names = fs.readdirSync(candidate);
+    return names.some(name => /^cudart64.*\.dll$/i.test(name))
+      && names.some(name => /^cublas64.*\.dll$/i.test(name));
+  } catch {
+    return false;
+  }
+}
+
+function readCudaPathFromSettings(): string | null {
+  const raw = readGuiSettings();
+  const value = raw.cuda_path;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const cudaRoot = normalizeCudaRoot(value);
+  const binDir = path.join(cudaRoot, 'bin');
+  const runtimeDir = isCudaRuntimeDirectory(cudaRoot)
+    ? cudaRoot
+    : isCudaRuntimeDirectory(binDir)
+      ? binDir
+      : null;
+  if (!fs.existsSync(path.join(binDir, 'nvcc.exe')) && !runtimeDir) {
+    console.warn(`[Backend] 忽略 cuda_path（未找到 Toolkit 或 CUDA Runtime DLL）: ${cudaRoot}`);
+    return null;
+  }
+  return fs.existsSync(path.join(binDir, 'nvcc.exe')) ? cudaRoot : runtimeDir;
+}
+
+/** 构造后端 CUDA 环境；手动路径优先，留空保留系统自动检测。 */
+export function buildCudaEnvironment(
+  baseEnv: NodeJS.ProcessEnv,
+  configuredCudaRoot: string | null,
+): NodeJS.ProcessEnv {
+  if (!configuredCudaRoot) return { ...baseEnv };
+  const cudaRoot = normalizeCudaRoot(configuredCudaRoot);
+  const isToolkit = fs.existsSync(path.join(cudaRoot, 'bin', 'nvcc.exe'));
+  const cudaBin = isToolkit ? path.join(cudaRoot, 'bin') : cudaRoot;
+  const existingPath = baseEnv.PATH || baseEnv.Path || '';
+  const pathEntries = existingPath.split(path.delimiter).filter(Boolean);
+  const withoutDuplicate = pathEntries.filter(entry => path.resolve(entry).toLowerCase() !== path.resolve(cudaBin).toLowerCase());
+  const env: NodeJS.ProcessEnv = { ...baseEnv };
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase() === 'path') delete env[key];
+  }
+  if (isToolkit) {
+    env.CUDA_PATH = cudaRoot;
+    env.CUDA_HOME = cudaRoot;
+  }
+  env.PATH = [cudaBin, ...withoutDuplicate].join(path.delimiter);
+
+  let version: string | null = null;
+  try {
+    const versionJson = path.join(cudaRoot, 'version.json');
+    if (fs.existsSync(versionJson)) {
+      const raw = JSON.parse(fs.readFileSync(versionJson, 'utf-8').replace(/^\uFEFF/, '')) as Record<string, any>;
+      version = raw.cuda?.version ?? raw.cuda_cudart?.version ?? null;
+    }
+  } catch { /* use directory name fallback */ }
+  version ??= path.basename(cudaRoot).match(/v(\d+(?:\.\d+)?)/i)?.[1] ?? null;
+  const versionMatch = version?.match(/^(\d+)\.(\d+)/);
+  if (isToolkit && versionMatch) {
+    env[`CUDA_PATH_V${versionMatch[1]}_${versionMatch[2]}`] = cudaRoot;
+  }
+  return env;
+}
+
 function readSaveBackendScreenshotsFromSettings(): boolean {
   const raw = readGuiSettings();
   return raw.save_backend_screenshots === true;
@@ -154,6 +226,7 @@ export async function startBackend(): Promise<void> {
   const backendStartupMode = guiSettings.backend_startup_mode === 'external' ? 'external' : 'managed';
   const localBackendRepo = backendStartupMode === 'external' ? resolveLocalBackendRepoPath() : null;
   const ocrGpuMode = readOcrGpuModeFromSettings();
+  const configuredCudaRoot = readCudaPathFromSettings();
   const saveBackendScreenshots = readSaveBackendScreenshotsFromSettings();
 
   const pyLiteral = (value: string): string => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -189,12 +262,16 @@ export async function startBackend(): Promise<void> {
     `        return _cuda_cache`,
     `    try:`,
     `        import torch`,
+    `        print('[Bootstrap] torch=' + str(getattr(torch, '__version__', 'unknown')))`,
+    `        print('[Bootstrap] torch_cuda_build=' + str(getattr(getattr(torch, 'version', None), 'cuda', None)))`,
     `        _cuda_cache = bool(torch.cuda.is_available())`,
     `    except Exception:`,
     `        _cuda_cache = False`,
     `    return _cuda_cache`,
     `def _resolve_gpu_mode():`,
     `    if GUI_OCR_GPU_MODE == 'cuda':`,
+    `        if not _detect_cuda():`,
+    `            raise RuntimeError('已强制使用 CUDA，但当前 PyTorch/驱动未检测到可用 CUDA；请检查 CUDA 路径、CUDA 版 PyTorch 与 NVIDIA 驱动')`,
     `        return True`,
     `    if GUI_OCR_GPU_MODE == 'cpu':`,
     `        return False`,
@@ -246,11 +323,13 @@ export async function startBackend(): Promise<void> {
     mainWindow?.webContents.send('backend-log', '[GUI] 未启用本地后端仓库覆盖，使用 site-packages 中的 autowsgr');
   }
   mainWindow?.webContents.send('backend-log', `[GUI] OCR 加速模式: ${ocrGpuMode}`);
+  mainWindow?.webContents.send('backend-log', `[GUI] CUDA 路径: ${configuredCudaRoot ?? '系统自动检测'}`);
   mainWindow?.webContents.send('backend-log', `[GUI] 保存识别异常截图: ${saveBackendScreenshots ? '开启' : '关闭'}`);
 
   // 将内置 ADB 目录加入 PATH，使后端 shutil.which('adb') 能找到
   const adbDir = path.join(ctx.appRoot(), 'adb');
-  const envPath = process.env.PATH || '';
+  const cudaEnv = buildCudaEnvironment(process.env, configuredCudaRoot);
+  const envPath = cudaEnv.PATH || '';
   const pathWithAdb = fs.existsSync(adbDir) ? `${adbDir};${envPath}` : envPath;
 
   // 预连接 ADB 设备（MuMu 多开实例不会自动被 ADB 发现，需要主动 connect）
@@ -279,7 +358,7 @@ export async function startBackend(): Promise<void> {
     windowsHide: true,
     stdio: 'pipe',
     env: {
-      ...process.env,
+      ...cudaEnv,
       PYTHONUTF8: '1',
       PYTHONIOENCODING: 'utf-8',
       PATH: pathWithAdb,

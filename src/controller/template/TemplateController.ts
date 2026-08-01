@@ -17,6 +17,7 @@ import { editTemplate, deleteTemplate, renameTemplate, importTemplatesFlow } fro
 export class TemplateController {
   static readonly TEMPLATE_TYPE_LABELS: Record<string, string> = {
     normal_fight: '普通出击',
+    event_fight: '活动出击',
     exercise: '演习',
     campaign: '战役',
     decisive: '决战',

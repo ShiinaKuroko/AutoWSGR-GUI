@@ -55,6 +55,54 @@ export async function loadExMapData(exNumber: number): Promise<MapData | null> {
   }
 }
 
+function normalizeEventNodeType(raw: unknown): MapNodeType {
+  switch (String(raw).toUpperCase()) {
+    case 'NULL': return 'Start';
+    case 'FIGTH':
+    case 'FIGHT': return 'Normal';
+    case 'BOSS':
+    case 'SPECIAL_BOSS':
+    case 'LITTLE_BOSS': return 'Boss';
+    default: return 'Normal';
+  }
+}
+
+/** 加载活动地图。map 可为 1/1a/3b，入口默认 α。 */
+export async function loadEventMapData(
+  eventName: string,
+  chapter: number | string,
+  map: number | string,
+): Promise<MapData | null> {
+  const match = String(map).trim().match(/^(\d+)([ab])?$/i);
+  const difficulty = String(chapter).trim().toUpperCase();
+  if (!eventName || !match || !['E', 'H'].includes(difficulty)) return null;
+  const stage = match[1];
+  const entrance = (match[2] ?? 'a').toLowerCase();
+  const key = `event-${eventName}-${difficulty}-${stage}${entrance}`;
+  if (mapCache.has(key)) return mapCache.get(key)!;
+
+  const filePath = `resource/maps/event/${eventName}/${difficulty}-${stage}${entrance}.json`;
+  try {
+    const bridge = (window as any).electronBridge;
+    const content: string = await bridge.readFile(filePath);
+    const raw = JSON.parse(content) as Record<string, Partial<MapPoint>>;
+    const data: MapData = {};
+    for (const [id, point] of Object.entries(raw)) {
+      data[id] = {
+        type: normalizeEventNodeType(point.type),
+        detour: !!point.detour,
+        night: !!point.night,
+        position: Array.isArray(point.position) ? point.position as [number, number] : [0, 0],
+        next: Array.isArray(point.next) ? point.next.map(String) : [],
+      };
+    }
+    mapCache.set(key, data);
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 /** 获取地图中某节点的类型，找不到则返回 'Normal' */
 export function getNodeType(mapData: MapData, nodeId: string): MapNodeType {
   return mapData[nodeId]?.type ?? 'Normal';

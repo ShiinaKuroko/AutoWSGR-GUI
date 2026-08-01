@@ -53,6 +53,9 @@ export interface ElectronBridge {
   setBackendRepoPath: (repoPath: string | null) => Promise<void>;
   getOcrGpuMode: () => 'auto' | 'cpu' | 'cuda';
   setOcrGpuMode: (mode: 'auto' | 'cpu' | 'cuda') => Promise<void>;
+  getCudaPath: () => string;
+  setCudaPath: (cudaPath: string | null) => Promise<void>;
+  validateCudaPath: (cudaPath: string) => Promise<{ valid: boolean; path: string; version: string | null; kind?: 'toolkit' | 'runtime'; error?: string }>;
   getSaveBackendScreenshots: () => boolean;
   setSaveBackendScreenshots: (enabled: boolean) => Promise<void>;
   getUpdateMode: () => 'auto' | 'manual';

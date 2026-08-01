@@ -37,6 +37,9 @@ export class ConfigView {
   private backendStartupMode: HTMLInputElement;
   private backendRepoPath: HTMLInputElement;
   private ocrGpuMode: HTMLSelectElement;
+  private cudaPath: HTMLInputElement;
+  private cudaStatus: HTMLElement | null;
+  private validateCudaBtn: HTMLButtonElement | null;
   private saveBackendScreenshots: HTMLInputElement;
   private debugAdvancedWrap: HTMLElement | null;
   private backendRepoWrap: HTMLElement | null;
@@ -78,6 +81,9 @@ export class ConfigView {
     this.backendStartupMode = document.getElementById('cfg-use-external-backend') as HTMLInputElement;
     this.backendRepoPath = document.getElementById('cfg-backend-repo-path') as HTMLInputElement;
     this.ocrGpuMode = document.getElementById('cfg-ocr-gpu-mode') as HTMLSelectElement;
+    this.cudaPath = document.getElementById('cfg-cuda-path') as HTMLInputElement;
+    this.cudaStatus = document.getElementById('cfg-cuda-status');
+    this.validateCudaBtn = document.getElementById('btn-validate-cuda') as HTMLButtonElement | null;
     this.saveBackendScreenshots = document.getElementById('cfg-save-backend-screenshots') as HTMLInputElement;
     this.debugAdvancedWrap = document.getElementById('cfg-debug-advanced');
     this.backendRepoWrap = document.getElementById('cfg-backend-repo-wrap');
@@ -141,6 +147,7 @@ export class ConfigView {
     this.backendStartupMode.checked = vo.backendStartupMode === 'external';
     this.backendRepoPath.value = vo.backendRepoPath;
     this.ocrGpuMode.value = vo.ocrGpuMode;
+    this.cudaPath.value = vo.cudaPath;
     this.saveBackendScreenshots.checked = vo.saveBackendScreenshots;
     this.pythonPath.value = vo.pythonPath;
 
@@ -212,6 +219,7 @@ export class ConfigView {
       backendStartupMode: this.backendStartupMode.checked ? 'external' : 'managed',
       backendRepoPath: this.backendRepoPath.value.trim(),
       ocrGpuMode: (['auto', 'cpu', 'cuda'].includes(this.ocrGpuMode.value) ? this.ocrGpuMode.value : 'auto') as 'auto' | 'cpu' | 'cuda',
+      cudaPath: this.cudaPath.value.trim(),
       saveBackendScreenshots: this.saveBackendScreenshots.checked,
       pythonPath: this.pythonPath.value.trim(),
     };
@@ -229,6 +237,27 @@ export class ConfigView {
 
   setBackendRepoPath(path: string): void {
     this.backendRepoPath.value = path;
+  }
+
+  setCudaPath(path: string): void {
+    this.cudaPath.value = path;
+  }
+
+  getCudaPath(): string {
+    return this.cudaPath.value.trim();
+  }
+
+  setCudaStatus(text: string, status: 'ok' | 'error' | 'unknown'): void {
+    if (!this.cudaStatus) return;
+    this.cudaStatus.textContent = text;
+    const cls = status === 'ok' ? 'adb-status-online' : status === 'error' ? 'adb-status-offline' : 'adb-status-unknown';
+    this.cudaStatus.className = `adb-status ${cls}`;
+  }
+
+  setCudaValidateLoading(loading: boolean): void {
+    if (!this.validateCudaBtn) return;
+    this.validateCudaBtn.disabled = loading;
+    this.validateCudaBtn.textContent = loading ? '检测中…' : '检测';
   }
 
   getPythonPath(): string {

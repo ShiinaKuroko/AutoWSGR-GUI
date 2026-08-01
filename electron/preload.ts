@@ -24,6 +24,10 @@ contextBridge.exposeInMainWorld('electronBridge', {
     return ipcRenderer.sendSync('get-ocr-gpu-mode-sync') as 'auto' | 'cpu' | 'cuda';
   },
 
+  getCudaPath: () => {
+    return ipcRenderer.sendSync('get-cuda-path-sync') as string;
+  },
+
   getSaveBackendScreenshots: () => {
     return ipcRenderer.sendSync('get-save-backend-screenshots-sync') as boolean;
   },
@@ -42,6 +46,14 @@ contextBridge.exposeInMainWorld('electronBridge', {
 
   setOcrGpuMode: (mode: 'auto' | 'cpu' | 'cuda') => {
     return ipcRenderer.invoke('set-ocr-gpu-mode', mode);
+  },
+
+  setCudaPath: (cudaPath: string | null) => {
+    return ipcRenderer.invoke('set-cuda-path', cudaPath);
+  },
+
+  validateCudaPath: (cudaPath: string) => {
+    return ipcRenderer.invoke('validate-cuda-path', cudaPath);
   },
 
   setSaveBackendScreenshots: (enabled: boolean) => {

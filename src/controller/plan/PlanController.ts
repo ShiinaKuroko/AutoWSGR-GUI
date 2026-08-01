@@ -4,7 +4,7 @@
  */
 import { PlanPreviewView } from '../../view/plan/PlanPreviewView';
 import type { PlanModel } from '../../model/PlanModel';
-import type { CombatPlanReq, NodeDecisionReq, NormalFightReq } from '../../types/api';
+import type { CombatPlanReq, EventFightReq, NodeDecisionReq, NormalFightReq } from '../../types/api';
 import type { Scheduler } from '../../model/scheduler';
 import { TaskPriority } from '../../model/scheduler';
 import type { NodeArgs, TaskPreset } from '../../types/model';
@@ -266,6 +266,9 @@ export class PlanController {
       selected_nodes: selectedNodes,
     };
 
+    if (plan.data.mode) inlinePlan.mode = plan.data.mode;
+    if (plan.data.event) inlinePlan.event_name = plan.data.event;
+
     if (plan.data.fleet_id != null) inlinePlan.fleet_id = plan.data.fleet_id;
     if (plan.data.repair_mode != null) {
       inlinePlan.repair_mode = Array.isArray(plan.data.repair_mode)
@@ -322,7 +325,9 @@ export class PlanController {
     const configuredFleetId = plan.data.fleet_id ?? 1;
     let effectiveFleetId = configuredFleetId;
 
-    const req: NormalFightReq = { type: 'normal_fight', times: 1, gap: plan.data.gap ?? 0 };
+    const req: NormalFightReq | EventFightReq = plan.isEvent
+      ? { type: 'event_fight', times: 1, gap: plan.data.gap ?? 0, fleet_id: effectiveFleetId }
+      : { type: 'normal_fight', times: 1, gap: plan.data.gap ?? 0 };
     const ensuredPlanPath = await this.ensurePlanFileForExecution(plan);
 
     if (ensuredPlanPath) {
@@ -348,6 +353,7 @@ export class PlanController {
           effectiveFleetId = 2;
           Logger.warn('检测到自动编队请求且当前为第1分队，已自动切换为第2分队执行本次任务');
         }
+        if (req.type === 'event_fight') req.fleet_id = effectiveFleetId;
         if (!req.plan) req.plan = {};
         req.plan.fleet = resolved.map(toBackendName);
         req.plan.fleet_id = effectiveFleetId;
@@ -360,8 +366,9 @@ export class PlanController {
     const fleetPresets = selectedPresets.length > 1 ? selectedPresets : undefined;
     const currentPresetIndex = fleetPresets ? 0 : undefined;
 
+    const taskType = plan.isEvent ? 'event_fight' : 'normal_fight';
     this.host.scheduler.addTask(
-      plan.mapName, 'normal_fight', req, TaskPriority.USER_TASK, times,
+      plan.mapName, taskType, req, TaskPriority.USER_TASK, times,
       stopCondition, bathRepairConfig, fleetId, fleetPresets, currentPresetIndex,
       undefined, undefined, plan.data.endpoint_nodes,
     );
