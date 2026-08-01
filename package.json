@@ -107,6 +107,9 @@
       "include": "build/installer.nsh",
       "artifactName": "${productName}-Setup-${version}.${ext}"
     },
+    "toolsets": {
+      "winCodeSign": "1.1.0"
+    },
     "publish": {
       "provider": "github",
       "owner": "yltx",
