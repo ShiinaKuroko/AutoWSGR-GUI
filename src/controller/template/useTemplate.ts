@@ -31,7 +31,7 @@ export async function useTemplateFlow(
     group = taskGroupModel.getActiveGroup()!;
   }
 
-  if (tpl.type === 'normal_fight') {
+  if (tpl.type === 'normal_fight' || tpl.type === 'event_fight') {
     const paths = tpl.planPaths ?? (tpl.planPath ? [tpl.planPath] : []);
     if (paths.length === 0) { Logger.warn(`模板「${tpl.name}」缺少方案文件路径`); return; }
     if (paths.length === 1) {

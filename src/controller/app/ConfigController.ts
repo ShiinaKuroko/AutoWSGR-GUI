@@ -76,6 +76,7 @@ export class ConfigController {
       backendStartupMode: window.electronBridge?.getBackendStartupMode?.() ?? 'managed',
       backendRepoPath: window.electronBridge?.getBackendRepoPath?.() ?? '',
       ocrGpuMode: window.electronBridge?.getOcrGpuMode?.() ?? 'auto',
+      cudaPath: window.electronBridge?.getCudaPath?.() ?? '',
       saveBackendScreenshots: window.electronBridge?.getSaveBackendScreenshots?.() ?? false,
       pythonPath: window.electronBridge?.getPythonPath?.() ?? '',
     };
@@ -117,6 +118,9 @@ export class ConfigController {
     }
     if (bridge?.setOcrGpuMode) {
       await bridge.setOcrGpuMode(collected.ocrGpuMode);
+    }
+    if (bridge?.setCudaPath) {
+      await bridge.setCudaPath(collected.cudaPath || null);
     }
     if (bridge?.setSaveBackendScreenshots) {
       await bridge.setSaveBackendScreenshots(collected.saveBackendScreenshots);

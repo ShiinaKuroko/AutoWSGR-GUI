@@ -91,6 +91,64 @@ function getOcrGpuMode(): OcrGpuMode {
   return 'auto';
 }
 
+function getCudaPath(): string {
+  const settings = readGuiSettings();
+  if (typeof settings.cuda_path !== 'string') return '';
+  return settings.cuda_path.trim();
+}
+
+function normalizeCudaPath(candidate: string): string {
+  const resolved = path.resolve(candidate.trim());
+  if (findCudaRuntimeDll(resolved)) return resolved;
+  return path.basename(resolved).toLowerCase() === 'bin' ? path.dirname(resolved) : resolved;
+}
+
+function findCudaRuntimeDll(directory: string): boolean {
+  try {
+    const names = fs.readdirSync(directory);
+    return names.some(name => /^cudart64.*\.dll$/i.test(name))
+      && names.some(name => /^cublas64.*\.dll$/i.test(name));
+  } catch {
+    return false;
+  }
+}
+
+function validateCudaPath(candidate: string): { valid: boolean; path: string; version: string | null; kind?: 'toolkit' | 'runtime'; error?: string } {
+  if (!candidate.trim()) return { valid: false, path: '', version: null, error: '路径为空' };
+  const cudaRoot = normalizeCudaPath(candidate);
+  if (!fs.existsSync(cudaRoot)) return { valid: false, path: cudaRoot, version: null, error: '目录不存在' };
+  const binDir = path.join(cudaRoot, 'bin');
+  const isToolkit = fs.existsSync(path.join(binDir, 'nvcc.exe'));
+  const runtimeDir = findCudaRuntimeDll(cudaRoot)
+    ? cudaRoot
+    : findCudaRuntimeDll(binDir)
+      ? binDir
+      : null;
+  if (!isToolkit && !runtimeDir) {
+    return { valid: false, path: cudaRoot, version: null, error: '未找到 CUDA Toolkit（bin\\nvcc.exe）或 PyTorch CUDA Runtime DLL' };
+  }
+
+  let version: string | null = null;
+  try {
+    const versionJson = path.join(cudaRoot, 'version.json');
+    if (fs.existsSync(versionJson)) {
+      const raw = JSON.parse(fs.readFileSync(versionJson, 'utf-8').replace(/^\uFEFF/, '')) as Record<string, any>;
+      version = raw.cuda?.version ?? raw.cuda_cudart?.version ?? null;
+    }
+  } catch { /* use directory name fallback */ }
+  version ??= path.basename(cudaRoot).match(/v\d+(?:\.\d+)?/i)?.[0] ?? null;
+  if (isToolkit) return { valid: true, path: cudaRoot, version, kind: 'toolkit' };
+
+  let runtimeVersion: string | null = null;
+  try {
+    const cudart = fs.readdirSync(runtimeDir!).find(name => /^cudart64.*\.dll$/i.test(name));
+    runtimeVersion = cudart?.match(/^cudart64[_-]?(\d+)/i)?.[1] ?? null;
+    if (runtimeVersion?.length === 2) runtimeVersion = `${runtimeVersion[0]}.${runtimeVersion[1]}`;
+    else if (runtimeVersion?.length === 3) runtimeVersion = `${runtimeVersion.slice(0, 2)}.${runtimeVersion[2]}`;
+  } catch { /* version remains unknown */ }
+  return { valid: true, path: runtimeDir!, version: runtimeVersion, kind: 'runtime' };
+}
+
 function getSaveBackendScreenshots(): boolean {
   const settings = readGuiSettings();
   return settings.save_backend_screenshots === true;
@@ -313,6 +371,10 @@ ipcMain.on('get-ocr-gpu-mode-sync', (event) => {
   event.returnValue = getOcrGpuMode();
 });
 
+ipcMain.on('get-cuda-path-sync', (event) => {
+  event.returnValue = getCudaPath();
+});
+
 ipcMain.on('get-save-backend-screenshots-sync', (event) => {
   event.returnValue = getSaveBackendScreenshots();
 });
@@ -342,6 +404,16 @@ ipcMain.handle('set-backend-repo-path', (_event, repoPath: string | null) => {
 ipcMain.handle('set-ocr-gpu-mode', (_event, mode: OcrGpuMode) => {
   const normalized: OcrGpuMode = mode === 'cpu' || mode === 'cuda' ? mode : 'auto';
   writeGuiSettings({ ocr_gpu_mode: normalized });
+});
+
+ipcMain.handle('set-cuda-path', (_event, cudaPath: string | null) => {
+  const raw = typeof cudaPath === 'string' ? cudaPath.trim() : '';
+  const normalized = raw ? normalizeCudaPath(raw) : '';
+  writeGuiSettings({ cuda_path: normalized });
+});
+
+ipcMain.handle('validate-cuda-path', (_event, cudaPath: string) => {
+  return validateCudaPath(cudaPath);
 });
 
 ipcMain.handle('set-save-backend-screenshots', (_event, enabled: boolean) => {

@@ -9,6 +9,9 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
+/** PyPI 2.2.2 尚未包含 2026-07-30 活动支持，临时固定到上游已合入提交。 */
+const AUTOWSGR_REQUIREMENT = 'https://github.com/OpenWSGR/AutoWSGR/archive/a38252d3.zip';
+
 export interface AutoUpdateDeps {
   sendProgress: (msg: string) => void;
   getTempDir: () => string;
@@ -30,8 +33,14 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
       `sys.path.insert(0, r'${spFwd}')`,
       'result = {}',
       'try:',
-      '    import autowsgr; result["local"] = autowsgr.__version__',
-      'except: result["local"] = None',
+      '    import autowsgr',
+      '    from pathlib import Path',
+      '    result["local"] = autowsgr.__version__',
+      '    root = Path(autowsgr.__file__).resolve().parent',
+      '    result["event20260730"] = (root / "data" / "map" / "event" / "20260730").is_dir()',
+      'except:',
+      '    result["local"] = None',
+      '    result["event20260730"] = False',
       'try:',
       '    import urllib.request',
       '    data = json.loads(urllib.request.urlopen("https://pypi.org/pypi/autowsgr/json", timeout=10).read())',
@@ -52,30 +61,29 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
     const info = JSON.parse(stdout.trim());
     const localVer: string | null = info.local;
     const latestVer: string | null = info.latest;
+    const supportsLatestEvent = info.event20260730 === true;
 
     if (!latestVer) {
       deps.sendProgress('autowsgr 更新检查跳过（无法获取最新版本信息）');
       return localVer;
     }
 
-    if (localVer === latestVer) {
+    if (localVer === latestVer && supportsLatestEvent) {
       deps.sendProgress(`autowsgr ${localVer} 已是最新版 ✓`);
       return localVer;
     }
 
-    // 有更新，自动升级
-    deps.sendProgress(`发现 autowsgr 更新: ${localVer ?? '未安装'} → ${latestVer}，正在自动升级…`);
+    // 有版本更新，或当前 PyPI 版本缺少最新活动热修复。
+    // 仅当 PyPI 已无更高版本时使用固定提交；未来正式版本发布后优先回到 PyPI。
+    const needsEventHotfix = !supportsLatestEvent && localVer === latestVer;
+    if (!supportsLatestEvent) {
+      deps.sendProgress('当前 autowsgr 缺少 20260730 活动支持，正在安装上游活动热修复…');
+    } else {
+      deps.sendProgress(`发现 autowsgr 更新: ${localVer ?? '未安装'} → ${latestVer}，正在自动升级…`);
+    }
+    const installRequirement = needsEventHotfix ? AUTOWSGR_REQUIREMENT : 'autowsgr';
     const targetDir = deps.localSitePackages();
     if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
-
-    // 清理旧版 autowsgr 文件，避免 pip --target 的 dist-info 残留导致版本检测错误
-    try {
-      for (const entry of fs.readdirSync(targetDir)) {
-        if (entry === 'autowsgr' || entry.startsWith('autowsgr-')) {
-          fs.rmSync(path.join(targetDir, entry), { recursive: true, force: true });
-        }
-      }
-    } catch { /* ignore cleanup errors */ }
 
     // 确保 pip 可用
     if (!(await deps.ensurePip(pythonCmd))) {
@@ -83,13 +91,39 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
       return localVer;
     }
 
+    const buildDepsCode = await new Promise<number>((resolve) => {
+      const proc = spawn(pythonCmd, [
+        '-m', 'pip', 'install',
+        '--upgrade',
+        '--target', targetDir,
+        'hatchling',
+        'hatch-vcs',
+      ], {
+        cwd: deps.appRoot(),
+        windowsHide: true,
+        stdio: 'pipe',
+        env: deps.pipEnv(),
+      });
+      proc.stdout?.on('data', (d: Buffer) => { for (const l of d.toString().split('\n')) { if (l.trim()) deps.sendProgress(l.trim()); } });
+      proc.stderr?.on('data', (d: Buffer) => { for (const l of d.toString().split('\n')) { if (l.trim()) deps.sendProgress(l.trim()); } });
+      proc.on('close', (code) => resolve(code ?? 1));
+      proc.on('error', () => resolve(1));
+    });
+    if (buildDepsCode !== 0) {
+      deps.sendProgress('WARNING 活动热修复构建依赖安装失败');
+      return localVer;
+    }
+
     const exitCode = await new Promise<number>((resolve) => {
       const proc = spawn(pythonCmd, [
         '-m', 'pip', 'install',
+        '--upgrade',
         '--target', targetDir,
+        '--no-build-isolation',
+        '--no-deps',
         '-i', 'https://pypi.tuna.tsinghua.edu.cn/simple',
         '--trusted-host', 'pypi.tuna.tsinghua.edu.cn',
-        'autowsgr',
+        installRequirement,
       ], {
         cwd: deps.appRoot(),
         windowsHide: true,
@@ -115,7 +149,11 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
       `site.addsitedir(r'${spFwd}')`,
       'r = {"version": "unknown", "missing": []}',
       'try:',
-      '    import autowsgr; r["version"] = autowsgr.__version__',
+      '    import autowsgr',
+      '    from pathlib import Path',
+      '    r["version"] = autowsgr.__version__',
+      '    root = Path(autowsgr.__file__).resolve().parent',
+      '    r["event20260730"] = (root / "data" / "map" / "event" / "20260730").is_dir()',
       'except: pass',
       "for m in ['fastapi', 'uvicorn']:",
       '    try: __import__(m)',
@@ -132,6 +170,12 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
       const postResult = JSON.parse(postOut.trim());
       const actualVer: string = postResult.version;
       const missing: string[] = postResult.missing;
+      const eventReady = postResult.event20260730 === true;
+
+      if (needsEventHotfix && !eventReady) {
+        deps.sendProgress('WARNING 活动热修复安装后仍未检测到 20260730 资源');
+        return localVer;
+      }
 
       if (missing.length > 0) {
         deps.sendProgress(`升级后缺少依赖: ${missing.join(', ')}，正在补装…`);
@@ -179,9 +223,12 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
       }
 
       if (actualVer !== 'unknown') {
-        const msg = actualVer === latestVer
-          ? `autowsgr 已升级至 ${latestVer} ✓`
-          : `autowsgr 已升级至 ${actualVer}（期望 ${latestVer}）`;
+        const expectedVersion = needsEventHotfix ? localVer : latestVer;
+        const msg = actualVer === expectedVersion
+          ? needsEventHotfix
+            ? `autowsgr ${actualVer} 活动热修复已安装 ✓`
+            : `autowsgr 已升级至 ${latestVer} ✓`
+          : `autowsgr 已升级至 ${actualVer}（期望 ${expectedVersion}）`;
         deps.sendProgress(msg);
         return actualVer;
       }
@@ -189,6 +236,10 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
       try { fs.unlinkSync(postScript); } catch { /* ignore */ }
     }
 
+    if (needsEventHotfix) {
+      deps.sendProgress(`autowsgr ${localVer} 活动热修复已安装 ✓`);
+      return localVer;
+    }
     deps.sendProgress(`autowsgr 已升级至 ${latestVer} ✓`);
     return latestVer;
   } catch {

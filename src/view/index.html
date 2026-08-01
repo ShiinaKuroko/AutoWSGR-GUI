@@ -676,6 +676,16 @@
         </div>
 
         <div class="form-group">
+          <label>CUDA 路径 <span class="config-tip" title="可指定 CUDA Toolkit 根目录/bin，或 PyTorch CUDA Runtime DLL 目录。留空时使用系统环境。路径本身不能把 CPU 版 PyTorch 转换为 CUDA 版。修改后重启生效。">?</span></label>
+          <div class="input-row">
+            <input type="text" id="cfg-cuda-path" class="input" placeholder="Toolkit 根目录，或 ...\torch\lib">
+            <button class="btn btn-small" id="btn-browse-cuda">浏览</button>
+            <button class="btn btn-small" id="btn-validate-cuda">检测</button>
+            <span id="cfg-cuda-status" class="adb-status adb-status-unknown"></span>
+          </div>
+        </div>
+
+        <div class="form-group">
           <label class="auto-toggle"><input type="checkbox" id="cfg-debug-mode"> 调试模式 <span class="config-tip" title="开启后输出完整log，并且可启用调试用功能">?</span></label>
         </div>
 

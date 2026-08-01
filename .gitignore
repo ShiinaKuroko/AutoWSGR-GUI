@@ -43,6 +43,12 @@ python/
 redist/
 adb/
 
+# 缓存
+.cache/
+
+# Kilo 工作区
+.kilo/
+
 # 测试用地图
 resource/maps/99-1.json
 plans/99-1.yaml.

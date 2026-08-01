@@ -88,13 +88,19 @@ export class CronScheduler {
   private lastBattleRun = '';
   /** 是否有演习/战役/常规出击任务正在排队或执行中 (避免同一会话重复入队) */
   private exercisePending = false;
+  /** 当前 pending 的演习任务所属的刷新时段 (小时), 用于跨时段时允许重新触发 */
+  private exercisePendingSlot = -1;
   private battlePending = false;
+  /** 当前 pending 的战役任务所属的日期, 用于跨日时允许重新触发 */
+  private battlePendingDate = '';
   /** 上一次常规出击实际完成的日期 (YYYY-MM-DD) */
   private lastNormalFightRun = '';
   private normalFightPending = false;
+  private normalFightPendingDate = '';
   /** 上一次战利品任务实际完成的日期 (YYYY-MM-DD) */
   private lastLootRun = '';
   private lootPending = false;
+  private lootPendingDate = '';
   /** 注册的定时方案任务 */
   private scheduledTasks: ScheduledTask[] = [];
 
@@ -288,10 +294,11 @@ export class CronScheduler {
   /**
    * 检查演习:
    * 找到当前所属刷新时段的起始时间，若 lastExerciseRun 早于该时间则触发。
+   * 当刷新时段切换时（如 12:00 → 18:00），即使上一时段的演习仍在排队也会重新触发，
+   * 确保持续挂机期间不会错过新的刷新窗口。
    */
   private checkExercise(now: Date): void {
     if (!this.config.autoExercise) return;
-    if (this.exercisePending) return;
 
     const hour = now.getHours();
     // 找到当前所属的刷新时段 (最近一个 ≤ hour 的刷新小时)
@@ -304,6 +311,9 @@ export class CronScheduler {
     }
     if (slotHour < 0) return;
 
+    // 若已有演习任务在排队且属于同一时段，跳过
+    if (this.exercisePending && this.exercisePendingSlot === slotHour) return;
+
     // 当前时段的起始时间
     const slotStart = new Date(now);
     slotStart.setHours(slotHour, 0, 0, 0);
@@ -311,6 +321,7 @@ export class CronScheduler {
     // 上次运行在本时段之前 → 需要触发
     if (!this.lastExerciseRun || this.lastExerciseRun < slotStart) {
       this.exercisePending = true;
+      this.exercisePendingSlot = slotHour;
       this.log('info', `自动演习触发 (${slotHour}:00 时段, 舰队 ${this.config.exerciseFleetId})`);
       this.callbacks.onExerciseDue?.(this.config.exerciseFleetId);
     }
@@ -319,15 +330,20 @@ export class CronScheduler {
   /**
    * 检查战役:
    * 战役每日 0 点刷新。若 lastBattleRun 的日期不是今天则触发。
+   * 跨日时即使上一天的战役仍在排队也会重新触发。
    */
   private checkCampaign(now: Date): void {
     if (!this.config.autoBattle) return;
-    if (this.battlePending) return;
 
     const todayStr = this.dateKey(now);
+
+    // 若已有战役任务在排队且属于同一天，跳过
+    if (this.battlePending && this.battlePendingDate === todayStr) return;
+
     if (this.lastBattleRun >= todayStr) return; // 今天已运行过
 
     this.battlePending = true;
+    this.battlePendingDate = todayStr;
     this.log('info', `自动战役触发 (${this.config.battleType} ×${this.config.battleTimes})`);
     this.callbacks.onCampaignDue?.(this.config.battleType, this.config.battleTimes);
   }
@@ -335,15 +351,20 @@ export class CronScheduler {
   /**
    * 检查常规出击:
    * 每日 0 点刷新。若 lastNormalFightRun 不是今天则触发，将任务列表全部加入队列。
+   * 跨日时即使上一天的常规出击仍在排队也会重新触发。
    */
   private checkNormalFight(now: Date): void {
     if (!this.config.autoNormalFight) return;
-    if (this.normalFightPending) return;
 
     const todayStr = this.dateKey(now);
+
+    // 若已有任务在排队且属于同一天，跳过
+    if (this.normalFightPending && this.normalFightPendingDate === todayStr) return;
+
     if (this.lastNormalFightRun >= todayStr) return;
 
     this.normalFightPending = true;
+    this.normalFightPendingDate = todayStr;
     this.log('info', '自动常规出击触发 (执行任务列表中所有任务)');
     this.callbacks.onNormalFightDue?.();
   }
@@ -351,15 +372,20 @@ export class CronScheduler {
   /**
    * 检查战利品:
    * 每日 0 点刷新。若 lastLootRun 不是今天则触发。
+   * 跨日时即使上一天的战利品任务仍在排队也会重新触发。
    */
   private checkLoot(now: Date): void {
     if (!this.config.autoLoot) return;
-    if (this.lootPending) return;
 
     const todayStr = this.dateKey(now);
+
+    // 若已有任务在排队且属于同一天，跳过
+    if (this.lootPending && this.lootPendingDate === todayStr) return;
+
     if (this.lastLootRun >= todayStr) return;
 
     this.lootPending = true;
+    this.lootPendingDate = todayStr;
     this.log('info', `自动战利品触发 (方案#${this.config.lootPlanIndex}, 停止数量=${this.config.lootStopCount})`);
     this.callbacks.onLootDue?.(this.config.lootPlanIndex, this.config.lootStopCount);
   }

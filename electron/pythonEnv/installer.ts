@@ -12,6 +12,9 @@ import { ENV_READY_MARKER } from './envCheck';
 
 const execAsync = promisify(exec);
 
+/** PyPI 2.2.2 尚未包含 2026-07-30 活动支持，临时固定到上游已合入提交。 */
+const AUTOWSGR_REQUIREMENT = 'https://github.com/OpenWSGR/AutoWSGR/archive/a38252d3.zip';
+
 // ════════════════════════════════════════
 // 便携版 Python 安装
 // ════════════════════════════════════════
@@ -181,33 +184,12 @@ export async function installDependencies(pythonCmd: string): Promise<{ success:
     return { success: false, output: 'pip 安装失败，无法安装依赖' };
   }
 
-  return new Promise((resolve) => {
-    const cwd = ctx.appRoot();
-    const targetDir = localSitePackages();
-    if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+  const cwd = ctx.appRoot();
+  const targetDir = localSitePackages();
+  if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
 
-    // pip --target 在目录已存在时默认不覆盖，容易留下半安装状态。
-    // 先清理关键链路包，再配合 --upgrade 做覆盖安装。
-    try {
-      const criticalPkgs = ['autowsgr', 'easyocr', 'scipy', 'numpy', 'scikit_image'];
-      for (const entry of fs.readdirSync(targetDir)) {
-        const shouldRemove = criticalPkgs.some(
-          (pkg) => entry === pkg || entry.startsWith(`${pkg}-`),
-        ) || entry === 'numpy.libs';
-        if (shouldRemove) {
-          fs.rmSync(path.join(targetDir, entry), { recursive: true, force: true });
-        }
-      }
-    } catch { /* ignore cleanup errors */ }
-
-    ctx.sendProgress('正在安装后端依赖到项目目录…');
-    const proc = spawn(pythonCmd, [
-      '-m', 'pip', 'install',
-      '--upgrade',
-      '--target', targetDir,
-      'setuptools',         // provides distutils (removed in Python 3.12)
-      'autowsgr',
-    ], {
+  const runPip = (args: string[]): Promise<{ code: number; output: string }> => new Promise((resolve) => {
+    const proc = spawn(pythonCmd, args, {
       cwd,
       windowsHide: true,
       stdio: 'pipe',
@@ -225,15 +207,35 @@ export async function installDependencies(pythonCmd: string): Promise<{ success:
       output += text;
       for (const l of text.split('\n')) { if (l.trim()) ctx.sendProgress(l.trim()); }
     });
-    proc.on('close', (code) => {
-      if (code === 0) ctx.sendProgress('后端依赖安装完成 ✓');
-      else ctx.sendProgress('ERROR 依赖安装失败');
-      resolve({ success: code === 0, output: output.slice(-500) });
-    });
-    proc.on('error', (err) => {
-      resolve({ success: false, output: err.message });
-    });
+    proc.on('close', (code) => resolve({ code: code ?? 1, output }));
+    proc.on('error', (err) => resolve({ code: 1, output: err.message }));
   });
+
+  ctx.sendProgress('正在安装后端构建依赖…');
+  const buildDeps = await runPip([
+    '-m', 'pip', 'install',
+    '--upgrade',
+    '--target', targetDir,
+    'setuptools',
+    'hatchling',
+    'hatch-vcs',
+  ]);
+  if (buildDeps.code !== 0) {
+    ctx.sendProgress('ERROR 后端构建依赖安装失败');
+    return { success: false, output: buildDeps.output.slice(-500) };
+  }
+
+  ctx.sendProgress('正在安装后端依赖到项目目录…');
+  const install = await runPip([
+      '-m', 'pip', 'install',
+      '--upgrade',
+      '--no-build-isolation',
+      '--target', targetDir,
+      AUTOWSGR_REQUIREMENT,
+  ]);
+  if (install.code === 0) ctx.sendProgress('后端依赖安装完成 ✓');
+  else ctx.sendProgress('ERROR 依赖安装失败');
+  return { success: install.code === 0, output: install.output.slice(-500) };
 }
 
 /** 更新 autowsgr 包（仅升级 autowsgr 本体，不级联重装所有依赖） */
@@ -247,6 +249,16 @@ export async function pullUpdates(): Promise<{ success: boolean; output: string 
   const certFile = await ensureSslCertForPython(pythonCmd);
   if (certFile) ctx.sendProgress(`TLS 证书已就绪: ${certFile}`);
   else ctx.sendProgress('WARNING 未检测到 TLS 根证书，后续联网操作可能失败');
+
+  try {
+    await execAsync(
+      `"${pythonCmd}" -m pip install --upgrade --target "${localSitePackages()}" hatchling hatch-vcs`,
+      { cwd: ctx.appRoot(), windowsHide: true, timeout: 120000, env: pipEnv() },
+    );
+  } catch (e) {
+    const output = e instanceof Error ? e.message : String(e);
+    return { success: false, output: `活动热修复构建依赖安装失败: ${output}` };
+  }
 
   return new Promise((resolve) => {
     const targetDir = localSitePackages();
@@ -264,9 +276,11 @@ export async function pullUpdates(): Promise<{ success: boolean; output: string 
     const proc = spawn(pythonCmd, [
       '-m', 'pip', 'install',
       '--target', targetDir,
+      '--no-build-isolation',
+      '--no-deps',
       '-i', 'https://pypi.tuna.tsinghua.edu.cn/simple',
       '--trusted-host', 'pypi.tuna.tsinghua.edu.cn',
-      'autowsgr',
+      AUTOWSGR_REQUIREMENT,
     ], {
       cwd: ctx.appRoot(),
       windowsHide: true,

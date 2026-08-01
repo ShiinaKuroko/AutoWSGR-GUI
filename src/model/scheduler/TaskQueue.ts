@@ -271,6 +271,7 @@ export class TaskQueue {
       } else {
         (req as any).plan = { fleet, fleet_rules: fleetRules, fleet_id: task.fleetId };
       }
+      if (req.type === 'event_fight') req.fleet_id = task.fleetId;
     }
   }
 }

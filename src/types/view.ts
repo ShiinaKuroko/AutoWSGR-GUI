@@ -85,8 +85,8 @@ export interface MapEdgeVO {
 /** Plan 预览 VO */
 export interface PlanPreviewViewObject {
   fileName: string;
-  chapter: number;
-  map: number;
+  chapter: number | string;
+  map: number | string;
   mapName: string;                // "7-4" 格式
   repairModeValue: number;        // 1 或 2
   fightConditionValue: number;    // 1-5
@@ -143,6 +143,7 @@ export interface ConfigViewObject {
   backendStartupMode: 'managed' | 'external';
   backendRepoPath: string;
   ocrGpuMode: 'auto' | 'cpu' | 'cuda';
+  cudaPath: string;
   saveBackendScreenshots: boolean;
   pythonPath: string;
 }

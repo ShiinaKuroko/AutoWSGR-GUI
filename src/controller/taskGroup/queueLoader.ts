@@ -5,7 +5,7 @@ import type { TaskGroupModel, TaskGroupItem } from '../../model/TaskGroupModel';
 import type { TemplateModel } from '../../model/TemplateModel';
 import { PlanModel } from '../../model/PlanModel';
 import { TaskPriority } from '../../model/scheduler';
-import type { NormalFightReq, TaskRequest } from '../../types/api';
+import type { EventFightReq, NormalFightReq, TaskRequest } from '../../types/api';
 import type { TaskPreset } from '../../types/model';
 import { resolveFleetPreset, resolveFleetPresetRules, toBackendName } from '../../data/shipData';
 import { Logger } from '../../utils/Logger';
@@ -41,8 +41,8 @@ export async function loadGroupToQueue(
         const plan = PlanModel.fromYaml(content, item.path!);
         const resolvedPlanId = await bridge.resolveAppPath(plan.fileName);
         const times = item.times;
-        const req: NormalFightReq = {
-          type: 'normal_fight',
+        const req: NormalFightReq | EventFightReq = {
+          type: plan.isEvent ? 'event_fight' : 'normal_fight',
           plan_id: resolvedPlanId,
           times: 1,
           gap: plan.data.gap ?? 0,
@@ -56,6 +56,7 @@ export async function loadGroupToQueue(
           selectedFleetId = 2;
         }
         if (selectedFleetId != null) {
+          if (req.type === 'event_fight') req.fleet_id = selectedFleetId;
           req.plan = req.plan ?? {};
           req.plan.fleet_id = selectedFleetId;
         }
@@ -72,7 +73,7 @@ export async function loadGroupToQueue(
         }
         host.scheduler.addTask(
           plan.mapName,
-          'normal_fight',
+          plan.isEvent ? 'event_fight' : 'normal_fight',
           req,
           TaskPriority.USER_TASK,
           times,
@@ -84,7 +85,7 @@ export async function loadGroupToQueue(
           !!item.forceRetry,
           !!item.allowPolling,
           plan.data.endpoint_nodes,
-          plan.data.chapter || undefined,
+          typeof plan.data.chapter === 'number' ? plan.data.chapter || undefined : undefined,
         );
       }
       loadedCount++;
@@ -174,8 +175,8 @@ export async function loadSingleItemToQueue(
     } else {
       const plan = PlanModel.fromYaml(content, item.path!);
       const resolvedPlanId = await bridge.resolveAppPath(plan.fileName);
-      const req: NormalFightReq = {
-        type: 'normal_fight',
+      const req: NormalFightReq | EventFightReq = {
+        type: plan.isEvent ? 'event_fight' : 'normal_fight',
         plan_id: resolvedPlanId,
         times: 1,
         gap: plan.data.gap ?? 0,
@@ -189,6 +190,7 @@ export async function loadSingleItemToQueue(
         selectedFleetId = 2;
       }
       if (selectedFleetId != null) {
+        if (req.type === 'event_fight') req.fleet_id = selectedFleetId;
         req.plan = req.plan ?? {};
         req.plan.fleet_id = selectedFleetId;
       }
@@ -205,7 +207,7 @@ export async function loadSingleItemToQueue(
       }
       host.scheduler.addTask(
         plan.mapName,
-        'normal_fight',
+        plan.isEvent ? 'event_fight' : 'normal_fight',
         req,
         TaskPriority.USER_TASK,
         item.times,
@@ -217,7 +219,7 @@ export async function loadSingleItemToQueue(
         !!item.forceRetry,
         !!item.allowPolling,
         plan.data.endpoint_nodes,
-        plan.data.chapter || undefined,
+        typeof plan.data.chapter === 'number' ? plan.data.chapter || undefined : undefined,
       );
     }
 

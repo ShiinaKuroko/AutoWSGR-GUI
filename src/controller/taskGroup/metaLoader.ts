@@ -42,9 +42,17 @@ export async function loadItemMetas(
       if (item.autoFleetFallback) meta.autoFleetFallback = true;
 
       if ('chapter' in parsed && 'map' in parsed) {
-        const ch = Number(parsed.chapter);
-        const mp = Number(parsed.map);
-        meta.mapName = ch === 99 ? `Ex-${mp}` : `${ch}-${mp}`;
+        const ch = String(parsed.chapter);
+        const mp = String(parsed.map);
+        if ('event' in parsed || /^[EH]$/i.test(ch)) {
+          const match = mp.match(/^(\d+)([ab])?$/i);
+          const entrance = match?.[2]?.toLowerCase() === 'b' ? 'β' : 'α';
+          meta.mapName = `${ch.toUpperCase()}-Ex-${match?.[1] ?? mp}-${entrance}`;
+          meta.typeLabel = '活动出击';
+        } else {
+          const chapterNumber = Number(ch);
+          meta.mapName = chapterNumber === 99 ? `Ex-${Number(mp)}` : `${chapterNumber}-${Number(mp)}`;
+        }
       }
 
       if ('fleet_id' in parsed) meta.fleetId = Number(parsed.fleet_id) || undefined;

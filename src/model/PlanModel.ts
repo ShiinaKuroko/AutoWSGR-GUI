@@ -24,9 +24,24 @@ export class PlanModel {
       throw new Error('无效的方案文件');
     }
 
+    const chapterRaw = parsed.chapter;
+    const mapRaw = parsed.map;
+    const chapter = typeof chapterRaw === 'string' && /^[EH]$/i.test(chapterRaw.trim())
+      ? chapterRaw.trim().toUpperCase()
+      : Number(chapterRaw) || 0;
+    const map = typeof mapRaw === 'string' && /^\d+[ab]$/i.test(mapRaw.trim())
+      ? mapRaw.trim().toLowerCase()
+      : Number(mapRaw) || 0;
+    const chapterCode = String(chapter).toUpperCase();
+    if ((chapterCode === 'E' || chapterCode === 'H') && parsed.event == null) {
+      throw new Error('活动方案缺少 event 字段');
+    }
+
     const data: PlanData = {
-      chapter: Number(parsed.chapter) || 0,
-      map: Number(parsed.map) || 0,
+      chapter,
+      map,
+      mode: typeof parsed.mode === 'string' ? parsed.mode : undefined,
+      event: parsed.event != null ? String(parsed.event) : undefined,
       selected_nodes: Array.isArray(parsed.selected_nodes)
         ? parsed.selected_nodes.map(String)
         : [],
@@ -55,8 +70,21 @@ export class PlanModel {
 
   /** 地图名，如 "7-4" 或 "Ex-3" */
   get mapName(): string {
+    if (this.isEvent) {
+      const rawMap = String(this.data.map);
+      const match = rawMap.match(/^(\d+)([ab])?$/i);
+      const stage = match?.[1] ?? rawMap;
+      const entrance = match?.[2]?.toLowerCase() === 'b' ? 'β' : 'α';
+      return `${String(this.data.chapter).toUpperCase()}-Ex-${stage}-${entrance}`;
+    }
     if (this.data.chapter === 99) return `Ex-${this.data.map}`;
     return `${this.data.chapter}-${this.data.map}`;
+  }
+
+  /** 是否为活动作战方案。 */
+  get isEvent(): boolean {
+    const chapter = String(this.data.chapter).toUpperCase();
+    return !!this.data.event || this.data.mode === 'event' || chapter === 'E' || chapter === 'H';
   }
 
   /** 修理模式，默认 1。若为数组则返回原始数组 */
@@ -119,6 +147,9 @@ export class PlanModel {
       map: this.data.map,
       selected_nodes: this.data.selected_nodes,
     };
+
+    if (this.data.mode) obj.mode = this.data.mode;
+    if (this.data.event) obj.event = this.data.event;
 
     if (this.data.fleet_id != null) obj.fleet_id = this.data.fleet_id;
     if (this.data.endpoint_nodes && this.data.endpoint_nodes.length > 0) obj.endpoint_nodes = this.data.endpoint_nodes;

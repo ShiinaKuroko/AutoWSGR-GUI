@@ -52,8 +52,14 @@ export interface FleetPreset {
 
 /** Plan 文件解析后的完整数据 */
 export interface PlanData {
-  chapter: number;
-  map: number;
+  /** 常规图为数字章节；活动图为 E/H。 */
+  chapter: number | string;
+  /** 常规图为数字地图；活动图可带入口后缀，如 3a/3b。 */
+  map: number | string;
+  /** 作战模式；活动方案使用 event。 */
+  mode?: string;
+  /** 活动资源标识，如 20260730。后端 YAML 字段名为 event。 */
+  event?: string;
   selected_nodes: string[];
   /** 终点节点列表：经过其中任一节点即认定本轮完成。未设置时回退到最后一个 selected_node。 */
   endpoint_nodes?: string[];
@@ -180,7 +186,7 @@ export interface TaskPreset {
 // ════════════════════════════════════════
 
 /** 模板类型 */
-export type TemplateType = 'normal_fight' | 'exercise' | 'campaign' | 'decisive';
+export type TemplateType = 'normal_fight' | 'event_fight' | 'exercise' | 'campaign' | 'decisive';
 
 /** 任务模板：可复用的任务蓝图 */
 export interface TaskTemplate {
