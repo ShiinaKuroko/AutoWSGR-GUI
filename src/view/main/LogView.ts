@@ -112,10 +112,10 @@ export class LogView {
       const cls = g === 'SS' ? 'grade-ss' : g === 'S' ? 'grade-s' : g === 'A' ? 'grade-a' : 'grade-low';
       return `评价=<span class="log-grade ${cls}">${g}</span>`;
     });
-    msgHtml = msgHtml.replace(/MVP[:：]\s*(.+?)(?=\s*[,，|]|$)/, (m, name) => {
+    msgHtml = msgHtml.replace(/MVP[:：]\s*(.+?)(?=\s*[,，|]|$)/, (_match, name) => {
       return `<span class="log-mvp">MVP: ${name}</span>`;
     });
-    msgHtml = msgHtml.replace(/掉落[:：]\s*(.+?)(?=\s*$)/, (m, name) => {
+    msgHtml = msgHtml.replace(/掉落[:：]\s*(.+?)(?=\s*$)/, (_match, name) => {
       return `掉落: <span class="log-ship-drop-name">${name}</span>`;
     });
 

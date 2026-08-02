@@ -9,9 +9,9 @@ import type { TemplateLibraryItemVO } from '../../types/view';
 import { TemplateLibraryView } from '../../view/template/TemplateLibraryView';
 import { TemplateWizardView } from '../../view/template/TemplateWizardView';
 import { Logger } from '../../utils/Logger';
-import { showWizard, showWizardWithTemplate, wizardNav, finishWizard } from './wizard';
-import { useTemplateFlow, addPlanToTaskList, type UseTemplateCallbacks } from './useTemplate';
-import { showPlanSelector, showFleetPresetPicker, showCampaignSelector, showExerciseFleetSelector, showDecisiveChapterSelector } from './selectors';
+import { showWizard, wizardNav, finishWizard } from './wizard';
+import { useTemplateFlow, type UseTemplateCallbacks } from './useTemplate';
+import { showPlanSelector, showCampaignSelector, showExerciseFleetSelector, showDecisiveChapterSelector } from './selectors';
 import { editTemplate, deleteTemplate, renameTemplate, importTemplatesFlow } from './crud';
 
 export class TemplateController {
@@ -166,7 +166,8 @@ export class TemplateController {
   }
 
   renderLibrary(): void {
-    const templates = this.templateModel.getAll();
+    const templates = this.templateModel.getAll()
+      .filter(tpl => tpl.type !== 'decisive');
     const items: TemplateLibraryItemVO[] = templates.map(tpl => ({
       id: tpl.id,
       name: tpl.name,

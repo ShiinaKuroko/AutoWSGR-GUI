@@ -48,7 +48,7 @@ function parseRuleLine(rawLine: string): EnemyRule | null {
 }
 
 /**
- * 从节点编辑面板收集值并写回 PlanModel，然后即时保存到文件。
+ * 从节点编辑面板收集值并写回 PlanModel。
  * 返回 true 表示成功执行。
  */
 export function saveNodeEditorValues(
@@ -73,10 +73,18 @@ export function saveNodeEditorValues(
         currentPlan.data.node_args = undefined;
       }
     }
-
-    if (currentPlan.fileName) {
-      const bridge = window.electronBridge;
-      bridge?.saveFile(currentPlan.fileName, currentPlan.toYaml());
+    const endpointNodes =
+      currentPlan.data.endpoint_nodes;
+    if (endpointNodes) {
+      const endpointIndex =
+        endpointNodes.indexOf(editingNodeId);
+      if (endpointIndex >= 0) {
+        endpointNodes.splice(endpointIndex, 1);
+      }
+      if (endpointNodes.length === 0) {
+        currentPlan.data.endpoint_nodes = undefined;
+        currentPlan.data.result = undefined;
+      }
     }
 
     planView.hideNodeEditor();
@@ -99,6 +107,9 @@ export function saveNodeEditorValues(
   }
   if (currentPlan.data.endpoint_nodes.length === 0) {
     currentPlan.data.endpoint_nodes = undefined;
+    currentPlan.data.result = undefined;
+  } else if (vals.isEndpoint) {
+    currentPlan.data.result = vals.result;
   }
 
   // 解析索敌规则文本
@@ -133,12 +144,6 @@ export function saveNodeEditorValues(
     SL_when_detour_fails: vals.slWhenDetourFails || undefined,
     enemy_rules: rules.length > 0 ? rules : undefined,
   };
-
-  // 即时保存到文件
-  if (currentPlan.fileName) {
-    const bridge = window.electronBridge;
-    bridge?.saveFile(currentPlan.fileName, currentPlan.toYaml());
-  }
 
   planView.hideNodeEditor();
   return true;

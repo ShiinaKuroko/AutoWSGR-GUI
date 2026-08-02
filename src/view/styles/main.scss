@@ -5,8 +5,10 @@
 @use 'components/buttons';
 @use 'components/forms';
 @use 'components/autocomplete';
+@use 'components/save-notice';
 @use 'pages/main-page';
 @use 'pages/plan';
 @use 'pages/config';
 @use 'components/task-group';
 @use 'components/template';
+@use 'themes/light';

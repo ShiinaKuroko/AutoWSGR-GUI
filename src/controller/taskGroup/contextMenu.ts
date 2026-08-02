@@ -7,6 +7,7 @@ import { PlanModel } from '../../model/PlanModel';
 import { loadMapData, loadExMapData, loadEventMapData } from '../../model/MapDataLoader';
 import type { MapData } from '../../model/MapDataLoader';
 import type { TaskPreset } from '../../types/model';
+import type { PlanPresetSource } from '../../types/electronBridge';
 import { Logger } from '../../utils/Logger';
 
 export interface ContextMenuTarget {
@@ -20,6 +21,7 @@ export interface ContextMenuHost {
   setCurrentPlan(plan: PlanModel, mapData: MapData | null): void;
   renderPlanPreview(): void;
   switchPage(page: string): void;
+  openManagedPlan(file: string, source: PlanPresetSource): Promise<boolean>;
 }
 
 export function showContextMenuForItem(
@@ -57,6 +59,14 @@ export async function handleContextMenuEdit(
     if (!item) return;
     if (item.kind === 'template') {
       Logger.info(`模板「${item.label}」请在模板库中查看和编辑`);
+      return;
+    }
+    if (item.managedSource && item.managedFile) {
+      await host.openManagedPlan(item.managedFile, item.managedSource);
+      return;
+    }
+    if (!item.path) {
+      Logger.error(`「${item.label}」没有关联的配置文件`);
       return;
     }
     await openItemForEdit(item.path!, item.kind, host);

@@ -1,7 +1,6 @@
 /**
  * importExport —— 方案导入/导出/新建流程独立函数。
  */
-import type { PlanPreviewView } from '../../view/plan/PlanPreviewView';
 import { PlanModel } from '../../model/PlanModel';
 import { loadMapData, loadExMapData, loadEventMapData } from '../../model/MapDataLoader';
 import type { MapData } from '../../model/MapDataLoader';
@@ -29,7 +28,6 @@ function buildDefaultPlanPath(currentPlan: PlanModel, host: PlanHost): string {
 
 /** 导入 Plan 或 TaskPreset YAML 文件 */
 export async function importPlanFlow(
-  planView: PlanPreviewView,
   host: PlanHost,
   setters: PlanSetters,
 ): Promise<void> {
@@ -129,51 +127,5 @@ export async function savePlanFlow(
     currentPlan.fileName = saved;
     Logger.info(`方案已保存: ${saved}`);
     renderPlanPreview();
-  }
-}
-
-/** 确认新建方案 */
-export async function confirmNewPlanFlow(
-  planView: PlanPreviewView,
-  host: PlanHost,
-  setters: PlanSetters,
-): Promise<void> {
-  const formVals = planView.getNewPlanFormValues();
-  const chapterVal = formVals.chapter;
-  planView.hideNewPlanDialog();
-
-  try {
-    let mapData: MapData | null;
-    let chapter: number;
-    let map: number;
-    let mapLabel: string;
-
-    map = formVals.map;
-
-    if (chapterVal === 'Ex') {
-      mapData = await loadExMapData(map);
-      chapter = 99;
-      mapLabel = `Ex-${map}`;
-    } else {
-      chapter = parseInt(chapterVal, 10);
-      mapData = await loadMapData(chapter, map);
-      mapLabel = `${chapter}-${map}`;
-    }
-
-    if (!mapData) {
-      Logger.error(`地图 ${mapLabel} 数据不存在`);
-      return;
-    }
-
-    const allNodes = Object.keys(mapData).sort();
-    const plan = PlanModel.create(chapter, map, allNodes);
-    setters.setCurrentPlan(plan);
-    setters.setCurrentMapData(mapData);
-    setters.renderPlanPreview();
-    host.switchPage('plan');
-    Logger.info(`已新建方案 ${mapLabel}，共 ${allNodes.length} 个节点`);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    Logger.error(`新建方案失败: ${msg}`);
   }
 }

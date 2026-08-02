@@ -30,6 +30,7 @@ export class ApiClient {
   private baseUrl: string;
   private wsLog: WebSocket | null = null;
   private wsTask: WebSocket | null = null;
+  private shouldReconnectWebSockets = false;
   private callbacks: ApiClientCallbacks = {};
   private reconnectTimers: { log?: ReturnType<typeof setTimeout>; task?: ReturnType<typeof setTimeout> } = {};
 
@@ -220,13 +221,16 @@ export class ApiClient {
   // ── WebSocket ──
 
   connectWebSockets(): void {
+    this.shouldReconnectWebSockets = true;
     this.connectLogWs();
     this.connectTaskWs();
   }
 
   disconnectWebSockets(): void {
+    this.shouldReconnectWebSockets = false;
     clearTimeout(this.reconnectTimers.log);
     clearTimeout(this.reconnectTimers.task);
+    this.reconnectTimers = {};
     this.wsLog?.close();
     this.wsTask?.close();
     this.wsLog = null;
@@ -238,7 +242,11 @@ export class ApiClient {
   }
 
   private connectLogWs(): void {
-    if (this.wsLog?.readyState === WebSocket.OPEN) return;
+    if (!this.shouldReconnectWebSockets) return;
+    if (this.wsLog && (
+      this.wsLog.readyState === WebSocket.OPEN
+      || this.wsLog.readyState === WebSocket.CONNECTING
+    )) return;
     try {
       this.wsLog = new WebSocket(`${this.wsBaseUrl()}/ws/logs`);
 
@@ -259,21 +267,34 @@ export class ApiClient {
       };
 
       this.wsLog.onclose = () => {
-        Logger.debug('WS /logs disconnected, reconnect in 3s', 'api');
         this.callbacks.onWsStatusChange?.(false);
-        this.reconnectTimers.log = setTimeout(() => this.connectLogWs(), WS_RECONNECT_DELAY);
+        if (!this.shouldReconnectWebSockets) return;
+        Logger.debug('WS /logs disconnected, reconnect in 3s', 'api');
+        this.reconnectTimers.log = setTimeout(
+          () => this.connectLogWs(),
+          WS_RECONNECT_DELAY,
+        );
       };
 
       this.wsLog.onerror = () => {
         this.wsLog?.close();
       };
     } catch {
-      this.reconnectTimers.log = setTimeout(() => this.connectLogWs(), WS_RECONNECT_DELAY);
+      if (this.shouldReconnectWebSockets) {
+        this.reconnectTimers.log = setTimeout(
+          () => this.connectLogWs(),
+          WS_RECONNECT_DELAY,
+        );
+      }
     }
   }
 
   private connectTaskWs(): void {
-    if (this.wsTask?.readyState === WebSocket.OPEN) return;
+    if (!this.shouldReconnectWebSockets) return;
+    if (this.wsTask && (
+      this.wsTask.readyState === WebSocket.OPEN
+      || this.wsTask.readyState === WebSocket.CONNECTING
+    )) return;
     try {
       this.wsTask = new WebSocket(`${this.wsBaseUrl()}/ws/task`);
 
@@ -291,15 +312,24 @@ export class ApiClient {
       };
 
       this.wsTask.onclose = () => {
+        if (!this.shouldReconnectWebSockets) return;
         Logger.debug('WS /task disconnected, reconnect in 3s', 'api');
-        this.reconnectTimers.task = setTimeout(() => this.connectTaskWs(), WS_RECONNECT_DELAY);
+        this.reconnectTimers.task = setTimeout(
+          () => this.connectTaskWs(),
+          WS_RECONNECT_DELAY,
+        );
       };
 
       this.wsTask.onerror = () => {
         this.wsTask?.close();
       };
     } catch {
-      this.reconnectTimers.task = setTimeout(() => this.connectTaskWs(), WS_RECONNECT_DELAY);
+      if (this.shouldReconnectWebSockets) {
+        this.reconnectTimers.task = setTimeout(
+          () => this.connectTaskWs(),
+          WS_RECONNECT_DELAY,
+        );
+      }
     }
   }
 }

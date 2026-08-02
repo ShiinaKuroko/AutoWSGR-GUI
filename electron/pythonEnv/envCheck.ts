@@ -8,7 +8,15 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { getCtx, setCachedPythonCmd } from './context';
 import { findPython } from './finder';
-import { type EnvCheckResult, ensurePthFile, localSitePackages, pipEnv, ensurePip, ensureSslCertForPython } from './utils';
+import {
+  type EnvCheckResult,
+  ensurePthFile,
+  localSitePackages,
+  pipEnv,
+  ensurePip,
+  ensureSslCertForPython,
+  isLocalPython,
+} from './utils';
 import { autoUpdateAutowsgr, type AutoUpdateDeps } from './updater';
 
 const execAsync = promisify(exec);
@@ -21,8 +29,15 @@ const execAsync = promisify(exec);
 async function ensureVCRedist(): Promise<void> {
   const ctx = getCtx();
   // vcruntime140.dll 存在于 system32 说明已安装
-  const dllPath = path.join(process.env.SYSTEMROOT || 'C:\\Windows', 'System32', 'vcruntime140.dll');
-  if (fs.existsSync(dllPath)) return;
+  const systemRoot = process.env.SystemRoot
+    || process.env.SYSTEMROOT
+    || process.env.WINDIR;
+  if (
+    systemRoot
+    && fs.existsSync(path.join(systemRoot, 'System32', 'vcruntime140.dll'))
+  ) {
+    return;
+  }
 
   ctx.sendProgress('Microsoft Visual C++ Redistributable is not installed, this may lead to the DLL load failure.');
   const redistExe = path.join(ctx.appRoot(), 'redist', 'vc_redist.x64.exe');
@@ -88,9 +103,39 @@ function buildAutoUpdateDeps(): AutoUpdateDeps {
   };
 }
 
+/** 返回调试模式下有效的本地后端仓库根目录。 */
+export function externalBackendRoot(): string | null {
+  const ctx = getCtx();
+  if (ctx.getBackendStartupMode() !== 'external') return null;
+
+  const configured = process.env.AUTOWSGR_BACKEND_REPO?.trim()
+    || ctx.getBackendRepoPath().trim();
+  if (!configured) return null;
+
+  let root = path.resolve(configured);
+  if (
+    path.basename(root).toLowerCase() === 'autowsgr'
+    && fs.existsSync(path.join(root, '__init__.py'))
+    && fs.existsSync(path.join(root, 'server', 'main.py'))
+  ) {
+    root = path.dirname(root);
+  }
+
+  return fs.existsSync(path.join(root, 'autowsgr', 'server', 'main.py'))
+    ? root
+    : null;
+}
+
 function shouldAutoUpdate(): boolean {
   const ctx = getCtx();
-  return ctx.getUpdateMode() !== 'manual';
+  return externalBackendRoot() === null
+    && ctx.getUpdateMode() !== 'manual';
+}
+
+function autoUpdateSkipMessage(): string {
+  return externalBackendRoot()
+    ? '本地后端调试模式：跳过 autowsgr 自动更新检查'
+    : '手动更新模式：跳过 autowsgr 自动更新检查';
 }
 
 type CoreDepProbeResult = {
@@ -106,13 +151,28 @@ type CoreDepProbeResult = {
  */
 async function probeCoreDependencies(pythonCmd: string): Promise<CoreDepProbeResult | null> {
   const ctx = getCtx();
-  const spFwd = localSitePackages().replace(/\\/g, '/');
+  const backendRoot = externalBackendRoot();
+  const expectedRoot = backendRoot || localSitePackages();
+  const useLocalSite = !backendRoot || isLocalPython(pythonCmd);
+  const pythonPath = (value: string): string => value
+    .replace(/\\/g, '/')
+    .replace(/'/g, "\\'");
   const checkScript = path.join(ctx.getTempDir(), 'autowsgr_depcheck.py');
-  fs.writeFileSync(checkScript, [
+  const scriptLines = [
     'import json, sys, site',
-    `sp = '${spFwd}'`,
-    'sys.path.insert(0, sp)',
-    'site.addsitedir(sp)',
+    ...(useLocalSite
+      ? [
+          `sp = '${pythonPath(localSitePackages())}'`,
+          'sys.path.insert(0, sp)',
+          'site.addsitedir(sp)',
+        ]
+      : []),
+    ...(backendRoot
+      ? [
+          `repo = '${pythonPath(backendRoot)}'`,
+          'sys.path.insert(0, repo)',
+        ]
+      : []),
     'r = {}',
     "checks = [('uvicorn', 'uvicorn'), ('fastapi', 'fastapi'), ('scipy', 'scipy._lib')]",
     'for key, mod in checks:',
@@ -121,11 +181,15 @@ async function probeCoreDependencies(pythonCmd: string): Promise<CoreDepProbeRes
     '    except Exception:',
     '        r[key] = False',
     'try:',
-    '    import autowsgr; r["autowsgr"] = autowsgr.__version__',
+    '    import autowsgr',
+    '    r["autowsgr"] = autowsgr.__version__',
+    '    r["autowsgr_path"] = autowsgr.__file__',
     'except Exception:',
     '    r["autowsgr"] = None',
+    '    r["autowsgr_path"] = None',
     'print(json.dumps(r))',
-  ].join('\n'), 'utf-8');
+  ];
+  fs.writeFileSync(checkScript, scriptLines.join('\n'), 'utf-8');
 
   try {
     const { stdout: depOut } = await execAsync(
@@ -133,11 +197,28 @@ async function probeCoreDependencies(pythonCmd: string): Promise<CoreDepProbeRes
       { windowsHide: true, timeout: 30000 },
     );
     const depResult = JSON.parse(depOut.trim());
+    const autowsgrPath = typeof depResult.autowsgr_path === 'string'
+      ? path.resolve(depResult.autowsgr_path)
+      : '';
+    const relativePath = autowsgrPath
+      ? path.relative(path.resolve(expectedRoot), autowsgrPath)
+      : '';
+    const usesExpectedAutowsgr = autowsgrPath !== ''
+      && relativePath !== '..'
+      && !relativePath.startsWith(`..${path.sep}`)
+      && !path.isAbsolute(relativePath);
+    if (depResult.autowsgr != null && !usesExpectedAutowsgr) {
+      ctx.sendProgress(
+        `WARNING 忽略来源不正确的 autowsgr: ${autowsgrPath}`,
+      );
+    }
     return {
       uvicorn: Boolean(depResult.uvicorn),
       fastapi: Boolean(depResult.fastapi),
       scipy: Boolean(depResult.scipy),
-      autowsgr: depResult.autowsgr == null ? null : String(depResult.autowsgr),
+      autowsgr: depResult.autowsgr == null || !usesExpectedAutowsgr
+        ? null
+        : String(depResult.autowsgr),
     };
   } catch {
     return null;
@@ -186,7 +267,7 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
           writeEnvMarker(marker.pythonCmd, marker.pythonVersion, finalVer);
         }
       } else {
-        ctx.sendProgress('手动更新模式：跳过 autowsgr 自动更新检查');
+        ctx.sendProgress(autoUpdateSkipMessage());
       }
       ctx.sendProgress(`环境就绪 (${marker.pythonVersion}, autowsgr ${finalVer}) ✓`);
       return {
@@ -272,7 +353,7 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
       const updatedVer = await autoUpdateAutowsgr(pythonCmd, buildAutoUpdateDeps());
       finalVer = updatedVer || autowsgrVersion;
     } else {
-      ctx.sendProgress('手动更新模式：跳过 autowsgr 自动更新检查');
+      ctx.sendProgress(autoUpdateSkipMessage());
     }
     writeEnvMarker(pythonCmd, pythonVersion || '', finalVer);
   }

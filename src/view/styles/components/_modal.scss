@@ -2,7 +2,8 @@
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  padding: 12px;
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -12,7 +13,9 @@
 .modal {
   width: 360px;
   max-width: 90vw;
+  max-height: calc(100vh - 24px);
   padding: 24px;
+  overflow-y: auto;
 }
 
 .modal h3 {

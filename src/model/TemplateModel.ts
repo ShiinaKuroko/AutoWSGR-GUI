@@ -75,13 +75,13 @@ export class TemplateModel {
   }
 
   /** 更新模板字段（内置模板不可更新） */
-  async update(id: string, fields: Partial<Omit<TaskTemplate, 'id' | 'createdAt' | 'builtin'>>): Promise<void> {
-    if (this.isBuiltin(id)) return;
+  async update(id: string, fields: Partial<Omit<TaskTemplate, 'id' | 'createdAt' | 'builtin'>>): Promise<boolean> {
+    if (this.isBuiltin(id)) return false;
     const tpl = this.userTemplates.find(t => t.id === id);
-    if (tpl) {
-      Object.assign(tpl, fields);
-      await this.save();
-    }
+    if (!tpl) return false;
+    Object.assign(tpl, fields);
+    await this.save();
+    return true;
   }
 
   /** 从 JSON 数组导入模板，自动分配新 id */
@@ -107,7 +107,7 @@ export class TemplateModel {
 
   /** 持久化用户模板到本地文件 */
   private async save(): Promise<void> {
-    if (!this.io) return;
+    if (!this.io) throw new Error('模板存储尚未初始化');
     await this.io.saveFile(FILE_PATH, JSON.stringify(this.userTemplates, null, 2));
   }
 

@@ -3,7 +3,12 @@
  * 从 Scheduler.ts 提取，供 Controller / View 层直接引用。
  */
 import type { TaskRequest, TaskResult, WsLogMessage } from './api';
-import type { StopCondition, BathRepairConfig, FleetPreset } from './model';
+import type {
+  StopCondition,
+  BathRepairConfig,
+  FleetPreset,
+  BattleResultGrade,
+} from './model';
 
 // ════════════════════════════════════════
 // 任务队列项
@@ -34,6 +39,8 @@ export interface SchedulerTask {
   remainingTimes: number;
   /** 总次数（用于显示进度） */
   totalTimes: number;
+  /** 后端 times=None：任务不受次数限制，完成一轮后继续排队。 */
+  unlimited?: boolean;
   /** 后端返回的 task_id (仅当前正在运行的任务有值) */
   backendTaskId?: string;
   /** 可选的停止条件: 每轮完成后检查，满足则不再后触发 */
@@ -56,6 +63,8 @@ export interface SchedulerTask {
   currentPresetIndex?: number;
   /** 终点节点列表：经过其中任一节点即认定本轮完成。未设置时回退到最后一个 selected_node。 */
   endpointNodes?: string[];
+  /** 终点节点的最低战果要求；未设置时仅判断是否经过终点。 */
+  endpointResult?: BattleResultGrade;
   /** 同优先级内排序键（数值越小越靠前），用于周常等需要严格按章节顺序执行的场景 */
   sortKey?: number;
 }

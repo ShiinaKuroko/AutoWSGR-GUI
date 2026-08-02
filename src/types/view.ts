@@ -10,11 +10,19 @@
 /** 当前运行状态 */
 export type AppStatus = 'idle' | 'running' | 'stopping' | 'error' | 'not_connected';
 
+/** 当前任务中的一艘舰船及其图鉴检索名。 */
+export interface CurrentFleetShipVO {
+  name: string;
+  searchName?: string;
+}
+
 /** 主页面 VO */
 export interface MainViewObject {
   status: AppStatus;
   statusText: string;
   currentTask: TaskViewObject | null;
+  /** 当前运行任务明确携带的编队；无法确定时为空。 */
+  currentFleet: CurrentFleetShipVO[];
   expeditionTimer: string;       // 如 "12:34" 下次远征检查倒计时
   taskQueue: TaskQueueItemVO[];
   wsConnected: boolean;
@@ -37,6 +45,8 @@ export interface TaskQueueItemVO {
   priorityLabel: string;         // "远征" | "用户" | "日常"
   remaining: number;
   totalTimes: number;
+  /** 次数留空时为 true，界面显示“无限”。 */
+  unlimited?: boolean;
   /** 进度文本，如 "2/5"，仅当前运行的任务有值 */
   progress?: string;
   /** 进度百分比 0~1，用于进度条 */
@@ -97,6 +107,8 @@ export interface PlanPreviewViewObject {
   allNodes?: NodeViewObject[];
   /** 地图连线 */
   edges?: MapEdgeVO[];
+  /** 地图原始坐标范围的宽高比 */
+  mapAspectRatio?: number;
   /** 编队预设列表 */
   fleetPresets?: FleetPresetVO[];
   /** 任务配置 */
@@ -130,12 +142,12 @@ export interface ConfigViewObject {
   exerciseFleetId: number;
   battleTimes: number;
   autoNormalFight: boolean;
-  autoDecisive: boolean;
-  decisiveTicketReserve: number;
-  decisiveTemplateId: string;
+  normalFightTasks: import('./model.js').NormalFightTaskConfig[];
   autoLoot: boolean;
   lootPlanIndex: number;
   lootStopCount: number;
+  logLevel: 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
+  logRoot: string;
   themeMode: 'dark' | 'light' | 'system';
   accentColor: string;
   debugMode: boolean;
@@ -143,9 +155,26 @@ export interface ConfigViewObject {
   backendStartupMode: 'managed' | 'external';
   backendRepoPath: string;
   ocrGpuMode: 'auto' | 'cpu' | 'cuda';
+  ocrGpu: boolean;
+  ocrMirror: 'origin' | 'github' | 'tencent' | 'modelscope';
+  ocrConfidence: number;
+  shipNameAliases: Record<string, string>;
+  shipNameCorrections: Record<string, string>;
   cudaPath: string;
   saveBackendScreenshots: boolean;
   pythonPath: string;
+  defaultWindowWidth: number;
+  defaultWindowHeight: number;
+  rememberWindowBounds: boolean;
+  operationDelayMin: number;
+  operationDelayMax: number;
+  dockFullDestroy: boolean;
+  repairManually: boolean;
+  bathroomCount: number;
+  destroyShipWorkMode: number;
+  destroyShipTypes: string[];
+  removeEquipmentMode: boolean;
+  planRoot: string;
 }
 
 // ════════════════════════════════════════
@@ -260,10 +289,4 @@ export interface PresetFormValues {
   useQuickRepair?: boolean;
   planId?: string;
   fightFleetId?: number;
-}
-
-/** 新建方案表单值 */
-export interface NewPlanFormValues {
-  chapter: string;
-  map: number;
 }

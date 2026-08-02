@@ -5,6 +5,7 @@ import type { TemplateWizardView } from '../../view/template/TemplateWizardView'
 import type { TemplateModel } from '../../model/TemplateModel';
 import type { TaskTemplate } from '../../types/model';
 import { Logger } from '../../utils/Logger';
+import { showAlert, showSaveSuccess } from '../shared/DialogHelper';
 
 /** 打开创建模板向导 */
 export function showWizard(
@@ -110,14 +111,27 @@ export async function finishWizard(
       break;
   }
 
-  if (editingTemplateId.value) {
-    await templateModel.update(editingTemplateId.value, partial);
-    Logger.info(`模板「${name}」已更新`);
-    editingTemplateId.value = null;
-  } else {
-    await templateModel.add(partial);
-    Logger.info(`模板「${name}」已创建`);
+  try {
+    if (editingTemplateId.value) {
+      const updated = await templateModel.update(
+        editingTemplateId.value,
+        partial,
+      );
+      if (!updated) throw new Error('模板不存在或不可编辑');
+      Logger.info(`模板「${name}」已更新`);
+      editingTemplateId.value = null;
+    } else {
+      await templateModel.add(partial);
+      Logger.info(`模板「${name}」已创建`);
+    }
+  } catch (error) {
+    await showAlert(
+      '保存失败',
+      error instanceof Error ? error.message : String(error),
+    );
+    return;
   }
   wizardView.hide();
   renderLibrary();
+  showSaveSuccess(`模板「${name}」保存成功`);
 }

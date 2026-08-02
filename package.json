@@ -1,18 +1,21 @@
 {
   "name": "wsgrgui",
-  "version": "1.4.1",
-  "description": "AutoWSGR 图形界面 — MVP",
+  "version": "2.0.1-dev",
+  "description": "AutoWSGR YAML 管理与自动化桌面界面",
   "main": "dist/electron/main.js",
   "scripts": {
     "build:css": "sass src/view/styles/main.scss src/view/styles/styles.css --no-source-map --style=expanded",
-    "clean": "node -e \"fs.rmSync('dist/src',{recursive:true,force:true});fs.rmSync('dist/electron',{recursive:true,force:true});console.log('dist cleaned')\" ",
+    "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true});console.log('dist cleaned')\"",
+    "clean:release": "node -e \"fs.rmSync('release',{recursive:true,force:true});console.log('release cleaned')\"",
     "build": "npm run clean && npm run build:css && tsc && node scripts/bundle.js",
+    "test:legacy-plan": "npm run build && electron scripts/test-legacy-plan-conversion.js",
+    "test:settings": "npm run build && electron scripts/test-settings-persistence.js",
     "start": "chcp 65001 >nul && npm run build && electron .",
     "dev": "chcp 65001 >nul && npm run clean && npm run build:css && tsc && node scripts/bundle.js && electron .",
     "prepare-python": "node scripts/prepare-python.js",
     "prepare-adb": "node scripts/prepare-adb.js",
-    "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run prepare-python && npm run prepare-adb && npm run build && electron-builder"
+    "pack": "npm run clean:release && npm run build && electron-builder --dir --publish never",
+    "dist": "npm run clean:release && npm run prepare-python && npm run prepare-adb && npm run build && electron-builder --publish never"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
@@ -35,8 +38,8 @@
     },
     "files": [
       "dist/**/*",
-      "src/view/**/*",
-      "scripts/**/*",
+      "src/view/index.html",
+      "src/view/styles/styles.css",
       "!node_modules/.cache"
     ],
     "extraResources": [
@@ -44,14 +47,9 @@
         "from": "resource",
         "to": "resource",
         "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "plans",
-        "to": "plans",
-        "filter": [
-          "**/*"
+          "**/*",
+          "!user_battle_plans/**/*",
+          "!user_team_plans/**/*"
         ]
       },
       {
@@ -61,6 +59,13 @@
       {
         "from": "debug_deps.bat",
         "to": "debug_deps.bat"
+      },
+      {
+        "from": "tools/ship_library",
+        "to": "tools/ship_library",
+        "filter": [
+          "update_ship_library.py"
+        ]
       }
     ],
     "extraFiles": [

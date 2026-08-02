@@ -8,7 +8,7 @@ import { promisify } from 'util';
 import { getCtx, setCachedPythonCmd } from './context';
 import { findPython } from './finder';
 import { ensurePthFile, localSitePackages, pipEnv, ensurePip, ensureSslCertForPython } from './utils';
-import { ENV_READY_MARKER } from './envCheck';
+import { ENV_READY_MARKER, externalBackendRoot } from './envCheck';
 
 const execAsync = promisify(exec);
 
@@ -172,6 +172,15 @@ export async function checkForUpdates(): Promise<UpdateCheckResult> {
 /** 自动安装依赖 (pip install autowsgr)，始终安装到项目目录，不动全局 */
 export async function installDependencies(pythonCmd: string): Promise<{ success: boolean; output: string }> {
   const ctx = getCtx();
+  const backendRequirement = ctx.getBackendStartupMode() === 'external'
+    ? externalBackendRoot()
+    : AUTOWSGR_REQUIREMENT;
+  if (!backendRequirement) {
+    return {
+      success: false,
+      output: '本地后端仓库无效，无法安装调试环境依赖',
+    };
+  }
   // 安装后环境变化，清除标记以便下次重新检查
   try { fs.unlinkSync(ENV_READY_MARKER()); } catch { /* ignore */ }
 
@@ -231,7 +240,7 @@ export async function installDependencies(pythonCmd: string): Promise<{ success:
       '--upgrade',
       '--no-build-isolation',
       '--target', targetDir,
-      AUTOWSGR_REQUIREMENT,
+      backendRequirement,
   ]);
   if (install.code === 0) ctx.sendProgress('后端依赖安装完成 ✓');
   else ctx.sendProgress('ERROR 依赖安装失败');

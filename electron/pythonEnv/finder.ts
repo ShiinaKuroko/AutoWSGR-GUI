@@ -43,7 +43,7 @@ export async function findPython(): Promise<string | null> {
 
   // 优先使用本地便携版 Python
   const localPython = path.join(ctx.appRoot(), 'python', 'python.exe');
-  if (fs.existsSync(localPython)) {
+  if (!found && fs.existsSync(localPython)) {
     try {
       const { stdout, stderr } = await execAsync(`"${localPython}" --version`, { windowsHide: true });
       const verStr = stdout || stderr;
@@ -52,7 +52,7 @@ export async function findPython(): Promise<string | null> {
     } catch { /* local Python broken */ }
   }
 
-  if (!found && !configured) {  // 仅在本地 Python 不可用且无用户配置时回退系统 Python
+  if (!found) {  // 用户配置和本地 Python 均不可用时回退系统 Python
     // 回退到系统全局 Python
     // 注意: 必须解析出真实的 .exe 绝对路径，因为 pyenv 等工具使用 .bat shim，
     // 而 Node.js spawn() 不经过 shell，无法执行 .bat 文件。

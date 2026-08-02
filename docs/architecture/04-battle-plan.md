@@ -1,6 +1,6 @@
 # 出击计划系统
 
-> 涉及文件：`src/model/PlanModel.ts` · `src/controller/plan/`（PlanController · importExport · presetFlow · nodeEditor · rendering）· `src/view/plan/`（PlanPreviewView(Facade) · MapView · NodeEditorView · FleetPresetView · FleetEditDialog）· `src/model/MapDataLoader.ts` · `src/types/model.ts` · `resource/builtin_plans/` · `resource/maps/`
+> 涉及文件：`src/model/PlanModel.ts` · `src/controller/plan/`（PlanController · importExport · presetFlow · nodeEditor · rendering）· `src/view/plan/`（PlanPreviewView(Facade) · MapView · NodeEditorView · FleetPresetView · FleetEditDialog）· `src/model/MapDataLoader.ts` · `src/types/model.ts` · `resource/system_battle_plans/` · `resource/maps/`
 
 ## 概述
 
@@ -175,7 +175,7 @@ interface MapNode {
 flowchart TB
   subgraph Input["输入"]
     YAML["方案 YAML 文件"]
-    Builtin["内置方案<br/>resource/builtin_plans/"]
+    Builtin["系统方案<br/>resource/system_battle_plans/"]
   end
 
   subgraph Parse["解析"]
@@ -209,17 +209,13 @@ flowchart TB
 
 ---
 
-## 内置方案
+## 系统方案
 
-`resource/builtin_plans/` 包含 18 个预制方案：
+`resource/system_battle_plans/` 当前包含 10 个周常预制方案：
 
 | 分类 | 数量 | 示例 |
 |------|------|------|
-| 周常 | 11 | `周常1章-1-2.yaml` ~ `周常9章-9-2.yaml` |
-| 捞胖次 | 4 | `捞胖次9-2.yaml`, `捞胖次7-4.yaml` |
-| 战役 | 1 | `战役.yaml` |
-| 演习 | 1 | `自动演习.yaml` |
-| 决战 | 1 | `决战.yaml` |
+| 周常 | 10 | `bettle-周常-1-1.yaml` ~ `bettle-周常-10-1.yaml` |
 
 ---
 

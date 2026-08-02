@@ -7,16 +7,19 @@ import type { MainViewObject, LogEntryVO } from '../../types/view';
 import { LogView } from './LogView';
 import { TaskQueueView } from './TaskQueueView';
 import { StatusBar } from './StatusBar';
+import { FleetPreviewView } from './FleetPreviewView';
 
 export class MainView {
   private logView: LogView;
   private taskQueueView: TaskQueueView;
   private statusBar: StatusBar;
+  private fleetPreviewView: FleetPreviewView;
 
   constructor() {
     this.logView = new LogView();
     this.taskQueueView = new TaskQueueView();
     this.statusBar = new StatusBar();
+    this.fleetPreviewView = new FleetPreviewView();
   }
 
   /* ── 回调转发（Controller 直接赋值） ── */
@@ -39,6 +42,7 @@ export class MainView {
   render(vo: MainViewObject): void {
     this.statusBar.render(vo);
     this.taskQueueView.render(vo);
+    this.fleetPreviewView.render(vo.currentFleet, vo.currentTask !== null);
   }
 
   appendLog(entry: LogEntryVO): void {

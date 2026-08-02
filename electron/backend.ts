@@ -6,7 +6,13 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { execSync, spawn, ChildProcess } from 'child_process';
 import type { BrowserWindow } from 'electron';
-import { ensurePthFile, ensureSslCertForPython, findPython, localSitePackages } from './pythonEnv';
+import {
+  ensurePthFile,
+  ensureSslCertForPython,
+  findPython,
+  isLocalPython,
+  localSitePackages,
+} from './pythonEnv';
 
 // ════════════════════════════════════════
 // Context — 由 main.ts 在启动时注入
@@ -225,6 +231,7 @@ export async function startBackend(): Promise<void> {
   const guiSettings = readGuiSettings();
   const backendStartupMode = guiSettings.backend_startup_mode === 'external' ? 'external' : 'managed';
   const localBackendRepo = backendStartupMode === 'external' ? resolveLocalBackendRepoPath() : null;
+  const useLocalSite = !localBackendRepo || isLocalPython(pythonCmd);
   const ocrGpuMode = readOcrGpuModeFromSettings();
   const configuredCudaRoot = readCudaPathFromSettings();
   const saveBackendScreenshots = readSaveBackendScreenshotsFromSettings();
@@ -237,18 +244,29 @@ export async function startBackend(): Promise<void> {
   // 3. 绕过嵌入式 Python 的 ._pth/PYTHONPATH 限制
   const bootstrapParts = [
     `import sys, os, site`,
-    `sp = r'${pyLiteral(localSite)}'`,
-    `sys.path.insert(0, sp)`,
-    `site.addsitedir(sp)`,  // 处理 .pth 文件，激活 _distutils_hack
+    ...(useLocalSite
+      ? [
+          `sp = r'${pyLiteral(localSite)}'`,
+          `sys.path.insert(0, sp)`,
+          `site.addsitedir(sp)`,  // 处理 .pth 文件，激活 _distutils_hack
+        ]
+      : []),
     ...(localBackendRepo ? [`repo = r'${pyLiteral(localBackendRepo)}'`, `sys.path.insert(0, repo)`] : []),
     `GUI_OCR_GPU_MODE = '${ocrGpuMode}'`,
     `GUI_SAVE_IMAGES = ${saveBackendScreenshots ? 'True' : 'False'}`,
+    `from pathlib import Path`,
     `import autowsgr`,
+    ...(!localBackendRepo
+      ? [
+          `_autowsgr_file = Path(autowsgr.__file__).resolve()`,
+          `if not _autowsgr_file.is_relative_to(Path(sp).resolve()):`,
+          `    raise RuntimeError('GUI 后端来源错误: ' + str(_autowsgr_file))`,
+        ]
+      : []),
     `print('[Bootstrap] autowsgr=' + getattr(autowsgr, '__file__', 'unknown'))`,
     `print('[Bootstrap] repo_override=' + (r'${pyLiteral(localBackendRepo ?? '')}' or '<none>'))`,
     `print('[Bootstrap] ocr_gpu_mode=' + GUI_OCR_GPU_MODE)`,
     `print('[Bootstrap] save_backend_screenshots=' + ('true' if GUI_SAVE_IMAGES else 'false'))`,
-    `from pathlib import Path`,
     `import autowsgr.infra.logger as _aw_logger`,
     `from autowsgr.scheduler import launcher as _aw_launcher`,
     `import autowsgr.vision.ocr as _aw_ocr`,

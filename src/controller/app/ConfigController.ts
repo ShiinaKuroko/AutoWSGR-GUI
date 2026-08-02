@@ -12,7 +12,7 @@ import type { StartupController } from '../startup/StartupController';
 import type { ConfigViewObject } from '../../types/view';
 import { Logger } from '../../utils/Logger';
 import { getThemeMode, getAccentColor, applyTheme } from './theme';
-import { showAlert } from '../shared/DialogHelper';
+import { showAlert, showSaveSuccess } from '../shared/DialogHelper';
 
 export interface ConfigControllerHost {
   readonly configModel: ConfigModel;
@@ -35,19 +35,49 @@ export class ConfigController {
     if (!bridge) return;
     try {
       const yamlStr = await bridge.readFile('usersettings.yaml');
-      this.host.configModel.loadFromYaml(yamlStr);
-      Logger.debug('usersettings.yaml 已加载');
+      if (!yamlStr.trim()) {
+        Logger.debug('usersettings.yaml 未找到，自动创建默认配置');
+        const defaultYaml = this.host.configModel.toYaml();
+        await bridge.saveFile('usersettings.yaml', defaultYaml);
+        Logger.info(`已创建默认配置文件: ${this.host.configDir}\\usersettings.yaml`);
+      } else {
+        this.host.configModel.loadFromYaml(yamlStr);
+        Logger.debug('usersettings.yaml 已加载');
+      }
     } catch {
       Logger.debug('usersettings.yaml 未找到，自动创建默认配置');
       const defaultYaml = this.host.configModel.toYaml();
       await bridge.saveFile('usersettings.yaml', defaultYaml);
       Logger.info(`已创建默认配置文件: ${this.host.configDir}\\usersettings.yaml`);
     }
+
+    const stored = await bridge.getGuiAutomationSettings?.();
+    const migrated = this.host.configModel.migratedGuiAutomation;
+    if (stored?.exists) {
+      this.host.configModel.updateGuiAutomation(stored.settings);
+    } else {
+      this.host.configModel.updateGuiAutomation(migrated);
+      if (Object.keys(migrated).length > 0) {
+        await bridge.setGuiAutomationSettings?.(
+          this.host.configModel.currentGuiAutomation,
+        );
+        Logger.info('已将旧版 GUI 调度字段迁移到 gui_settings.json');
+      }
+    }
+    if (Object.keys(migrated).length > 0) {
+      await bridge.saveFile('usersettings.yaml', this.host.configModel.toYaml());
+    }
   }
 
   /** 渲染配置视图 */
   renderConfig(): void {
     const cfg = this.host.configModel.current;
+    const gui = this.host.configModel.currentGuiAutomation;
+    const windowPreferences = window.electronBridge?.getWindowPreferences?.() ?? {
+      defaultWidth: 1280,
+      defaultHeight: 720,
+      rememberBounds: false,
+    };
     const vo: ConfigViewObject = {
       emulatorType: cfg.emulator.type,
       emulatorPath: cfg.emulator.path || '',
@@ -56,19 +86,19 @@ export class ConfigController {
       updateMode: window.electronBridge?.getUpdateMode?.()
         ?? (localStorage.getItem('updateMode') === 'manual' ? 'manual' : 'auto'),
       autoExpedition: cfg.daily_automation.auto_expedition,
-      expeditionInterval: cfg.daily_automation.expedition_interval,
+      expeditionInterval: gui.expeditionInterval,
       autoBattle: cfg.daily_automation.auto_battle,
       battleType: cfg.daily_automation.battle_type,
       autoExercise: cfg.daily_automation.auto_exercise,
-      exerciseFleetId: cfg.daily_automation.exercise_fleet_id,
-      battleTimes: cfg.daily_automation.battle_times,
+      exerciseFleetId: cfg.daily_automation.exercise_fleet_id ?? 1,
+      battleTimes: gui.battleTimes,
       autoNormalFight: cfg.daily_automation.auto_normal_fight,
-      autoDecisive: cfg.daily_automation.auto_decisive,
-      decisiveTicketReserve: cfg.daily_automation.decisive_ticket_reserve,
-      decisiveTemplateId: cfg.daily_automation.decisive_template_id,
-      autoLoot: cfg.daily_automation.auto_loot,
-      lootPlanIndex: cfg.daily_automation.loot_plan_index,
-      lootStopCount: cfg.daily_automation.loot_stop_count,
+      normalFightTasks: cfg.daily_automation.normal_fight_tasks,
+      autoLoot: gui.autoLoot,
+      lootPlanIndex: gui.lootPlanIndex,
+      lootStopCount: gui.lootStopCount,
+      logLevel: cfg.log.level,
+      logRoot: cfg.log.root,
       themeMode: getThemeMode(),
       accentColor: getAccentColor(),
       debugMode: localStorage.getItem('debugMode') === 'true',
@@ -76,24 +106,70 @@ export class ConfigController {
       backendStartupMode: window.electronBridge?.getBackendStartupMode?.() ?? 'managed',
       backendRepoPath: window.electronBridge?.getBackendRepoPath?.() ?? '',
       ocrGpuMode: window.electronBridge?.getOcrGpuMode?.() ?? 'auto',
+      ocrGpu: cfg.ocr.gpu,
+      ocrMirror: cfg.ocr.mirror,
+      ocrConfidence: cfg.ocr.ship_name_match_confidence,
+      shipNameAliases: cfg.ocr.ship_name_aliases,
+      shipNameCorrections: cfg.ocr.ship_name_corrections,
       cudaPath: window.electronBridge?.getCudaPath?.() ?? '',
       saveBackendScreenshots: window.electronBridge?.getSaveBackendScreenshots?.() ?? false,
       pythonPath: window.electronBridge?.getPythonPath?.() ?? '',
+      defaultWindowWidth: windowPreferences.defaultWidth,
+      defaultWindowHeight: windowPreferences.defaultHeight,
+      rememberWindowBounds: windowPreferences.rememberBounds,
+      operationDelayMin: cfg.operation_delay_min,
+      operationDelayMax: cfg.operation_delay_max,
+      dockFullDestroy: cfg.dock_full_destroy,
+      repairManually: cfg.repair_manually,
+      bathroomCount: cfg.bathroom_count,
+      destroyShipWorkMode: cfg.destroy_ship_work_mode,
+      destroyShipTypes: cfg.destroy_ship_types,
+      removeEquipmentMode: cfg.remove_equipment_mode,
+      planRoot: cfg.plan_root ?? '',
     };
     this.host.configView.render(vo);
-    this.host.templateCtrl.populateDecisiveSelect(cfg.daily_automation.decisive_template_id);
   }
 
   /** 保存配置并同步各组件 */
   async saveConfig(): Promise<void> {
-    const collected = this.host.configView.collect();
+    let collected: ConfigViewObject;
+    try {
+      collected = this.host.configView.collect();
+    } catch (error) {
+      await showAlert(
+        '设置格式错误',
+        error instanceof Error ? error.message : String(error),
+      );
+      return;
+    }
     const bridge = window.electronBridge;
+    const saveApis = bridge && [
+      bridge.saveFile,
+      bridge.setUpdateMode,
+      bridge.setBackendPort,
+      bridge.setBackendStartupMode,
+      bridge.setBackendRepoPath,
+      bridge.setOcrGpuMode,
+      bridge.setCudaPath,
+      bridge.setSaveBackendScreenshots,
+      bridge.setPythonPath,
+      bridge.setWindowPreferences,
+      bridge.setGuiAutomationSettings,
+    ];
+    if (!bridge || !saveApis || saveApis.some(api => typeof api !== 'function')) {
+      await showAlert(
+        '保存失败',
+        '设置保存接口不完整，请完整重启 GUI 后再操作。',
+      );
+      return;
+    }
 
     if (collected.backendStartupMode === 'external' && !collected.backendRepoPath.trim()) {
       await showAlert('请配置本地后端路径', '启用“使用本地后端”时必须选择本地后端仓库路径。');
       return;
     }
 
+    try {
     // 界面设置 → localStorage
     localStorage.setItem('themeMode', collected.themeMode);
     localStorage.setItem('accentColor', collected.accentColor);
@@ -128,6 +204,13 @@ export class ConfigController {
     if (bridge?.setPythonPath) {
       await bridge.setPythonPath(collected.pythonPath || null);
     }
+    if (bridge?.setWindowPreferences) {
+      await bridge.setWindowPreferences({
+        defaultWidth: collected.defaultWindowWidth,
+        defaultHeight: collected.defaultWindowHeight,
+        rememberBounds: collected.rememberWindowBounds,
+      });
+    }
 
     this.host.configModel.update({
       emulator: {
@@ -136,49 +219,86 @@ export class ConfigController {
         serial: collected.emulatorSerial || undefined,
       },
       account: { game_app: collected.gameApp },
+      ocr: {
+        ...this.host.configModel.current.ocr,
+        gpu: collected.ocrGpu,
+        mirror: collected.ocrMirror,
+        ship_name_match_confidence: collected.ocrConfidence,
+        ship_name_aliases: collected.shipNameAliases,
+        ship_name_corrections: collected.shipNameCorrections,
+      },
+      log: {
+        ...this.host.configModel.current.log,
+        level: collected.logLevel,
+        root: collected.logRoot,
+      },
       daily_automation: {
+        ...this.host.configModel.current.daily_automation,
         auto_expedition: collected.autoExpedition,
-        expedition_interval: collected.expeditionInterval,
         auto_battle: collected.autoBattle,
         battle_type: collected.battleType,
         auto_exercise: collected.autoExercise,
         exercise_fleet_id: collected.exerciseFleetId,
-        battle_times: collected.battleTimes,
         auto_normal_fight: collected.autoNormalFight,
-        auto_decisive: collected.autoDecisive,
-        decisive_ticket_reserve: collected.decisiveTicketReserve,
-        decisive_template_id: collected.decisiveTemplateId,
-        auto_loot: collected.autoLoot,
-        loot_plan_index: collected.lootPlanIndex,
-        loot_stop_count: collected.lootStopCount,
+        normal_fight_tasks: collected.normalFightTasks,
       },
+      operation_delay_min: collected.operationDelayMin,
+      operation_delay_max: collected.operationDelayMax,
+      dock_full_destroy: collected.dockFullDestroy,
+      repair_manually: collected.repairManually,
+      bathroom_count: collected.bathroomCount,
+      destroy_ship_work_mode: collected.destroyShipWorkMode,
+      destroy_ship_types: collected.destroyShipTypes,
+      remove_equipment_mode: collected.removeEquipmentMode,
+      plan_root: collected.planRoot || undefined,
     });
+
+    this.host.configModel.updateGuiAutomation({
+      expeditionInterval: collected.expeditionInterval,
+      battleTimes: collected.battleTimes,
+      autoLoot: collected.autoLoot,
+      lootPlanIndex: collected.lootPlanIndex,
+      lootStopCount: collected.lootStopCount,
+    });
+    await bridge?.setGuiAutomationSettings?.(
+      this.host.configModel.currentGuiAutomation,
+    );
 
     // 同步 CronScheduler
     const da = this.host.configModel.current.daily_automation;
+    const gui = this.host.configModel.currentGuiAutomation;
     this.host.cronScheduler.updateConfig({
       autoExercise: da.auto_exercise,
-      exerciseFleetId: da.exercise_fleet_id,
+      exerciseFleetId: da.exercise_fleet_id ?? 1,
       autoBattle: da.auto_battle,
       battleType: da.battle_type,
-      battleTimes: da.battle_times,
+      battleTimes: gui.battleTimes,
       autoNormalFight: da.auto_normal_fight,
-      autoLoot: da.auto_loot,
-      lootPlanIndex: da.loot_plan_index,
-      lootStopCount: da.loot_stop_count,
+      autoLoot: gui.autoLoot,
+      lootPlanIndex: gui.lootPlanIndex,
+      lootStopCount: gui.lootStopCount,
     });
 
-    // 远征检查间隔
-    this.host.scheduler.setExpeditionInterval(da.expedition_interval);
+    // 自动远征开关与检查间隔
+    this.host.scheduler.setAutoExpedition(da.auto_expedition);
+    this.host.scheduler.setExpeditionInterval(gui.expeditionInterval);
 
     const yamlStr = this.host.configModel.toYaml();
-    console.log('保存配置:\n', yamlStr);
-
-    if (bridge) {
-      await bridge.saveFile('usersettings.yaml', yamlStr);
+    if (collected.debugMode) {
+      Logger.debug(`保存配置:\n${yamlStr}`, 'config');
     }
 
-    Logger.info('配置已保存');
+    await bridge.saveFile('usersettings.yaml', yamlStr);
+
+    Logger.info('设置已保存，后端启动项将在重启后生效');
+    } catch (error) {
+      await showAlert(
+        '保存失败',
+        error instanceof Error ? error.message : String(error),
+      );
+      return;
+    }
+    showSaveSuccess('设置保存成功');
 
     // 未连接 → 尝试重连
     if (this.host.scheduler.status === 'not_connected') {

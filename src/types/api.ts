@@ -157,17 +157,22 @@ export interface NodeDecisionReq {
   enemy_rules?: string[][] | null;
 }
 
-export interface FleetRuleReq {
-  /** 候选舰船名（按优先级顺序） */
-  candidates: string[];
+export interface FleetShipRuleReq {
+  /** 当前主选或备选的舰船名 */
+  name: string;
   /** 搜索关键词（用于同名舰船精确筛选） */
   search_name?: string;
-  /** 舰种约束（如 cl/cav/ss），用于同名舰船二次筛选 */
-  ship_type?: string;
+  /** 允许的舰种约束（如 ["ss", "ssg"]） */
+  ship_type?: string[];
   /** 等级下限（仅选择 >= 该等级） */
   min_level?: number;
   /** 等级上限（仅选择 <= 该等级） */
   max_level?: number;
+}
+
+export interface FleetRuleReq extends FleetShipRuleReq {
+  /** 当前位置的备选舰船规则（按顺序尝试） */
+  candidates?: FleetShipRuleReq[];
 }
 
 export interface CombatPlanReq {
@@ -217,6 +222,8 @@ export interface ExerciseReq {
 export interface DecisiveReq {
   type: 'decisive';
   chapter?: number;
+  decisive_rounds?: number;
+  use_new_fleet_change_algorithm?: boolean;
   level1?: string[];
   level2?: string[];
   flagship_priority?: string[];

@@ -10,7 +10,6 @@ import { ShipAutocomplete } from '../shared/ShipAutocomplete';
 export class TemplateWizardView {
   private wizardOverlay: HTMLElement;
   private wizardTitle: HTMLElement;
-  private shipAC: ShipAutocomplete;
   private currentStep = 1;
 
   onWizardFinish?: () => void;
@@ -18,7 +17,7 @@ export class TemplateWizardView {
   constructor() {
     this.wizardOverlay = document.getElementById('template-wizard')!;
     this.wizardTitle = document.getElementById('wizard-title')!;
-    this.shipAC = new ShipAutocomplete(document, '.fleet-ship');
+    new ShipAutocomplete(document, '.fleet-ship');
   }
 
   // ════════════════════════════════════════

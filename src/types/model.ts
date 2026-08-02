@@ -10,6 +10,9 @@
 /** 索敌规则条目: [条件表达式, 动作] */
 export type EnemyRule = [string, string | number];
 
+/** 后端支持的战果等级，顺序从低到高为 D/C/B/A/S/SS。 */
+export type BattleResultGrade = 'D' | 'C' | 'B' | 'A' | 'S' | 'SS';
+
 /** 单个节点的战斗参数 */
 export interface NodeArgs {
   enemy_rules?: EnemyRule[];
@@ -23,24 +26,40 @@ export interface NodeArgs {
   SL_when_detour_fails?: boolean;
 }
 
-/** 舰船筛选条件 (按舰名/国籍/舰种选船) */
-export interface ShipFilter {
-  /** 固定舰名（可选） */
-  name?: string;
-  /** 国籍, 如 "德国", "日本" */
-  nation?: string;
-  /** 舰种代号, 如 "dd", "ss" */
-  ship_type?: string;
-  /** 优先舰船名列表（按顺序尝试） */
-  priority?: string[];
+/** 一艘主选或备选舰船自己的选船规则。 */
+export interface ShipRule {
+  /** 固定舰名 */
+  name: string;
+  /** 传给后端搜索框的舰名（可选） */
+  search_name?: string;
+  /** 允许的舰种代号，如 ["ss", "ssg"] */
+  ship_type?: string[];
   /** 等级下限（仅选择 >= 该等级） */
   min_level?: number;
   /** 等级上限（仅选择 <= 该等级） */
   max_level?: number;
 }
 
-/** 编队槽位: 具体舰船名 或 模糊筛选条件 */
-export type ShipSlot = string | ShipFilter;
+/** 舰船筛选条件；candidates 仅表示该位置的备选舰船。 */
+export interface ShipFilter {
+  /** 固定主选舰名（旧模糊方案允许省略） */
+  name?: string;
+  /** 传给后端搜索框的主选舰名（可选） */
+  search_name?: string;
+  /** 国籍, 如 "德国", "日本" */
+  nation?: string;
+  /** 主选允许的舰种代号 */
+  ship_type?: string[];
+  /** 该位置的备选舰船完整规则 */
+  candidates?: ShipRule[];
+  /** 等级下限（仅选择 >= 该等级） */
+  min_level?: number;
+  /** 等级上限（仅选择 <= 该等级） */
+  max_level?: number;
+}
+
+/** 编队槽位: 具体舰船名、筛选条件或空位置 */
+export type ShipSlot = string | ShipFilter | null;
 
 /** 编队预设: 一组预定义的舰船配置 */
 export interface FleetPreset {
@@ -63,6 +82,8 @@ export interface PlanData {
   selected_nodes: string[];
   /** 终点节点列表：经过其中任一节点即认定本轮完成。未设置时回退到最后一个 selected_node。 */
   endpoint_nodes?: string[];
+  /** 启用终点战果判断时的最低战果。 */
+  result?: BattleResultGrade;
   fight_condition?: number;        // 1-5, 默认 1
   repair_mode?: number | number[];  // 1 或 2（或每舰位数组）, 默认 1
   fleet_id?: number;               // 编队号
@@ -86,35 +107,84 @@ export interface EmulatorConfig {
   type: string;
   path?: string;
   serial?: string;
+  process_name?: string;
 }
 
 export interface AccountConfig {
   game_app: string;
-  account?: string;
-  password?: string;
 }
 
-export interface DailyAutomation {
+export interface NormalFightTaskConfig {
+  name: string;
+  fleet_id?: number;
+  /** 计划内“使用舰队”的索引，由 GUI 自动出征选择器使用。 */
+  fleet_preset_index?: number;
+  times?: number;
+}
+
+export interface DailyAutomationConfig {
   auto_expedition: boolean;
-  expedition_interval: number; // 远征检查间隔（分钟）
+  auto_gain_bonus: boolean;
+  auto_bath_repair: boolean;
+  auto_set_support: boolean;
+  bath_repair_blacklist: string[];
   auto_battle: boolean;
   battle_type: string;
-  battle_times: number;
   auto_exercise: boolean;
-  exercise_fleet_id: number;
+  exercise_fleet_id: number | null;
   auto_normal_fight: boolean;
-  auto_decisive: boolean;
-  decisive_ticket_reserve: number;
-  decisive_template_id: string;
-  auto_loot: boolean;
-  loot_plan_index: number;       // builtin_farm_loot 中选择的方案索引
-  loot_stop_count: number;       // 战利品达到此数量时停止
+  normal_fight_tasks: NormalFightTaskConfig[];
+  quick_repair_limit: number | null;
+  stop_max_ship: boolean;
+  stop_max_loot: boolean;
+}
+
+export interface OCRConfig {
+  gpu: boolean;
+  mirror: 'origin' | 'github' | 'tencent' | 'modelscope';
+  ship_name_match_confidence: number;
+  ship_name_corrections: Record<string, string>;
+  ship_name_aliases: Record<string, string>;
+}
+
+export interface LogConfig {
+  level: 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
+  root: string;
+  dir?: string | null;
+  show_decisive_battle_info?: boolean;
+  show_emulator_debug?: boolean;
+  show_ui_debug?: boolean;
+  show_vision_debug?: boolean;
+  show_ops_debug?: boolean;
+  show_combat_state_debug?: boolean;
+  show_combat_recognition_debug?: boolean;
+  channels?: Record<string, string>;
+}
+
+/** GUI 自身的调度参数，只保存到 gui_settings.json。 */
+export interface GuiAutomationSettings {
+  expeditionInterval: number;
+  battleTimes: number;
+  autoLoot: boolean;
+  lootPlanIndex: number;
+  lootStopCount: number;
 }
 
 export interface UserSettings {
   emulator: EmulatorConfig;
   account: AccountConfig;
-  daily_automation: DailyAutomation;
+  ocr: OCRConfig;
+  log: LogConfig;
+  daily_automation: DailyAutomationConfig;
+  operation_delay_min: number;
+  operation_delay_max: number;
+  dock_full_destroy: boolean;
+  repair_manually: boolean;
+  bathroom_count: number;
+  destroy_ship_work_mode: number;
+  destroy_ship_types: string[];
+  remove_equipment_mode: boolean;
+  plan_root?: string;
 }
 
 // ════════════════════════════════════════

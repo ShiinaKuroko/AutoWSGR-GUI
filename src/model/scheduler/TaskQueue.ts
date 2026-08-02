@@ -3,7 +3,12 @@
  * 从 Scheduler.ts 拆出，封装队列数据结构及相关操作。
  */
 import type { TaskRequest } from '../../types/api';
-import type { StopCondition, BathRepairConfig, FleetPreset } from '../../types/model';
+import type {
+  StopCondition,
+  BathRepairConfig,
+  FleetPreset,
+  BattleResultGrade,
+} from '../../types/model';
 import type { BathingShip } from './RepairManager';
 import { TaskPriority, type SchedulerTaskType, type SchedulerTask } from '../../types/scheduler';
 import { resolveFleetPreset, resolveFleetPresetRules, toBackendName } from '../../data/shipData';
@@ -105,17 +110,21 @@ export class TaskQueue {
     forceRetry?: boolean,
     allowPolling?: boolean,
     endpointNodes?: string[],
+    endpointResult?: BattleResultGrade,
     sortKey?: number,
   ): string {
     const id = generateTaskId();
+    const unlimited = !Number.isFinite(times);
+    const normalizedTimes = unlimited ? 1 : Math.max(1, Math.trunc(times));
     const task: SchedulerTask = {
       id,
       name,
       type,
       priority,
       request,
-      remainingTimes: times,
-      totalTimes: times,
+      remainingTimes: normalizedTimes,
+      totalTimes: normalizedTimes,
+      unlimited,
       stopCondition,
       maxRetries: 2,
       retryCount: 0,
@@ -126,6 +135,7 @@ export class TaskQueue {
       fleetPresets,
       currentPresetIndex: currentPresetIndex ?? -1,
       endpointNodes,
+      endpointResult,
       sortKey,
     };
     this.insertByPriority(task);

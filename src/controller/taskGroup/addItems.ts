@@ -4,6 +4,7 @@
 import type { TaskGroupModel } from '../../model/TaskGroupModel';
 import type { PlanModel } from '../../model/PlanModel';
 import type { TaskPreset } from '../../types/model';
+import type { ManagedBattlePlan } from '../../types/electronBridge';
 import { Logger } from '../../utils/Logger';
 
 function buildInlinePlanPath(plan: PlanModel, plansDir: string): string {
@@ -21,6 +22,27 @@ function ensureActiveGroup(taskGroupModel: TaskGroupModel) {
     group = taskGroupModel.getActiveGroup()!;
   }
   return group;
+}
+
+/** 将计划管理中的系统或用户方案添加到任务列表 */
+export function addManagedPlanToGroup(
+  taskGroupModel: TaskGroupModel,
+  plan: ManagedBattlePlan,
+  fleetPresetIndex: number,
+  render: () => void,
+): void {
+  const group = ensureActiveGroup(taskGroupModel);
+  taskGroupModel.addItem(group.name, {
+    managedSource: plan.source,
+    managedFile: plan.file,
+    kind: 'plan',
+    times: Math.max(1, plan.times || 1),
+    label: plan.name,
+    fleetPresetIndex,
+  });
+  void taskGroupModel.save();
+  render();
+  Logger.info(`已将「${plan.name}」加入任务列表「${group.name}」`);
 }
 
 /** 将当前已加载的 Plan 添加到任务组 */

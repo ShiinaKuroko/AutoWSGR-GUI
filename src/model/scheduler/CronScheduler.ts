@@ -103,6 +103,8 @@ export class CronScheduler {
   private lootPendingDate = '';
   /** 注册的定时方案任务 */
   private scheduledTasks: ScheduledTask[] = [];
+  /** 上次检查定时方案标记时的日期 */
+  private scheduledTaskDate = '';
 
   constructor(config: CronConfig) {
     this.config = { ...config };
@@ -283,12 +285,12 @@ export class CronScheduler {
 
   private tick(): void {
     const now = new Date();
+    this.resetDailyFlags(now);
     this.checkExercise(now);
     this.checkCampaign(now);
     this.checkNormalFight(now);
     this.checkLoot(now);
     this.checkScheduledTasks(now);
-    this.resetDailyFlags(now);
   }
 
   /**
@@ -406,11 +408,16 @@ export class CronScheduler {
 
   /** 跨日重置: 日期变化时清除 firedToday 标记 */
   private resetDailyFlags(now: Date): void {
-    // 重置定时方案的 firedToday (0:00 附近)
-    if (now.getHours() === 0 && now.getMinutes() === 0) {
-      for (const task of this.scheduledTasks) {
-        task.firedToday = false;
-      }
+    const today = this.dateKey(now);
+    if (!this.scheduledTaskDate) {
+      this.scheduledTaskDate = today;
+      return;
+    }
+    if (this.scheduledTaskDate === today) return;
+
+    this.scheduledTaskDate = today;
+    for (const task of this.scheduledTasks) {
+      task.firedToday = false;
     }
   }
 

@@ -32,9 +32,10 @@ export function startSystem(host: StartupHost): void {
     ? `${host.appRoot.replace(/\\/g, '/')}/usersettings.yaml`
     : undefined;
 
-  host.scheduler.setExpeditionInterval(
-    host.configModel.current.daily_automation.expedition_interval,
-  );
+  const automation = host.configModel.current.daily_automation;
+  const guiAutomation = host.configModel.currentGuiAutomation;
+  host.scheduler.setAutoExpedition(automation.auto_expedition);
+  host.scheduler.setExpeditionInterval(guiAutomation.expeditionInterval);
 
   host.scheduler.start(configPath).then((ok) => {
     if (ok) {

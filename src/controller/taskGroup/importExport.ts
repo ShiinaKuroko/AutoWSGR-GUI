@@ -77,7 +77,6 @@ export async function importTaskGroupFlow(
       : undefined;
     const forceRetry = typeof item.forceRetry === 'boolean' ? item.forceRetry : undefined;
     const allowPolling = typeof item.allowPolling === 'boolean' ? item.allowPolling : undefined;
-    const autoFleetFallback = typeof item.autoFleetFallback === 'boolean' ? item.autoFleetFallback : undefined;
 
     if (item.kind === 'template') {
       if (typeof item.templateId !== 'string' || !item.templateId.trim()) continue;
@@ -98,14 +97,30 @@ export async function importTaskGroupFlow(
       continue;
     }
 
-    if (typeof item.path !== 'string') continue;
+    const managedSource = item.managedSource === 'system'
+      || item.managedSource === 'user'
+      ? item.managedSource
+      : undefined;
+    const managedFile = managedSource && typeof item.managedFile === 'string'
+      && item.managedFile.trim()
+      ? item.managedFile
+      : undefined;
+    const path = typeof item.path === 'string' && item.path.trim()
+      ? item.path
+      : undefined;
+    if (!path && !managedFile) continue;
     const kind = item.kind === 'preset' ? 'preset' : 'plan';
     const label = typeof item.label === 'string' && item.label.trim()
       ? item.label
-      : item.path.split(/[\\/]/).pop()?.replace(/\.ya?ml$/i, '') ?? String(item.path);
+      : (managedFile ?? path ?? '')
+        .split(/[\\/]/)
+        .pop()
+        ?.replace(/\.ya?ml$/i, '') ?? '';
 
     taskGroupModel.addItem(groupName, {
-      path: item.path,
+      path,
+      managedSource,
+      managedFile,
       kind,
       times,
       label,
@@ -113,7 +128,6 @@ export async function importTaskGroupFlow(
       fleetPresetIndex,
       forceRetry,
       allowPolling,
-      autoFleetFallback,
     });
   }
 

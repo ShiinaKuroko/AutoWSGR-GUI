@@ -106,12 +106,14 @@ AutoWSGR-GUI/
 │   ├── data/                   # 静态数据（舰船数据库）
 │   └── utils/                  # 工具类（Logger）
 ├── resource/                   # 只读资源
-│   ├── builtin_plans/          # 内置战斗方案 (.yaml)
+│   ├── system_battle_plans/    # 系统作战计划 (.yaml)
+│   ├── system_team_plans/      # 系统编队计划 (.yaml)
+│   ├── user_battle_plans/      # 用户作战计划 (.yaml)
+│   ├── user_team_plans/        # 用户编队计划 (.yaml)
 │   ├── builtin_templates.json  # 内置模板
 │   ├── maps/                   # 地图 JSON（节点坐标、连线）
 │   └── images/                 # 图片资源
 ├── templates/                  # 用户自定义模板
-├── plans/                      # 用户战斗方案目录
 ├── scripts/                    # 构建脚本
 ├── build/                      # electron-builder 配置
 ├── usersettings.yaml           # 用户配置文件

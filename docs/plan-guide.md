@@ -1,6 +1,6 @@
 # 战斗方案 YAML 编写指南
 
-本文档介绍如何编写 AutoWSGR-GUI 的战斗方案配置文件。方案文件为 YAML 格式，放置在 `plans/` 目录下，可在 GUI 中导入使用。
+本文档介绍如何编写 AutoWSGR-GUI 的战斗方案配置文件。方案文件为 YAML 格式，GUI 保存的用户方案位于 `resource/user_battle_plans/`，也可以从其他位置导入。
 
 ---
 

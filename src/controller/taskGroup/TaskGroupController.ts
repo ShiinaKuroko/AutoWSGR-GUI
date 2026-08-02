@@ -2,19 +2,27 @@
  * TaskGroupController —— 任务组控制器（瘦身版）。
  * 核心逻辑委托给 importExport / addItems / queueLoader / contextMenu / metaLoader 模块。
  */
-import { TaskGroupModel, type TaskGroupItem } from '../../model/TaskGroupModel';
-import { TaskGroupView, type TaskGroupItemMeta } from '../../view/taskGroup/TaskGroupView';
+import { TaskGroupModel } from '../../model/TaskGroupModel';
+import { TaskGroupView } from '../../view/taskGroup/TaskGroupView';
 import { TemplateModel } from '../../model/TemplateModel';
 import type { PlanModel } from '../../model/PlanModel';
 import type { Scheduler } from '../../model/scheduler';
 import type { TaskPreset } from '../../types/model';
+import type {
+  ManagedBattlePlanSelection,
+  PlanPresetSource,
+} from '../../types/electronBridge';
 import type { MapData } from '../../model/MapDataLoader';
-import { showPrompt, showConfirm, showAlert } from '../shared/DialogHelper';
-import { exportTaskGroupFlow, importTaskGroupFlow } from './importExport';
-import { addCurrentPlanToGroup, addFileToGroup, addPresetToGroup } from './addItems';
+import { showAlert, showSaveSuccess } from '../shared/DialogHelper';
+import {
+  addCurrentPlanToGroup,
+  addManagedPlanToGroup,
+  addPresetToGroup,
+} from './addItems';
 import { loadGroupToQueue, loadSingleItemToQueue } from './queueLoader';
 import { showContextMenuForItem, hideContextMenu, handleContextMenuEdit, type ContextMenuTarget, type ContextMenuHost } from './contextMenu';
 import { loadItemMetas } from './metaLoader';
+import { TaskListLoaderController } from './TaskListLoaderController';
 
 export interface TaskGroupHost {
   readonly scheduler: Scheduler;
@@ -28,10 +36,13 @@ export interface TaskGroupHost {
   closePresetDetail(): void;
   executePreset(): void;
   getCurrentPresetInfo(): { preset: TaskPreset; filePath: string } | null;
+  pickManagedBattlePlan(): Promise<ManagedBattlePlanSelection | null>;
+  openManagedPlan(file: string, source: PlanPresetSource): Promise<boolean>;
 }
 
 export class TaskGroupController {
   private contextMenuTarget: ContextMenuTarget | null = null;
+  private readonly taskListLoader: TaskListLoaderController;
 
   constructor(
     private readonly taskGroupModel: TaskGroupModel,
@@ -39,50 +50,54 @@ export class TaskGroupController {
     private readonly templateModel: TemplateModel,
     private readonly mainView: { onDropFromTaskGroup?: (index: number) => void; onEditQueueItem?: (taskId: string, x: number, y: number) => void },
     readonly host: TaskGroupHost,
-  ) {}
+  ) {
+    this.taskListLoader = new TaskListLoaderController(
+      this.taskGroupModel,
+      () => this.render(),
+    );
+  }
 
   bindActions(): void {
-    this.taskGroupView.onSelectGroup = (name) => {
-      this.taskGroupModel.setActiveGroup(name);
-      this.render();
-    };
-
     this.taskGroupView.onNewGroup = async () => {
-      const name = await showPrompt('新建任务列表', '请输入名称：');
-      if (!name?.trim()) return;
-      const trimmed = name.trim();
-      if (this.taskGroupModel.getGroup(trimmed)) {
-        await showAlert('提示', `任务列表「${trimmed}」已存在，请换一个名称或直接选择它。`);
-        return;
+      const baseName = '新任务列表';
+      let name = baseName;
+      let suffix = 2;
+      while (this.taskGroupModel.getGroup(name)) {
+        name = `${baseName} ${suffix}`;
+        suffix += 1;
       }
-      this.taskGroupModel.upsertGroup(trimmed);
-      this.taskGroupModel.setActiveGroup(trimmed);
-      this.taskGroupModel.save();
+      this.taskGroupModel.upsertGroup(name);
+      this.taskGroupModel.setActiveGroup(name);
+      await this.taskGroupModel.save();
       this.render();
     };
 
-    this.taskGroupView.onDeleteGroup = async () => {
+    this.taskGroupView.onSaveGroup = async () => {
       const active = this.taskGroupModel.getActiveGroup();
-      if (!active) return;
-      const yes = await showConfirm('删除确认', `确认删除任务列表「${active.name}」？`);
-      if (!yes) return;
-      this.taskGroupModel.deleteGroup(active.name);
-      this.taskGroupModel.save();
-      this.render();
-    };
-
-    this.taskGroupView.onRenameGroup = async () => {
-      const active = this.taskGroupModel.getActiveGroup();
-      if (!active) return;
-      const newName = await showPrompt('重命名', '新名称：', active.name);
-      if (!newName?.trim() || newName.trim() === active.name) return;
-      const trimmed = newName.trim();
-      if (!this.taskGroupModel.renameGroup(active.name, trimmed)) {
-        await showAlert('提示', `名称「${trimmed}」已被占用。`);
+      const name = this.taskGroupView.getGroupName();
+      if (!name) {
+        await showAlert('提示', '请输入任务列表名称。');
         return;
       }
-      this.taskGroupModel.save();
+      if (!active) {
+        this.taskGroupModel.upsertGroup(name);
+        this.taskGroupModel.setActiveGroup(name);
+      } else if (active.name !== name) {
+        if (!this.taskGroupModel.renameGroup(active.name, name)) {
+          await showAlert('提示', `名称「${name}」已被占用。`);
+          return;
+        }
+      }
+      const saved = await this.taskGroupModel.save();
+      if (!saved) {
+        await showAlert('保存失败', '任务列表未能写入本地文件。');
+        return;
+      }
       this.render();
+      showSaveSuccess(`任务列表「${name}」保存成功`);
+    };
+    this.taskGroupView.onOpenGroupLoader = () => {
+      this.taskListLoader.open();
     };
 
     this.taskGroupView.onRemoveItem = (index) => {
@@ -109,11 +124,25 @@ export class TaskGroupController {
     };
 
     this.taskGroupView.onLoadAll = () => loadGroupToQueue(this.taskGroupModel, this.templateModel, this.host);
-    this.taskGroupView.onAddFile = () => addFileToGroup(this.taskGroupModel, this.host.plansDir, () => this.render());
-    this.taskGroupView.onExportGroup = () => exportTaskGroupFlow(this.taskGroupModel);
-    this.taskGroupView.onImportGroup = () => importTaskGroupFlow(this.taskGroupModel, () => this.render());
-
+    this.taskGroupView.onAddManagedPlan = async () => {
+      const selection = await this.host.pickManagedBattlePlan();
+      if (!selection) return;
+      addManagedPlanToGroup(
+        this.taskGroupModel,
+        selection.plan,
+        selection.fleetPresetIndex,
+        () => this.render(),
+      );
+    };
     this.taskGroupView.onDropToQueue = () => {};
+    this.taskGroupView.onLoadItem = (index) => {
+      void loadSingleItemToQueue(
+        index,
+        this.taskGroupModel,
+        this.templateModel,
+        this.host,
+      );
+    };
     this.mainView.onDropFromTaskGroup = (index) => loadSingleItemToQueue(index, this.taskGroupModel, this.templateModel, this.host);
 
     this.taskGroupView.onEditItem = (index, x, y) => {

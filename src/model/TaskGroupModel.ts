@@ -3,6 +3,7 @@
  * 管理多个任务组的增删改查和持久化（通过 IPC 读写 task_groups.json）。
  */
 import { Logger } from '../utils/Logger';
+import type { PlanPresetSource } from '../types/electronBridge';
 
 // ════════════════════════════════════════
 // 数据结构
@@ -12,6 +13,10 @@ import { Logger } from '../utils/Logger';
 export interface TaskGroupItem {
   /** 文件路径 (战斗方案/预设 YAML) — plan/preset 类型必填 */
   path?: string;
+  /** 计划管理目录来源；与 managedFile 一起使用，避免持久化绝对路径 */
+  managedSource?: PlanPresetSource;
+  /** 计划管理目录中的实际文件名 */
+  managedFile?: string;
   /** 模板 ID — template 类型必填 */
   templateId?: string;
   /** 条目类型: plan=战斗方案YAML, preset=任务预设YAML, template=模板库引用 */
@@ -32,8 +37,6 @@ export interface TaskGroupItem {
   chapter?: number;
   /** 编队预设索引（plan 类型条目指定默认使用的编队预设） */
   fleetPresetIndex?: number;
-  /** 是否因“第一分队不支持自动编队”而自动切换到第二分队 */
-  autoFleetFallback?: boolean;
 }
 
 /** 一个任务组 */
@@ -173,14 +176,19 @@ export class TaskGroupModel {
   }
 
   /** 保存到文件 */
-  async save(): Promise<void> {
+  async save(): Promise<boolean> {
     try {
       const bridge = (window as any).electronBridge;
-      if (!bridge?.saveFile) return;
+      if (!bridge?.saveFile) {
+        Logger.error('保存任务组失败: 文件接口不可用');
+        return false;
+      }
       await bridge.saveFile(STORAGE_FILE, JSON.stringify(this.data, null, 2));
       Logger.debug(`任务组已保存: ${this.data.groups.length} 个组`);
+      return true;
     } catch (e) {
       Logger.error(`保存任务组失败: ${e instanceof Error ? e.message : String(e)}`);
+      return false;
     }
   }
 

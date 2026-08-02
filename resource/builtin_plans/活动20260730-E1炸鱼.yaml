@@ -1,8 +1,0 @@
-# 20260730 激斗漩涡 E-1 α 入口示例
-event: "20260730"
-chapter: E
-map: 1a
-selected_nodes: [B]
-node_defaults:
-  proceed: false
-  formation: 5

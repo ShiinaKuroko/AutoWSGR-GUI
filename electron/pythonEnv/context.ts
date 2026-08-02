@@ -8,6 +8,8 @@ export interface PythonEnvContext {
   sendProgress: (msg: string) => void;
   getConfiguredPythonPath: () => string | null;
   getUpdateMode: () => 'auto' | 'manual';
+  getBackendStartupMode: () => 'managed' | 'external';
+  getBackendRepoPath: () => string;
   getTempDir: () => string;
 }
 

@@ -1,5 +1,10 @@
-import type { MainViewObject, TaskQueueItemVO } from '../../types/view';
+import type {
+  CurrentFleetShipVO,
+  MainViewObject,
+  TaskQueueItemVO,
+} from '../../types/view';
 import type { Scheduler } from '../../model/scheduler';
+import type { TaskRequest } from '../../types/api';
 import { PRIORITY_LABELS, STATUS_TEXT } from './constants';
 
 export interface RenderingState {
@@ -17,6 +22,57 @@ export function buildAcquisitionText(trackedLoot: string, trackedShip: string): 
   if (trackedLoot) parts.push(`装备 ${trackedLoot}`);
   if (trackedShip) parts.push(`舰船 ${trackedShip}`);
   return parts.length > 0 ? parts.join(' | ') : undefined;
+}
+
+function normalizedShipName(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function fleetRuleShip(rule: unknown): CurrentFleetShipVO | null {
+  if (typeof rule === 'string') {
+    const name = rule.trim();
+    return name ? { name } : null;
+  }
+  if (!rule || typeof rule !== 'object') return null;
+  const record = rule as Record<string, unknown>;
+  const searchName = normalizedShipName(record['search_name']);
+  const name = normalizedShipName(record['name']) || searchName;
+  if (!name) return null;
+  return searchName && searchName !== name
+    ? { name, searchName }
+    : { name };
+}
+
+function firstCandidateShip(rule: unknown): CurrentFleetShipVO | null {
+  if (!rule || typeof rule !== 'object') return null;
+  const candidates = (rule as Record<string, unknown>)['candidates'];
+  if (!Array.isArray(candidates)) return null;
+  return fleetRuleShip(candidates[0]);
+}
+
+/** 仅返回当前请求中能够明确识别的编队，不根据舰队编号猜测舰船。 */
+export function resolveCurrentFleet(
+  request: TaskRequest,
+): CurrentFleetShipVO[] {
+  if (request.type !== 'normal_fight' && request.type !== 'event_fight') {
+    return [];
+  }
+  const rules = Array.isArray(request.plan?.fleet_rules)
+    ? request.plan.fleet_rules
+    : [];
+  const fleet = Array.isArray(request.plan?.fleet)
+    ? request.plan.fleet
+    : [];
+  const slotCount = Math.min(6, Math.max(rules.length, fleet.length));
+  const ships: CurrentFleetShipVO[] = [];
+  for (let index = 0; index < slotCount; index += 1) {
+    const fleetName = normalizedShipName(fleet[index]);
+    const ship = fleetRuleShip(rules[index])
+      || firstCandidateShip(rules[index])
+      || (fleetName ? { name: fleetName } : null);
+    if (ship) ships.push(ship);
+  }
+  return ships;
 }
 
 /** 从调度器状态 + 追踪数据拼装 MainViewObject */
@@ -43,6 +99,7 @@ export function buildMainViewObject(state: RenderingState): MainViewObject {
       priorityLabel: PRIORITY_LABELS[running.priority] ?? '用户',
       remaining: running.remainingTimes,
       totalTimes: running.totalTimes,
+      unlimited: running.unlimited,
       progress: currentProgress || undefined,
       progressPercent,
       acquisitionText: buildAcquisitionText(trackedLoot, trackedShip),
@@ -56,6 +113,7 @@ export function buildMainViewObject(state: RenderingState): MainViewObject {
       priorityLabel: PRIORITY_LABELS[t.priority] ?? '用户',
       remaining: t.remainingTimes,
       totalTimes: t.totalTimes,
+      unlimited: t.unlimited,
     });
   }
 
@@ -70,6 +128,9 @@ export function buildMainViewObject(state: RenderingState): MainViewObject {
           startedAt: '',
         }
       : null,
+    currentFleet: running
+      ? resolveCurrentFleet(running.request)
+      : [],
     expeditionTimer: expeditionTimerText,
     taskQueue: taskQueueVo,
     wsConnected,

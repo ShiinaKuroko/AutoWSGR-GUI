@@ -58,19 +58,23 @@ export function toBackendName(displayName: string): string {
 // 模糊匹配 (ShipFilter)
 // ════════════════════════════════════════
 
-import type { FleetRuleReq } from '../types/api';
-import type { ShipFilter, ShipSlot } from '../types/model';
+import type { FleetRuleReq, FleetShipRuleReq } from '../types/api';
+import type { ShipFilter, ShipRule, ShipSlot } from '../types/model';
 
 /** 将 ShipFilter 转为显示标签, 如 "德国 驱逐" */
 export function shipFilterLabel(filter: ShipFilter): string {
   const parts: string[] = [];
   if (filter.name) {
     parts.push(filter.name);
+  } else if (filter.search_name) {
+    parts.push(filter.search_name);
   }
   if (filter.nation) parts.push(filter.nation);
-  if (filter.ship_type) parts.push(shipTypeLabel(filter.ship_type));
-  if (filter.priority && filter.priority.length > 0) {
-    parts.push(`优先:${filter.priority.join(' > ')}`);
+  if (filter.ship_type) {
+    parts.push(filter.ship_type.map(shipTypeLabel).join('/'));
+  }
+  if (filter.candidates && filter.candidates.length > 0) {
+    parts.push(`备选:${filter.candidates.map(rule => rule.name).join(' > ')}`);
   }
   if (filter.min_level != null || filter.max_level != null) {
     if (filter.min_level != null && filter.max_level != null) {
@@ -91,6 +95,7 @@ export function isShipFilter(slot: ShipSlot): slot is ShipFilter {
 
 /** 将 ShipSlot 转为显示文本 */
 export function shipSlotLabel(slot: ShipSlot): string {
+  if (slot === null) return '空';
   return isShipFilter(slot) ? shipFilterLabel(slot) : slot;
 }
 
@@ -106,9 +111,12 @@ function dedupeNames(names: string[]): string[] {
 }
 
 function matchShipType(filter: ShipFilter, shipType: string): boolean {
-  if (!filter.ship_type) return true;
-  if (filter.ship_type === 'ss_or_ssg') return shipType === 'ss' || shipType === 'ssg';
-  return shipType === filter.ship_type;
+  if (!filter.ship_type || filter.ship_type.length === 0) return true;
+  return filter.ship_type.some(rule => (
+    rule === 'ss_or_ssg'
+      ? shipType === 'ss' || shipType === 'ssg'
+      : shipType === rule
+  ));
 }
 
 function matchesFilter(filter: ShipFilter, ship: ShipInfo): boolean {
@@ -120,15 +128,6 @@ function matchesFilter(filter: ShipFilter, ship: ShipInfo): boolean {
     }
   }
   return true;
-}
-
-function sortByPriority(candidates: string[], filter: ShipFilter): string[] {
-  if (!filter.priority || filter.priority.length === 0) return candidates;
-  const priorityNames = dedupeNames(filter.priority.map(toBackendName));
-  const candidateSet = new Set(candidates);
-  const front = priorityNames.filter(name => candidateSet.has(name));
-  const frontSet = new Set(front);
-  return [...front, ...candidates.filter(name => !frontSet.has(name))];
 }
 
 function buildShipCandidates(filter: ShipFilter, exclude: string[]): string[] {
@@ -153,12 +152,12 @@ function buildShipCandidates(filter: ShipFilter, exclude: string[]): string[] {
     }
   }
 
-  return sortByPriority(candidates, filter);
+  return candidates;
 }
 
 /**
  * 解析单个模糊筛选条件，返回匹配的舰船名称。
- * 默认优先选择改造版本 (·改)，可通过 priority 字段调整优先顺序。
+ * 显式 candidates 只在有限候选中选择；未设置时按筛选条件生成候选。
  */
 export function resolveShipFilter(filter: ShipFilter, exclude: string[]): string | null {
   const candidates = buildShipCandidates(filter, exclude);
@@ -172,6 +171,7 @@ export function resolveShipFilter(filter: ShipFilter, exclude: string[]): string
 export function resolveFleetPreset(ships: ShipSlot[]): string[] {
   const resolved: string[] = [];
   for (const slot of ships) {
+    if (slot === null) continue;
     if (typeof slot === 'string') {
       resolved.push(toBackendName(slot));
     } else {
@@ -185,13 +185,14 @@ export function resolveFleetPreset(ships: ShipSlot[]): string[] {
 /**
  * 解析编队预设槽位为后端规则。
  * - 字符串槽位: 直接使用具体舰名
- * - 模糊槽位: 生成候选列表（等级范围暂不下发）
+ * - 模糊槽位: 生成候选列表并附带舰种、等级约束
  */
 export function resolveFleetPresetRules(ships: ShipSlot[]): Array<string | FleetRuleReq> {
   const rules: Array<string | FleetRuleReq> = [];
   const reserved: string[] = [];
 
   for (const slot of ships) {
+    if (slot === null) continue;
     if (typeof slot === 'string') {
       const name = toBackendName(slot);
       rules.push(name);
@@ -202,20 +203,26 @@ export function resolveFleetPresetRules(ships: ShipSlot[]): Array<string | Fleet
     const candidates = buildShipCandidates(slot, reserved);
     if (candidates.length === 0) continue;
 
-    const rule: FleetRuleReq = { candidates };
-    if (slot.name) {
+    const rule: FleetRuleReq = {
+      name: slot.name ?? candidates[0],
+    };
+    const rawSearchName = slot.search_name ?? slot.name;
+    if (rawSearchName) {
       // 保留原始舰名作为搜索关键词，避免同名异型（如大淀）被归一化后无法区分。
-      const searchName = String(slot.name).trim();
+      const searchName = String(rawSearchName).trim();
       if (searchName) rule.search_name = searchName;
     }
     if (slot.ship_type) {
-      rule.ship_type = String(slot.ship_type).trim();
+      rule.ship_type = [...slot.ship_type];
     }
     if (slot.min_level != null && Number.isFinite(slot.min_level)) {
       rule.min_level = Math.max(1, Math.floor(slot.min_level));
     }
     if (slot.max_level != null && Number.isFinite(slot.max_level)) {
       rule.max_level = Math.max(1, Math.floor(slot.max_level));
+    }
+    if (slot.candidates && slot.candidates.length > 0) {
+      rule.candidates = slot.candidates.map(toFleetShipRule);
     }
     rules.push(rule);
 
@@ -224,4 +231,19 @@ export function resolveFleetPresetRules(ships: ShipSlot[]): Array<string | Fleet
   }
 
   return rules;
+}
+
+function toFleetShipRule(rule: ShipRule): FleetShipRuleReq {
+  const result: FleetShipRuleReq = {
+    name: rule.name,
+  };
+  if (rule.search_name) result.search_name = rule.search_name;
+  if (rule.ship_type) result.ship_type = [...rule.ship_type];
+  if (rule.min_level != null && Number.isFinite(rule.min_level)) {
+    result.min_level = Math.max(1, Math.floor(rule.min_level));
+  }
+  if (rule.max_level != null && Number.isFinite(rule.max_level)) {
+    result.max_level = Math.max(1, Math.floor(rule.max_level));
+  }
+  return result;
 }

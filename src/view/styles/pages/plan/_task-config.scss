@@ -1,35 +1,124 @@
 /* ═══ 任务配置区 ═══ */
 .plan-task-config {
-  padding: 6px 10px;
-  margin-bottom: 6px;
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  margin-bottom: 0;
   font-size: 11px;
 }
 
-.plan-task-config-title {
-  font-size: 12px;
-  font-weight: 600;
-  margin: 0 0 6px;
+.plan-preset-name {
+  display: flex;
+  flex: 1 1 100px;
+  min-width: 0;
+  align-items: center;
+  justify-content: stretch;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.plan-preset-name .input-inline {
+  flex: 1 1 auto;
+  width: 100% !important;
+  min-width: 0;
+  height: 26px;
+  font-size: 11px;
 }
 
 .plan-task-config-grid {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 8px;
+  gap: 5px;
   align-items: center;
 }
 
-.plan-task-label {
+.plan-task-config-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 66px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.plan-task-config-row > span:first-child {
+  color: var(--text-secondary);
   font-size: 11px;
   white-space: nowrap;
-  text-align: right;
 }
 
 .plan-task-config .input-small {
-  width: 100%;
-  max-width: 90px;
+  width: 72px !important;
+  min-width: 0;
+  max-width: 72px;
   font-size: 11px;
   padding: 2px 4px;
   box-sizing: border-box;
+}
+
+.plan-config-pair .plan-task-config-row > .input-small {
+  width: 100% !important;
+  max-width: none;
+  height: 26px;
+}
+
+.plan-config-pair .plan-task-input-unit {
+  width: 100%;
+}
+
+.plan-config-pair .plan-task-input-unit .input-small {
+  width: auto !important;
+  max-width: none;
+  height: 26px;
+  flex: 1 1 auto;
+}
+
+.plan-task-input-unit,
+.plan-task-stop-value {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.plan-task-stop-value {
+  flex-wrap: wrap;
+}
+
+.plan-task-stop-value[hidden] {
+  display: none;
+}
+
+.plan-task-stop-row {
+  grid-template-columns: 66px 30px minmax(0, 1fr);
+}
+
+.plan-task-stop-switch {
+  flex: 0 0 auto;
+  justify-self: start;
+}
+
+.plan-task-stop-value .input-small {
+  width: 44px !important;
+  max-width: 44px;
+  height: 22px;
+}
+
+.plan-task-stop-switch .config-switch-track {
+  flex-basis: 30px;
+  width: 30px;
+  height: 16px;
+  border-radius: 8px;
+}
+
+.plan-task-stop-switch .config-switch-track::after {
+  width: 10px;
+  height: 10px;
+}
+
+.plan-task-stop-switch
+  input[type='checkbox']:checked
+  + .config-switch-track::after {
+  transform: translateX(14px);
 }
 
 .plan-task-hint {
@@ -39,106 +128,225 @@
   display: block;
 }
 
-/* 泡澡修理设置 */
-.bath-repair-section {
-  margin-top: 8px;
-  border-top: 1px solid var(--border);
-  padding-top: 6px;
-}
-
-.bath-repair-toggle {
-  font-size: 11px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  cursor: pointer;
-}
-
-.bath-repair-toggle input[type="checkbox"] {
-  margin: 0;
-}
-
-.bath-repair-config {
-  margin-top: 6px;
-}
-
-.bath-default-threshold {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.bath-rotation-label {
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.bath-default-threshold .input-inline {
-  font-size: 11px;
-  padding: 2px 4px;
-}
-
-.bath-default-threshold .input-small {
-  width: 60px;
-}
-
-/* 泡澡修理: 按舰船名阈值 */
-.bath-ship-thresholds {
-  margin-top: 6px;
-  border-top: 1px solid var(--border);
-  padding-top: 4px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 2px 6px;
-  align-items: center;
-}
-
-.bath-ship-th-header-row,
-.bath-ship-th-row {
-  display: contents;
-}
-
-.bath-ship-th-label-h {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-
-.bath-ship-th-h {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-align: center;
-}
-
-.bath-ship-th-label {
-  font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.bath-ship-th-type {
-  font-size: 10px;
-  padding: 1px 2px;
-  width: 64px;
-  box-sizing: border-box;
-}
-
-.bath-ship-th-value {
-  width: 40px;
-  font-size: 11px;
-  padding: 2px 3px;
-  box-sizing: border-box;
-}
-
 .fleet-select-label {
   font-size: 12px;
   display: flex;
   align-items: center;
   gap: 4px;
   white-space: nowrap;
+}
+
+/* 出征配置加载浮窗 */
+.fleet-team-loader-dialog.battle-plan-loader-dialog {
+  width: min(760px, 94vw);
+}
+
+.fleet-team-loader-content.battle-plan-loader-content {
+  grid-template-columns: minmax(210px, 0.85fr) minmax(300px, 1.15fr);
+}
+
+.fleet-team-loader-preview.battle-plan-loader-preview {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.battle-plan-preview-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--border);
+}
+
+.battle-plan-preview-heading h3 {
+  overflow: hidden;
+  margin: 0;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.battle-plan-loader-item {
+  min-height: 62px;
+}
+
+.fleet-team-loader-item .battle-plan-loader-item-file,
+.fleet-team-loader-item .battle-plan-loader-item-meta {
+  width: 100%;
+  overflow: hidden;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fleet-team-loader-item .battle-plan-loader-item-file {
+  color: var(--text-secondary);
+}
+
+.fleet-team-loader-item .battle-plan-loader-item-meta {
+  color: var(--text-muted);
+}
+
+.battle-plan-preview-body {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  padding-top: 8px;
+}
+
+.battle-plan-preview-field {
+  min-width: 0;
+  padding: 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.battle-plan-preview-field.wide {
+  grid-column: 1 / -1;
+}
+
+.battle-plan-preview-field span,
+.battle-plan-preview-field strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.battle-plan-preview-field span {
+  margin-bottom: 3px;
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.battle-plan-preview-field strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.battle-plan-preview-section {
+  min-width: 0;
+  padding: 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.battle-plan-preview-section.wide {
+  grid-column: 1 / -1;
+}
+
+.battle-plan-preview-section-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.battle-plan-preview-section-heading > span {
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.battle-plan-preview-section-heading > strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.battle-plan-preview-fleet-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 5px;
+}
+
+.battle-plan-preview-fleet-card {
+  min-height: 44px;
+  cursor: default;
+}
+
+.battle-plan-preview-fleet-card:not(.selectable):hover {
+  background: var(--bg-card-solid);
+  border-color: var(--border);
+}
+
+.battle-plan-preview-fleet-card.selectable {
+  position: relative;
+  padding-right: 66px;
+  cursor: pointer;
+}
+
+.battle-plan-preview-fleet-card.selectable.active:hover {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+}
+
+.battle-plan-fleet-selection-state {
+  position: absolute;
+  right: 8px;
+  bottom: 7px;
+  color: var(--text-muted) !important;
+  font-size: 9px !important;
+}
+
+.battle-plan-preview-fleet-card.active .battle-plan-fleet-selection-state {
+  color: var(--accent) !important;
+  font-weight: 600;
+}
+
+.battle-plan-preview-empty {
+  padding: 8px;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 5px;
+}
+
+.battle-plan-preview-stop-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.battle-plan-preview-stop-values > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 7px;
+  background: var(--bg-card-solid);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.battle-plan-preview-stop-values span {
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.battle-plan-preview-stop-values strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+@media (max-width: 620px) {
+  .fleet-team-loader-content.battle-plan-loader-content {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* 编队预设编辑弹窗 */

@@ -195,7 +195,7 @@
   white-space: nowrap;
 }
 .log-entry.level-debug  .log-channel { color: var(--text-muted); background: rgba(106,106,130,0.1); }
-.log-entry.level-info   .log-channel { color: var(--accent); background: rgba(15,125,255,0.1); }
+.log-entry.level-info   .log-channel { color: var(--accent); background: var(--accent-subtle); }
 .log-entry.level-warn   .log-channel,
 .log-entry.level-warning .log-channel { color: var(--warning); background: rgba(251,191,36,0.1); }
 .log-entry.level-error  .log-channel { color: var(--danger); background: rgba(248,113,113,0.12); }
@@ -218,4 +218,15 @@
   display: flex;
   gap: 8px;
   padding-top: 4px;
+}
+
+@media (max-width: 900px) {
+  .log-filter-label {
+    display: none;
+  }
+
+  .log-filter-btn {
+    padding-right: 6px;
+    padding-left: 6px;
+  }
 }

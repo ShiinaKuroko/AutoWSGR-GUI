@@ -114,7 +114,8 @@ flowchart LR
 |------|--------------|--------------|
 | `appRoot()` | 项目根目录 | `%LOCALAPPDATA%/autowsgr-gui/` 或安装目录 |
 | `resourceRoot()` | 同 appRoot | `resources/` (extraResources) |
-| `plans/` | 项目根 `plans/` | extraResources `plans/` |
+| `resource/system_battle_plans/` | 项目根 `resource/system_battle_plans/` | extraResources `resource/system_battle_plans/` |
+| `resource/user_battle_plans/` | 项目根 `resource/user_battle_plans/` | appRoot `resource/user_battle_plans/` |
 | `python/` | 项目根 `python/` | extraResources `python/` |
 | `adb/` | 项目根 `adb/` | extraResources `adb/` |
 | `usersettings.yaml` | 项目根 | appRoot |

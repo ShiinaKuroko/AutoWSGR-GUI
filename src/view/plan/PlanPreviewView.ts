@@ -3,37 +3,60 @@
  * 持有 MapView / NodeEditorView / FleetPresetView 三个子视图，
  * 对外 API 保持不变，Controller 无需感知内部拆分。
  */
-import type { PlanPreviewViewObject, MapNodeType, FleetPresetVO, PresetDetailVO, PresetFormValues, NewPlanFormValues } from '../../types/view';
+import type { PlanPreviewViewObject, MapNodeType, FleetPresetVO, PresetDetailVO, PresetFormValues } from '../../types/view';
 import type { BathRepairConfig } from '../../types/model';
 import { MapView } from './MapView';
-import { NodeEditorView } from './NodeEditorView';
+import {
+  NodeEditorView,
+  type NodeEditorArgs,
+  type NodeEditorValues,
+} from './NodeEditorView';
 import { FleetPresetView } from './FleetPresetView';
 
+const MAP_COUNT_BY_CHAPTER: Record<string, number> = {
+  '1': 5,
+  '2': 6,
+  '3': 4,
+  '4': 4,
+  '5': 5,
+  '6': 4,
+  '7': 5,
+  '8': 5,
+  '9': 5,
+  '10': 1,
+  Ex: 12,
+};
+
 export class PlanPreviewView {
-  private emptyEl: HTMLElement;
   private detailEl: HTMLElement;
-  private mapNameEl: HTMLElement;
-  private fileNameEl: HTMLElement;
+  private chapterSelect: HTMLSelectElement;
+  private mapSelect: HTMLSelectElement;
+  private presetNameInput: HTMLInputElement;
   private repairSelect: HTMLSelectElement;
   private fightCondSelect: HTMLSelectElement;
   private fleetSelect: HTMLSelectElement;
-  private commentEl: HTMLElement;
   private timesInput: HTMLInputElement;
   private gapInput: HTMLInputElement;
+  private lootEnabledInput: HTMLInputElement;
   private lootGeInput: HTMLInputElement;
+  private lootFieldsEl: HTMLElement;
+  private shipEnabledInput: HTMLInputElement;
   private shipGeInput: HTMLInputElement;
-  private taskConfigEl: HTMLElement;
+  private shipFieldsEl: HTMLElement;
 
   private mapView: MapView;
   private nodeEditor: NodeEditorView;
   private fleetPresetView: FleetPresetView;
 
   onNodeClick?: (nodeId: string) => void;
+  onMapChange?: (chapter: string, map: number) => void;
+  onPresetNameChange?: (name: string) => void;
   onPlanFieldChange?: (field: 'repair_mode' | 'fight_condition' | 'fleet_id' | 'times' | 'gap' | 'loot_count_ge' | 'ship_count_ge', value: number | undefined) => void;
-  onCommentChange?: (comment: string) => void;
 
-  set onFleetPresetChange(fn: ((action: 'add' | 'edit' | 'delete', index: number, preset?: FleetPresetVO) => void) | undefined) {
-    this.fleetPresetView.onFleetPresetChange = fn;
+  set onUserTeamChange(
+    fn: ((plans: FleetPresetVO[]) => void) | undefined,
+  ) {
+    this.fleetPresetView.onUserTeamChange = fn;
   }
 
   get selectedFleetPresetIndices(): Set<number> {
@@ -44,25 +67,45 @@ export class PlanPreviewView {
   }
 
   constructor() {
-    this.emptyEl = document.getElementById('plan-empty')!;
     this.detailEl = document.getElementById('plan-detail')!;
-    this.mapNameEl = document.getElementById('plan-map-name')!;
-    this.fileNameEl = document.getElementById('plan-file-name')!;
+    this.chapterSelect = document.getElementById('plan-edit-chapter') as HTMLSelectElement;
+    this.mapSelect = document.getElementById('plan-edit-map') as HTMLSelectElement;
+    this.presetNameInput = document.getElementById('plan-preset-name') as HTMLInputElement;
     this.repairSelect = document.getElementById('plan-edit-repair') as HTMLSelectElement;
     this.fightCondSelect = document.getElementById('plan-edit-fight-cond') as HTMLSelectElement;
     this.fleetSelect = document.getElementById('plan-edit-fleet') as HTMLSelectElement;
-    this.commentEl = document.getElementById('plan-comment')!;
     this.timesInput = document.getElementById('plan-edit-times') as HTMLInputElement;
     this.gapInput = document.getElementById('plan-edit-gap') as HTMLInputElement;
+    this.lootEnabledInput = document.getElementById('plan-edit-loot-enabled') as HTMLInputElement;
     this.lootGeInput = document.getElementById('plan-edit-loot-ge') as HTMLInputElement;
+    this.lootFieldsEl = document.getElementById('plan-edit-loot-fields')!;
+    this.shipEnabledInput = document.getElementById('plan-edit-ship-enabled') as HTMLInputElement;
     this.shipGeInput = document.getElementById('plan-edit-ship-ge') as HTMLInputElement;
-    this.taskConfigEl = document.getElementById('plan-task-config')!;
+    this.shipFieldsEl = document.getElementById('plan-edit-ship-fields')!;
 
     this.mapView = new MapView();
     this.nodeEditor = new NodeEditorView();
     this.fleetPresetView = new FleetPresetView();
 
     this.mapView.onNodeClick = (nodeId) => this.onNodeClick?.(nodeId);
+
+    this.chapterSelect.addEventListener('change', () => {
+      this.mapSelect.disabled = false;
+      this.updateMapOptions(this.chapterSelect.value);
+      this.onMapChange?.(
+        this.chapterSelect.value,
+        Number(this.mapSelect.value),
+      );
+    });
+    this.mapSelect.addEventListener('change', () => {
+      this.onMapChange?.(
+        this.chapterSelect.value,
+        Number(this.mapSelect.value),
+      );
+    });
+    this.presetNameInput.addEventListener('input', () => {
+      this.onPresetNameChange?.(this.presetNameInput.value);
+    });
 
     // 方案级别字段变更事件
     this.repairSelect.addEventListener('change', () => {
@@ -84,75 +127,188 @@ export class PlanPreviewView {
       const v = parseInt(this.gapInput.value, 10);
       this.onPlanFieldChange?.('gap', v >= 0 ? v : 0);
     });
-    this.lootGeInput.addEventListener('change', () => {
-      const v = parseInt(this.lootGeInput.value, 10);
-      this.onPlanFieldChange?.('loot_count_ge', v >= 0 ? v : undefined);
-    });
-    this.shipGeInput.addEventListener('change', () => {
-      const v = parseInt(this.shipGeInput.value, 10);
-      this.onPlanFieldChange?.('ship_count_ge', v >= 0 ? v : undefined);
-    });
-
-    // 点击注释区域进入编辑模式
-    this.commentEl.addEventListener('click', () => {
-      this.startCommentEdit();
-    });
+    this.bindStopConditionControl(
+      this.lootEnabledInput,
+      this.lootGeInput,
+      this.lootFieldsEl,
+      'loot_count_ge',
+      50,
+    );
+    this.bindStopConditionControl(
+      this.shipEnabledInput,
+      this.shipGeInput,
+      this.shipFieldsEl,
+      'ship_count_ge',
+      500,
+    );
   }
 
   /* ── 渲染 ── */
 
   render(vo: PlanPreviewViewObject | null): void {
     if (!vo) {
-      this.emptyEl.style.display = '';
       this.detailEl.style.display = 'none';
       return;
     }
 
-    this.emptyEl.style.display = 'none';
     this.detailEl.style.display = 'flex';
 
-    this.mapNameEl.textContent = vo.mapName;
-    this.fileNameEl.textContent = vo.fileName;
+    this.renderMapSelection(vo);
     this.repairSelect.value = String(vo.repairModeValue);
     this.fightCondSelect.value = String(vo.fightConditionValue);
     this.fleetSelect.value = String(vo.fleetId);
-    this.commentEl.textContent = vo.comment || '';
 
     this.timesInput.value = String(vo.times ?? 1);
     this.gapInput.value = String(vo.gap ?? 0);
-    this.lootGeInput.value = vo.lootCountGe != null ? String(vo.lootCountGe) : '-1';
-    this.shipGeInput.value = vo.shipCountGe != null ? String(vo.shipCountGe) : '-1';
+    this.renderStopConditionControl(
+      this.lootEnabledInput,
+      this.lootGeInput,
+      this.lootFieldsEl,
+      vo.lootCountGe,
+      50,
+    );
+    this.renderStopConditionControl(
+      this.shipEnabledInput,
+      this.shipGeInput,
+      this.shipFieldsEl,
+      vo.shipCountGe,
+      500,
+    );
 
-    this.fleetPresetView.render(vo.fleetPresets);
-    this.mapView.renderNodes(vo.allNodes, vo.selectedNodes, vo.edges);
+    this.fleetPresetView.render(vo.fleetPresets, vo.fleetId);
+    this.mapView.renderNodes(
+      vo.allNodes,
+      vo.selectedNodes,
+      vo.edges,
+      vo.mapAspectRatio,
+    );
   }
 
-  renderFleetPresets(presets?: FleetPresetVO[]): void {
-    this.fleetPresetView.render(presets);
+  private bindStopConditionControl(
+    enabledInput: HTMLInputElement,
+    valueInput: HTMLInputElement,
+    fieldsEl: HTMLElement,
+    field: 'loot_count_ge' | 'ship_count_ge',
+    max: number,
+  ): void {
+    enabledInput.addEventListener('change', () => {
+      fieldsEl.hidden = !enabledInput.checked;
+      valueInput.disabled = !enabledInput.checked;
+      if (!enabledInput.checked) {
+        this.onPlanFieldChange?.(field, -1);
+        return;
+      }
+
+      const value = this.clampStopConditionValue(valueInput.value, max);
+      valueInput.value = String(value);
+      this.onPlanFieldChange?.(field, value);
+    });
+
+    valueInput.addEventListener('change', () => {
+      if (!enabledInput.checked) return;
+      const value = this.clampStopConditionValue(valueInput.value, max);
+      valueInput.value = String(value);
+      this.onPlanFieldChange?.(field, value);
+    });
+  }
+
+  private renderStopConditionControl(
+    enabledInput: HTMLInputElement,
+    valueInput: HTMLInputElement,
+    fieldsEl: HTMLElement,
+    value: number | undefined,
+    max: number,
+  ): void {
+    const enabled = value !== undefined && value >= 1;
+    enabledInput.checked = enabled;
+    fieldsEl.hidden = !enabled;
+    valueInput.disabled = !enabled;
+    valueInput.value = String(
+      enabled
+        ? this.clampStopConditionValue(String(value), max)
+        : 1,
+    );
+  }
+
+  private clampStopConditionValue(value: string, max: number): number {
+    const parsed = parseInt(value, 10);
+    return Math.min(max, Math.max(1, Number.isFinite(parsed) ? parsed : 1));
+  }
+
+  getPresetName(): string {
+    return this.presetNameInput.value.trim();
+  }
+
+  setPresetName(name: string): void {
+    this.presetNameInput.value = name;
+  }
+
+  focusPresetName(): void {
+    this.presetNameInput.focus();
+  }
+
+  private updateMapOptions(chapter: string, selectedMap = 1): void {
+    const count = MAP_COUNT_BY_CHAPTER[chapter] ?? 1;
+    this.mapSelect.replaceChildren(...Array.from({ length: count }, (_, index) => {
+      const option = document.createElement('option');
+      option.value = String(index + 1);
+      option.textContent = String(index + 1);
+      return option;
+    }));
+    this.mapSelect.value = String(Math.min(Math.max(selectedMap, 1), count));
+  }
+
+  private renderMapSelection(vo: PlanPreviewViewObject): void {
+    this.chapterSelect.querySelector('option[data-current-map]')?.remove();
+    const chapter = vo.chapter === 99 ? 'Ex' : String(vo.chapter);
+    if (chapter in MAP_COUNT_BY_CHAPTER) {
+      this.chapterSelect.value = chapter;
+      this.mapSelect.disabled = false;
+      this.updateMapOptions(chapter, Number(vo.map));
+      return;
+    }
+
+    const currentOption = document.createElement('option');
+    currentOption.value = chapter;
+    currentOption.textContent = `${vo.mapName}（活动）`;
+    currentOption.dataset.currentMap = 'true';
+    this.chapterSelect.appendChild(currentOption);
+    this.chapterSelect.value = chapter;
+    this.mapSelect.replaceChildren();
+    const mapOption = document.createElement('option');
+    mapOption.value = String(vo.map);
+    mapOption.textContent = String(vo.map);
+    this.mapSelect.appendChild(mapOption);
+    this.mapSelect.disabled = true;
   }
 
   /* ── 节点编辑（委托 + 跨视图协调） ── */
 
-  showNodeEditor(nodeId: string, nodeType: MapNodeType, args: { enabled: boolean; formation: number; night: boolean; longMissileSupport: boolean; proceed: boolean; detour: boolean; canDetour: boolean; slWhenDetourFails: boolean; isEndpoint: boolean; isTerminal: boolean; enemyRules: string }, mapNight = false): void {
+  showNodeEditor(
+    nodeId: string,
+    nodeType: MapNodeType,
+    args: NodeEditorArgs,
+    mapNight = false,
+  ): void {
+    this.fleetPresetView.hideSelector();
     this.nodeEditor.show(nodeId, nodeType, args, mapNight);
-    this.fleetPresetView.hideSection();
-    this.taskConfigEl.style.display = 'none';
   }
 
   showNodeInfo(nodeId: string, nodeType: MapNodeType): void {
+    this.fleetPresetView.hideSelector();
     this.nodeEditor.showInfo(nodeId, nodeType, () => this.hideNodeEditor());
-    this.fleetPresetView.hideSection();
-    this.taskConfigEl.style.display = 'none';
   }
 
   hideNodeEditor(): void {
     this.nodeEditor.hide();
-    this.fleetPresetView.showSection();
-    this.taskConfigEl.style.display = '';
     this.mapView.clearSelection();
   }
 
-  collectNodeEditorValues(): { enabled: boolean; isEndpoint: boolean; formation: number; night: boolean; longMissileSupport: boolean; proceed: boolean; detour: boolean; slWhenDetourFails: boolean; rulesText: string } {
+  resetNodeEditorDrafts(): void {
+    this.nodeEditor.resetDrafts();
+  }
+
+  collectNodeEditorValues(): NodeEditorValues {
     return this.nodeEditor.collectValues();
   }
 
@@ -166,41 +322,10 @@ export class PlanPreviewView {
     return this.fleetPresetView.getBathRepairConfig();
   }
 
-  /* ── 注释编辑 ── */
-
-  private startCommentEdit(): void {
-    const currentText = this.commentEl.textContent || '';
-    const textarea = document.createElement('textarea');
-    textarea.className = 'plan-comment-editing';
-    textarea.value = currentText;
-    textarea.rows = Math.max(2, currentText.split('\n').length + 1);
-
-    this.commentEl.style.display = 'none';
-    this.commentEl.parentElement!.insertBefore(textarea, this.commentEl.nextSibling);
-    textarea.focus();
-
-    const commit = () => {
-      const newText = textarea.value.trim();
-      this.commentEl.textContent = newText;
-      this.commentEl.style.display = '';
-      textarea.remove();
-      this.onCommentChange?.(newText);
-    };
-
-    textarea.addEventListener('blur', commit);
-    textarea.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        this.commentEl.style.display = '';
-        textarea.remove();
-      }
-    });
-  }
-
   /* ── 预设详情面板 ── */
 
   showPresetDetail(): void {
     const presetEl = document.getElementById('task-preset-detail');
-    if (this.emptyEl) this.emptyEl.style.display = 'none';
     if (this.detailEl) this.detailEl.style.display = 'none';
     const tplCard = document.getElementById('template-library-card');
     if (tplCard) tplCard.style.display = 'none';
@@ -210,7 +335,6 @@ export class PlanPreviewView {
   hidePresetDetail(): void {
     const presetEl = document.getElementById('task-preset-detail');
     if (presetEl) presetEl.style.display = 'none';
-    if (this.emptyEl) this.emptyEl.style.display = '';
     const tplCard = document.getElementById('template-library-card');
     if (tplCard) tplCard.style.display = '';
   }
@@ -282,23 +406,6 @@ export class PlanPreviewView {
     };
   }
 
-  /* ── 新建方案对话框 ── */
-
-  getNewPlanFormValues(): NewPlanFormValues {
-    return {
-      chapter: (document.getElementById('new-plan-chapter') as HTMLSelectElement).value,
-      map: parseInt((document.getElementById('new-plan-map') as HTMLSelectElement).value, 10),
-    };
-  }
-
-  showNewPlanDialog(): void {
-    document.getElementById('new-plan-dialog')!.style.display = '';
-  }
-
-  hideNewPlanDialog(): void {
-    document.getElementById('new-plan-dialog')!.style.display = 'none';
-  }
-
   /* ── 视图切换 ── */
 
   showPlanView(): void {
@@ -306,13 +413,5 @@ export class PlanPreviewView {
     const presetEl = document.getElementById('task-preset-detail');
     if (tplCard) tplCard.style.display = 'none';
     if (presetEl) presetEl.style.display = 'none';
-  }
-
-  setPlansDir(dir: string): void {
-    const hintEl = document.getElementById('plans-dir-hint');
-    if (hintEl) {
-      hintEl.textContent = dir;
-      hintEl.title = dir;
-    }
   }
 }

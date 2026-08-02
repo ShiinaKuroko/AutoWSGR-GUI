@@ -2,7 +2,11 @@
  * TaskGroupView —— 任务组面板渲染。
  * 纯视图组件：渲染组列表、条目列表，暴露操作回调。
  */
-import type { TaskGroup, TaskGroupItem } from '../../model/TaskGroupModel';
+import type { TaskGroupItem } from '../../model/TaskGroupModel';
+import {
+  captureScrollPosition,
+  restoreScrollPosition,
+} from '../shared/scrollPosition';
 
 /** 任务条目的元数据（从 YAML 异步解析） */
 export interface TaskGroupItemMeta {
@@ -16,8 +20,8 @@ export interface TaskGroupItemMeta {
   typeLabel?: string;
   /** 编队舰船列表 */
   fleet?: string[];
-  /** 是否因自动编队限制自动切到第二分队 */
-  autoFleetFallback?: boolean;
+  /** 当前任务选择的编队预设名称 */
+  fleetPresetName?: string;
 }
 
 /** 渲染所需的 VO */
@@ -30,66 +34,64 @@ export interface TaskGroupViewObject {
 }
 
 export class TaskGroupView {
-  private selectEl: HTMLSelectElement;
+  private nameInput: HTMLInputElement;
   private itemsEl: HTMLElement;
+  private countEl: HTMLElement | null;
 
   // ── 外部回调 ──
-  onSelectGroup?: (name: string) => void;
   onNewGroup?: () => void;
-  onDeleteGroup?: () => void;
-  onRenameGroup?: () => void;
+  onSaveGroup?: () => void;
+  onOpenGroupLoader?: () => void;
   onLoadAll?: () => void;
-  onAddFile?: () => void;
+  onAddManagedPlan?: () => void;
   onRemoveItem?: (index: number) => void;
+  onLoadItem?: (index: number) => void;
   onTimesChange?: (index: number, times: number) => void;
   onMoveItem?: (fromIndex: number, toIndex: number) => void;
-  onExportGroup?: () => void;
-  onImportGroup?: () => void;
   /** 将指定 index 的任务拖放到队列 */
   onDropToQueue?: (index: number) => void;
   /** 右键编辑 */
   onEditItem?: (index: number, x: number, y: number) => void;
 
   constructor() {
-    this.selectEl = document.getElementById('task-group-select') as HTMLSelectElement;
+    this.nameInput = document.getElementById(
+      'task-group-name',
+    ) as HTMLInputElement;
     this.itemsEl = document.getElementById('task-group-items')!;
+    this.countEl = document.getElementById('task-group-count');
 
     // 绑定固定按钮
-    this.selectEl.addEventListener('change', () => {
-      this.onSelectGroup?.(this.selectEl.value);
-    });
     document.getElementById('btn-tg-new')?.addEventListener('click', () => this.onNewGroup?.());
-    document.getElementById('btn-tg-delete')?.addEventListener('click', () => this.onDeleteGroup?.());
-    document.getElementById('btn-tg-rename')?.addEventListener('click', () => this.onRenameGroup?.());
+    document.getElementById('btn-tg-save')?.addEventListener('click', () => this.onSaveGroup?.());
+    document.getElementById('btn-tg-open-loader')?.addEventListener(
+      'click',
+      () => this.onOpenGroupLoader?.(),
+    );
+    this.nameInput.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      this.onSaveGroup?.();
+    });
     document.getElementById('btn-tg-load-all')?.addEventListener('click', () => this.onLoadAll?.());
-    document.getElementById('btn-tg-add-file')?.addEventListener('click', () => this.onAddFile?.());
-    document.getElementById('btn-tg-export')?.addEventListener('click', () => this.onExportGroup?.());
-    document.getElementById('btn-tg-import')?.addEventListener('click', () => this.onImportGroup?.());
+    document.getElementById('btn-tg-add-managed-plan')?.addEventListener(
+      'click',
+      () => this.onAddManagedPlan?.(),
+    );
   }
 
   render(vo: TaskGroupViewObject): void {
-    // ── 组选择器 ──
-    const prevVal = this.selectEl.value;
-    this.selectEl.innerHTML = '';
-    if (vo.groups.length === 0) {
-      const opt = document.createElement('option');
-      opt.value = '';
-      opt.textContent = '(无任务组)';
-      this.selectEl.appendChild(opt);
-    } else {
-      for (const g of vo.groups) {
-        const opt = document.createElement('option');
-        opt.value = g.name;
-        opt.textContent = `${g.name} (${g.itemCount})`;
-        this.selectEl.appendChild(opt);
-      }
+    const scrollPosition = captureScrollPosition(this.itemsEl);
+    if (this.nameInput.dataset['activeGroup'] !== vo.activeGroupName) {
+      this.nameInput.value = vo.activeGroupName;
+      this.nameInput.dataset['activeGroup'] = vo.activeGroupName;
     }
-    this.selectEl.value = vo.activeGroupName || prevVal;
+    if (this.countEl) this.countEl.textContent = `${vo.items.length} 项`;
 
     // ── 条目列表 ──
     this.itemsEl.innerHTML = '';
     if (vo.items.length === 0) {
-      this.itemsEl.innerHTML = '<p class="tg-empty">暂无任务条目，导入方案后点击「加入任务组」添加</p>';
+      this.itemsEl.innerHTML = '<p class="tg-empty">暂无任务，点击「加载计划」从计划管理中添加作战方案。</p>';
+      restoreScrollPosition(this.itemsEl, scrollPosition);
       return;
     }
 
@@ -98,6 +100,11 @@ export class TaskGroupView {
       const meta = vo.itemMetas?.[i] ?? null;
       this.itemsEl.appendChild(this.createItemRow(item, i, meta));
     }
+    restoreScrollPosition(this.itemsEl, scrollPosition);
+  }
+
+  getGroupName(): string {
+    return this.nameInput.value.trim();
   }
 
   private createItemRow(item: TaskGroupItem, index: number, meta: TaskGroupItemMeta | null): HTMLElement {
@@ -106,51 +113,64 @@ export class TaskGroupView {
     row.draggable = true;
     row.dataset['index'] = String(index);
 
-    // 拖拽手柄
     const handle = document.createElement('span');
     handle.className = 'tg-drag-handle';
     handle.textContent = '⠿';
     row.appendChild(handle);
 
-    // 名称
+    const order = document.createElement('span');
+    order.className = 'tg-order';
+    order.textContent = String(index + 1).padStart(2, '0');
+    row.appendChild(order);
+
+    const content = document.createElement('div');
+    content.className = 'tg-content';
+    const heading = document.createElement('div');
+    heading.className = 'tg-item-heading';
+
     const label = document.createElement('span');
     label.className = 'tg-label';
     label.textContent = item.label;
-    label.title = item.path ?? item.templateId ?? '';
-    row.appendChild(label);
+    label.title = item.managedFile ?? item.path ?? item.templateId ?? '';
 
-    // 类型标签
-    const kind = document.createElement('span');
-    kind.className = 'tg-kind';
-    kind.textContent = item.kind === 'plan' ? '方案' : item.kind === 'template' ? '模板' : '预设';
-    row.appendChild(kind);
+    const fleetTag = document.createElement('span');
+    fleetTag.className = 'tg-fleet-tag';
+    fleetTag.textContent = meta?.fleetPresetName ?? '';
+    fleetTag.title = `使用队伍：${meta?.fleetPresetName ?? ''}`;
+    fleetTag.hidden = !meta?.fleetPresetName;
 
-    // 详情：显示任务元数据（与名称同行）
+    const source = document.createElement('span');
+    source.className = `tg-source ${this.sourceClass(item)}`;
+    source.textContent = this.sourceLabel(item);
+    heading.append(label, fleetTag, source);
+
     const detail = document.createElement('span');
     detail.className = 'tg-detail';
-    const fallback = item.path ?? item.label;
+    const fileName = item.managedFile
+      ?? item.path?.split(/[\\/]/).pop()
+      ?? item.templateId
+      ?? item.label;
+    const parts = [fileName];
     if (meta) {
-      const parts: string[] = [];
       if (meta.typeLabel) parts.push(meta.typeLabel);
       if (meta.mapName) parts.push(meta.mapName);
-      if (meta.fleetId) parts.push(`编队${meta.fleetId}`);
-      if (meta.autoFleetFallback) parts.push('自动编队→2队');
+      if (meta.fleetId) parts.push(`第 ${meta.fleetId} 舰队`);
       if (meta.repairMode) parts.push(meta.repairMode);
-      if (meta.fleet && meta.fleet.length > 0) {
-        parts.push(meta.fleet.filter(Boolean).join(' / '));
-      }
-      detail.textContent = parts.join(' · ') || fallback;
-    } else {
-      detail.textContent = fallback;
     }
-    detail.title = item.path ?? '';
-    row.appendChild(detail);
+    detail.textContent = parts.filter(Boolean).join(' · ');
+    detail.title = [
+      item.managedFile ?? item.path ?? '',
+      meta?.fleet?.filter(Boolean).join(' / ') ?? '',
+    ].filter(Boolean).join('\n');
+    content.append(heading, detail);
+    row.appendChild(content);
 
-    // 次数标签 + 输入
+    const controls = document.createElement('div');
+    controls.className = 'tg-controls';
+    const timesField = document.createElement('label');
+    timesField.className = 'tg-times-field';
     const timesLabel = document.createElement('span');
-    timesLabel.className = 'tg-times-label';
-    timesLabel.textContent = '次数';
-    row.appendChild(timesLabel);
+    timesLabel.textContent = '执行';
 
     const times = document.createElement('input');
     times.type = 'number';
@@ -162,15 +182,23 @@ export class TaskGroupView {
     times.addEventListener('change', () => {
       this.onTimesChange?.(index, Math.max(1, parseInt(times.value, 10) || 1));
     });
-    row.appendChild(times);
+    const timesUnit = document.createElement('span');
+    timesUnit.textContent = '次';
+    timesField.append(timesLabel, times, timesUnit);
 
-    // 删除
+    const load = document.createElement('button');
+    load.type = 'button';
+    load.className = 'btn btn-small tg-load-item';
+    load.textContent = '加入队列';
+    load.addEventListener('click', () => this.onLoadItem?.(index));
+
     const remove = document.createElement('button');
     remove.className = 'tg-remove';
     remove.title = '移除';
     remove.textContent = '✕';
     remove.addEventListener('click', () => this.onRemoveItem?.(index));
-    row.appendChild(remove);
+    controls.append(timesField, load, remove);
+    row.appendChild(controls);
 
     // ── 右键菜单 ──
     row.addEventListener('contextmenu', (e) => {
@@ -212,5 +240,20 @@ export class TaskGroupView {
     });
 
     return row;
+  }
+
+  private sourceClass(item: TaskGroupItem): string {
+    if (item.managedSource === 'system') return 'system';
+    if (item.managedSource === 'user') return 'user';
+    if (item.kind === 'template') return 'template';
+    return 'local';
+  }
+
+  private sourceLabel(item: TaskGroupItem): string {
+    if (item.managedSource === 'system') return '系统预设';
+    if (item.managedSource === 'user') return '用户预设';
+    if (item.kind === 'template') return '任务模板';
+    if (item.kind === 'preset') return '任务预设';
+    return '本地文件';
   }
 }

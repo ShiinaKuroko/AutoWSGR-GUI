@@ -11,6 +11,60 @@ import { resolveFleetPreset, resolveFleetPresetRules, toBackendName } from '../.
 import { Logger } from '../../utils/Logger';
 import { normalizeSelectedNodesForBackend } from '../plan/selectedNodes';
 import type { TaskGroupHost } from './TaskGroupController';
+import { readTaskGroupItemFile } from './managedPlanReader';
+
+export function buildPlanQueueRequest(
+  item: TaskGroupItem,
+  plan: PlanModel,
+  planId: string,
+): {
+  req: NormalFightReq | EventFightReq;
+  selectedFleetId: number | undefined;
+} {
+  const req: NormalFightReq | EventFightReq = {
+    type: plan.isEvent ? 'event_fight' : 'normal_fight',
+    plan_id: planId,
+    times: 1,
+    gap: plan.data.gap ?? 0,
+  };
+  if (plan.data.selected_nodes.length > 0) {
+    req.plan = req.plan ?? {};
+    req.plan.selected_nodes = normalizeSelectedNodesForBackend(
+      plan.data.selected_nodes,
+    );
+  }
+
+  const selectedFleetId = item.fleet_id ?? plan.data.fleet_id;
+  if (selectedFleetId != null) {
+    if (req.type === 'event_fight') req.fleet_id = selectedFleetId;
+    req.plan = req.plan ?? {};
+    req.plan.fleet_id = selectedFleetId;
+  }
+
+  const presets = plan.data.fleet_presets;
+  if (presets?.length) {
+    // 旧任务列表未保存索引时沿用原行为，默认使用第一支编队。
+    const presetIndex = item.fleetPresetIndex ?? 0;
+    const preset = presets[presetIndex];
+    if (!preset) {
+      throw new Error(`选择的使用舰队不存在（索引 ${presetIndex}）`);
+    }
+    const resolved = resolveFleetPreset(preset.ships);
+    const rules = resolveFleetPresetRules(preset.ships);
+    if (resolved.length === 0 || rules.length === 0) {
+      throw new Error(`使用舰队「${preset.name}」没有可用舰船`);
+    }
+
+    // 后端覆盖请求只携带这一支编队，其他 fleet_presets 不进入请求。
+    req.plan = req.plan ?? {};
+    req.plan.fleet = resolved.map(toBackendName);
+    req.plan.fleet_rules = rules;
+  } else if (item.fleetPresetIndex != null) {
+    throw new Error('作战计划中已没有所选使用舰队');
+  }
+
+  return { req, selectedFleetId };
+}
 
 /** 加载整个任务组到调度队列 */
 export async function loadGroupToQueue(
@@ -31,46 +85,21 @@ export async function loadGroupToQueue(
         continue;
       }
 
-      const content = await bridge.readFile(item.path!);
+      const { content, path } = await readTaskGroupItemFile(item);
       const parsed = (await import('js-yaml')).load(content) as Record<string, unknown>;
       if (!parsed || typeof parsed !== 'object') continue;
 
       if (item.kind === 'preset' || ('task_type' in parsed && !('chapter' in parsed))) {
-        host.importTaskPreset(parsed as unknown as TaskPreset, item.path!);
+        host.importTaskPreset(parsed as unknown as TaskPreset, path);
       } else {
-        const plan = PlanModel.fromYaml(content, item.path!);
+        const plan = PlanModel.fromYaml(content, path);
         const resolvedPlanId = await bridge.resolveAppPath(plan.fileName);
         const times = item.times;
-        const req: NormalFightReq | EventFightReq = {
-          type: plan.isEvent ? 'event_fight' : 'normal_fight',
-          plan_id: resolvedPlanId,
-          times: 1,
-          gap: plan.data.gap ?? 0,
-        };
-        if (plan.data.selected_nodes.length > 0) {
-          req.plan = req.plan ?? {};
-          req.plan.selected_nodes = normalizeSelectedNodesForBackend(plan.data.selected_nodes);
-        }
-        let selectedFleetId = item.fleet_id ?? plan.data.fleet_id;
-        if (item.autoFleetFallback && selectedFleetId === 1) {
-          selectedFleetId = 2;
-        }
-        if (selectedFleetId != null) {
-          if (req.type === 'event_fight') req.fleet_id = selectedFleetId;
-          req.plan = req.plan ?? {};
-          req.plan.fleet_id = selectedFleetId;
-        }
-        if (item.fleetPresetIndex != null && plan.data.fleet_presets) {
-          const preset = plan.data.fleet_presets[item.fleetPresetIndex];
-          if (preset) {
-            const resolved = resolveFleetPreset(preset.ships);
-            if (resolved.length > 0) {
-              req.plan = req.plan ?? {};
-              req.plan.fleet = resolved.map(toBackendName);
-              req.plan.fleet_rules = resolveFleetPresetRules(preset.ships);
-            }
-          }
-        }
+        const { req, selectedFleetId } = buildPlanQueueRequest(
+          item,
+          plan,
+          resolvedPlanId,
+        );
         host.scheduler.addTask(
           plan.mapName,
           plan.isEvent ? 'event_fight' : 'normal_fight',
@@ -85,6 +114,7 @@ export async function loadGroupToQueue(
           !!item.forceRetry,
           !!item.allowPolling,
           plan.data.endpoint_nodes,
+          plan.data.result,
           typeof plan.data.chapter === 'number' ? plan.data.chapter || undefined : undefined,
         );
       }
@@ -166,45 +196,20 @@ export async function loadSingleItemToQueue(
   if (!bridge) return;
 
   try {
-    const content = await bridge.readFile(item.path!);
+    const { content, path } = await readTaskGroupItemFile(item);
     const parsed = (await import('js-yaml')).load(content) as Record<string, unknown>;
     if (!parsed || typeof parsed !== 'object') return;
 
     if (item.kind === 'preset' || ('task_type' in parsed && !('chapter' in parsed))) {
-      host.importTaskPreset(parsed as unknown as TaskPreset, item.path!);
+      host.importTaskPreset(parsed as unknown as TaskPreset, path);
     } else {
-      const plan = PlanModel.fromYaml(content, item.path!);
+      const plan = PlanModel.fromYaml(content, path);
       const resolvedPlanId = await bridge.resolveAppPath(plan.fileName);
-      const req: NormalFightReq | EventFightReq = {
-        type: plan.isEvent ? 'event_fight' : 'normal_fight',
-        plan_id: resolvedPlanId,
-        times: 1,
-        gap: plan.data.gap ?? 0,
-      };
-      if (plan.data.selected_nodes.length > 0) {
-        req.plan = req.plan ?? {};
-        req.plan.selected_nodes = normalizeSelectedNodesForBackend(plan.data.selected_nodes);
-      }
-      let selectedFleetId = item.fleet_id ?? plan.data.fleet_id;
-      if (item.autoFleetFallback && selectedFleetId === 1) {
-        selectedFleetId = 2;
-      }
-      if (selectedFleetId != null) {
-        if (req.type === 'event_fight') req.fleet_id = selectedFleetId;
-        req.plan = req.plan ?? {};
-        req.plan.fleet_id = selectedFleetId;
-      }
-      if (item.fleetPresetIndex != null && plan.data.fleet_presets) {
-        const preset = plan.data.fleet_presets[item.fleetPresetIndex];
-        if (preset) {
-          const resolved = resolveFleetPreset(preset.ships);
-          if (resolved.length > 0) {
-            req.plan = req.plan ?? {};
-            req.plan.fleet = resolved.map(toBackendName);
-            req.plan.fleet_rules = resolveFleetPresetRules(preset.ships);
-          }
-        }
-      }
+      const { req, selectedFleetId } = buildPlanQueueRequest(
+        item,
+        plan,
+        resolvedPlanId,
+      );
       host.scheduler.addTask(
         plan.mapName,
         plan.isEvent ? 'event_fight' : 'normal_fight',
@@ -219,6 +224,7 @@ export async function loadSingleItemToQueue(
         !!item.forceRetry,
         !!item.allowPolling,
         plan.data.endpoint_nodes,
+        plan.data.result,
         typeof plan.data.chapter === 'number' ? plan.data.chapter || undefined : undefined,
       );
     }
