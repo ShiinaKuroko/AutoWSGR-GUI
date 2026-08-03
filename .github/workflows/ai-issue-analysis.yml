@@ -60,6 +60,9 @@ jobs:
           prompt-template: |
             你正在分析 GitHub 仓库 {{repository}} 的 Issue #{{issue_number}}。
 
+            首先读取 Issue 的标题、正文和评论：
+            `GH_TOKEN="$COMMENT_GITHUB_TOKEN" gh issue view {{issue_number}} --repo {{repository}} --json title,body,comments`
+
             要求：
             1. 先复述问题和复现条件；
             2. 基于仓库代码、配置和日志定位最可能根因；
@@ -67,7 +70,8 @@ jobs:
             4. 给出最小修复方案和验证步骤；
             5. 若证据不足，列出需要用户补充的材料。
 
-            把最终结论写到 {{answer_file}}。
+            最终必须实际创建并写入 `{{answer_file}}`，不能只把结论打印到标准输出。
+            写入后执行 `test -s {{answer_file}}` 验证文件存在且非空；验证失败时不得宣称完成。
           comment-prompt-template: |
             用户补充要求：{{comment_body}}
 
