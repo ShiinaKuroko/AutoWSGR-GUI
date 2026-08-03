@@ -31,17 +31,27 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Validate Copilot token
+        shell: bash
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+        run: |
+          if [[ -z "$COPILOT_GITHUB_TOKEN" ]]; then
+            echo "::error::Repository secret COPILOT_GITHUB_TOKEN is missing or empty."
+            exit 1
+          fi
+
       - name: Analyze issue with AI
         id: analysis
-        uses: MistEO/ai-issue-analysis@main
+        uses: MistEO/ai-issue-analysis@b456da9504e7db434ce24080e85118897b83a055
         with:
-          # 需要在仓库 Secrets 中提供 Fine-grained PAT
-          copilot-github-token: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          agent: copilot
+          api-key: ${{ secrets.COPILOT_GITHUB_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           bot-name: "@github-actions"
           issue-number: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.issue_number || '' }}
-          copilot-model: ${{ vars.COPILOT_MODEL || 'gpt-5.3-codex' }}
-          copilot-reasoning-effort: ${{ vars.COPILOT_REASONING_EFFORT || 'high' }}
+          model: ${{ vars.COPILOT_MODEL || 'gpt-5.4' }}
+          agent-extra-args: --reasoning-effort ${{ vars.COPILOT_REASONING_EFFORT || 'xhigh' }}
           initial-comment-body: |
             🤖 正在分析这个 Issue，预计需要数分钟。
             我会持续更新分析过程，并在结束后给出修复建议。
@@ -55,7 +65,7 @@ jobs:
             4. 给出最小修复方案和验证步骤；
             5. 若证据不足，列出需要用户补充的材料。
 
-            把最终结论写到 {{copilot_answer_file}}。
+            把最终结论写到 {{answer_file}}。
           comment-prompt-template: |
             用户补充要求：{{comment_body}}
 
@@ -66,6 +76,6 @@ jobs:
           name: ai-issue-analysis-summary
           path: |
             .cache/analysis_prompt.txt
-            .cache/copilot_output.txt
+            .cache/agent_output.txt
             .cache/final_conclusion.md
-          if-no-files-found: ignore
+          if-no-files-found: warn
