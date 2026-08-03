@@ -50,9 +50,9 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           bot-name: "@github-actions"
           issue-number: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.issue_number || '' }}
-          # 默认留空，由 Copilot CLI 选择当前账号可用的默认模型。
-          # 仅在仓库 Variables 中确认模型/参数可用后再覆盖。
-          model: ${{ vars.COPILOT_MODEL || '' }}
+          # `auto` 由 Copilot CLI 根据账号策略选择当前可用模型；留空会被
+          # 上游 Action 回退为固定的 gpt-5.4，可能不在当前账号的模型列表中。
+          model: ${{ vars.COPILOT_MODEL || 'auto' }}
           agent-extra-args: ${{ vars.COPILOT_AGENT_EXTRA_ARGS || '' }}
           initial-comment-body: |
             🤖 正在分析这个 Issue，预计需要数分钟。
