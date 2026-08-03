@@ -133,7 +133,7 @@ Python 后端通过 `pip install autowsgr` 安装（`--target` 安装到程序�
 
 ## 贡献
 
-欢迎参与开发！请参阅 [CONTRIBUTING.md](CONTRIBUTING.md)。
+欢迎参与开发！请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 和强制性的[工程与代码规范](docs/engineering-standards.md)。
 
 ## 许可证
 
