@@ -50,8 +50,10 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           bot-name: "@github-actions"
           issue-number: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.issue_number || '' }}
-          model: ${{ vars.COPILOT_MODEL || 'gpt-5.4' }}
-          agent-extra-args: --reasoning-effort ${{ vars.COPILOT_REASONING_EFFORT || 'xhigh' }}
+          # 默认留空，由 Copilot CLI 选择当前账号可用的默认模型。
+          # 仅在仓库 Variables 中确认模型/参数可用后再覆盖。
+          model: ${{ vars.COPILOT_MODEL || '' }}
+          agent-extra-args: ${{ vars.COPILOT_AGENT_EXTRA_ARGS || '' }}
           initial-comment-body: |
             🤖 正在分析这个 Issue，预计需要数分钟。
             我会持续更新分析过程，并在结束后给出修复建议。
