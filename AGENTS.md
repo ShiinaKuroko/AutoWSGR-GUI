@@ -213,14 +213,16 @@ Agent 必须报告或在工作记录中明确：
 
 ## 6. ShiinaKuroko Fork 分支管理
 
-个人 Fork 为 `https://github.com/ShiinaKuroko/AutoWSGR-GUI.git`。后续 Agent 必须遵守：
+本仓库的个人 Fork 为 `https://github.com/ShiinaKuroko/AutoWSGR-GUI.git`。后续 Agent
+必须遵守以下分支职责：
 
-- `main` 只同步 `OpenWSGR/AutoWSGR-GUI:main`，禁止在 `main` 直接开发或推送功能代码。
-- `ShiinaKuroko` 是个人 Fork 的最新开发分支，只有经过验证的最新 GUI 代码才能推送到这里。
-- 本地独立分支或 worktree 只能用于开发、测试和审查，禁止直接推送到 Fork 发布分支。
-- 独立分支完成后，必须将已验证提交合并、`cherry-pick` 或 rebase 到本地 `ShiinaKuroko`；只有本地 `ShiinaKuroko` 允许执行 `git push origin ShiinaKuroko`。
-- 禁止使用 `git push origin <local-feature-branch>` 作为发布流程。远程临时分支必须获得明确授权，且不得替代 `ShiinaKuroko` 发布入口。
-- `backup/YYYYMMDD-<short-sha>` 是版本备份分支。发布前创建备份，备份创建后不得移动、覆盖或追加提交，最多保留两个。
-- 推送前必须检查 `git status --short --branch`、`git diff --check`、`git log --oneline -5` 和待推送提交范围。
-- 更新 `ShiinaKuroko` 必须使用 `git push --force-with-lease`，禁止无条件 `--force`。
-- 删除远程分支前必须列出分支、提交和原因；禁止删除 `main`、`ShiinaKuroko` 或未明确授权的分支。
+- `main` 只用于同步 `OpenWSGR/AutoWSGR-GUI:main`，禁止在该分支直接开发、提交或推送功能代码。
+- `ShiinaKuroko` 是个人 Fork 的最新开发分支，经过验证的最新 GUI 代码才允许推送到这里。
+- 本地独立分支或 worktree 只能用于编码、测试和审查，禁止直接推送到 Fork 的发布分支。
+- 本地独立分支完成后，必须将已验证提交合并、`cherry-pick` 或 rebase 整理到本地 `ShiinaKuroko` 分支；只有本地 `ShiinaKuroko` 分支允许执行 `git push origin ShiinaKuroko`。
+- 不得执行 `git push origin <local-feature-branch>` 作为发布流程；远程临时分支如确有协作需要，必须获得维护者明确授权，并不得替代 `ShiinaKuroko` 发布入口。
+- `backup/YYYYMMDD-<short-sha>` 是版本备份分支。每次更新 `ShiinaKuroko` 前创建更新前稳定提交的备份，完成更新后创建新版本备份，最多保留两个。
+- 备份分支一旦创建不得移动、覆盖或追加提交。超过两个备份时只删除最旧备份，不删除当前备份和上一版本备份。
+- 推送前必须确认当前分支为本地 `ShiinaKuroko`，并检查 `git status --short --branch`、`git diff --check`、`git log --oneline -5` 以及 `git log origin/ShiinaKuroko..ShiinaKuroko`。
+- 推送最新代码前必须先创建备份，并使用 `git push --force-with-lease` 更新 `ShiinaKuroko`，禁止无条件 `--force`。
+- 任何删除远程分支的操作都必须先列出分支、提交和原因；禁止删除 `main`、`ShiinaKuroko` 或未明确授权的分支。
