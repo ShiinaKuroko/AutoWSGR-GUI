@@ -108,7 +108,7 @@ export class AppController {
       battleTimes: gui.battleTimes,
       autoNormalFight: cfg.auto_normal_fight,
       autoLoot: gui.autoLoot,
-      lootPlanIndex: gui.lootPlanIndex,
+      lootPlanId: gui.lootPlanId,
       lootStopCount: gui.lootStopCount,
     });
 
@@ -262,7 +262,7 @@ export class AppController {
           battleTimes: gui.battleTimes,
           autoNormalFight: da.auto_normal_fight,
           autoLoot: gui.autoLoot,
-          lootPlanIndex: gui.lootPlanIndex,
+          lootPlanId: gui.lootPlanId,
           lootStopCount: gui.lootStopCount,
         });
       },
@@ -311,12 +311,20 @@ export class AppController {
 
   private bindQueueActions(): void {
     document.getElementById('btn-stop-task')?.addEventListener('click', async () => {
-      await this.scheduler.stopRunning();
-      this.schedulerBinder.currentProgress = '';
-      this.schedulerBinder.trackedLoot = '';
-      this.schedulerBinder.trackedShip = '';
-      this.renderMain();
-      Logger.info('已停止当前任务（任务已保留在队列中）');
+      if (this.scheduler.status === 'stopping') return;
+      Logger.info('正在停止当前任务，请等待后端确认…');
+      try {
+        await this.scheduler.stopRunning();
+        this.schedulerBinder.currentProgress = '';
+        this.schedulerBinder.trackedLoot = '';
+        this.schedulerBinder.trackedShip = '';
+        this.renderMain();
+        Logger.info('当前任务已停止（任务已保留在队列中）');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        Logger.error(`停止任务失败：${message}`);
+        this.renderMain();
+      }
     });
     document.getElementById('btn-clear-queue')?.addEventListener('click', () => {
       this.scheduler.clearQueue(); this.renderMain();

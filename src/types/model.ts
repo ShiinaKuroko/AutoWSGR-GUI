@@ -1,5 +1,7 @@
 /** 定义配置、作战方案、舰队规则、模板和修理等领域数据结构。 */
 
+import type { LootPlanId } from '../shared/lootPlans.js';
+
 export interface EmulatorConfig {
   type: string;
   path?: string;
@@ -61,7 +63,8 @@ export interface GuiAutomationSettings {
   expeditionInterval: number;
   battleTimes: number;
   autoLoot: boolean;
-  lootPlanIndex: number;
+  /** 系统战利品计划文件名，不受界面选项顺序影响。 */
+  lootPlanId: LootPlanId;
   lootStopCount: number;
 }
 

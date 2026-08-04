@@ -9,6 +9,10 @@ import type { ConfigModel } from '../../model/ConfigModel';
 import type { TemplateModel } from '../../model/TemplateModel';
 import { PlanModel } from '../../model/PlanModel';
 import type { NormalFightReq } from '../../types/api.js';
+import {
+  isLootPlanId,
+  type LootPlanId,
+} from '../../shared/lootPlans.js';
 import { Logger } from '../../utils/Logger';
 import { normalizeSelectedNodesForBackend } from '../plan/selectedNodes';
 import { buildPlanQueueRequest } from '../taskGroup/queueLoader';
@@ -354,8 +358,8 @@ export class SchedulerBinder {
         Logger.info(`定时任务「${taskKey}」已触发`);
       },
 
-      onLootDue: (planIndex, stopCount) => {
-        this.autoLoadLootTask(planIndex, stopCount);
+      onLootDue: (planId, stopCount) => {
+        this.autoLoadLootTask(planId, stopCount);
       },
 
       onNormalFightDue: () => {
@@ -482,33 +486,36 @@ export class SchedulerBinder {
     return null;
   }
 
-  /** 自动战利品：加载内置捞胖次方案并加入队列 */
-  private async autoLoadLootTask(planIndex: number, stopCount: number): Promise<void> {
-    const tpl = this.host.templateModel.get('builtin_farm_loot');
-    if (!tpl) {
-      Logger.error('自动战利品：未找到内置 builtin_farm_loot 模板');
+  /** 自动战利品：按稳定系统计划标识加载方案并加入队列。 */
+  private async autoLoadLootTask(
+    planId: LootPlanId,
+    stopCount: number,
+  ): Promise<void> {
+    if (!isLootPlanId(planId)) {
+      Logger.error(`自动战利品加载失败: 未知计划 ${String(planId)}`);
       this.host.cronScheduler.clearLootPending();
       return;
     }
-    const paths = tpl.planPaths ?? [];
-    const planPath = paths[planIndex] ?? paths[0];
-    if (!planPath) {
-      Logger.error('自动战利品：模板缺少方案文件');
-      this.host.cronScheduler.clearLootPending();
-      return;
-    }
+    const managedFile = planId;
     const bridge = window.electronBridge;
     if (!bridge) {
       this.host.cronScheduler.clearLootPending();
       return;
     }
     try {
-      const content = await bridge.readFile(planPath);
+      const loaded = await bridge.readManagedCombatPlan(
+        'system',
+        managedFile,
+      );
+      if (!loaded.success || !loaded.content || !loaded.path) {
+        throw new Error(loaded.error || `无法读取 ${managedFile}`);
+      }
+      const planPath = loaded.runtimePath ?? loaded.path;
+      const content = loaded.content;
       const plan = PlanModel.fromYaml(content, planPath);
-      const resolvedPlanId = await bridge.resolveAppPath(plan.fileName);
       const req: NormalFightReq = {
         type: 'normal_fight',
-        plan_id: resolvedPlanId,
+        plan_id: planPath,
         times: 1,
         gap: plan.data.gap ?? 0,
       };

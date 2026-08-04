@@ -93,7 +93,7 @@ async function runRendererTest(root, tempDirectory) {
       },
     ],
     autoLoot: true,
-    lootPlanIndex: 2,
+    lootPlanId: 'bettle-周常-8-2.yaml',
     lootStopCount: 17,
     logLevel: 'WARNING',
     logRoot: 'C:\\SettingsTest\\logs',
@@ -183,6 +183,7 @@ async function runRendererTest(root, tempDirectory) {
     'daily_automation:',
     '  auto_gain_bonus: true',
     '  auto_bath_repair: true',
+    '  loot_plan_index: 2',
     '  backend_options:',
     '    scheduler:',
     '      jitter: 3',
@@ -190,6 +191,11 @@ async function runRendererTest(root, tempDirectory) {
     '  keep: true',
     '',
   ].join('\n'));
+  rendererAssert.equal(
+    model.migratedGuiAutomation.lootPlanId,
+    'bettle-捞胖次-8-5.yaml',
+    '旧 usersettings.yaml 的索引没有保持 8-5 语义',
+  );
 
   const guiSettings = {
     preserved_key: 'keep',
@@ -419,7 +425,7 @@ async function runRendererTest(root, tempDirectory) {
     expeditionInterval: sample.expeditionInterval,
     battleTimes: sample.battleTimes,
     autoLoot: sample.autoLoot,
-    lootPlanIndex: sample.lootPlanIndex,
+    lootPlanId: sample.lootPlanId,
     lootStopCount: sample.lootStopCount,
   });
   rendererAssert.equal(savedGui.backend_port, sample.backendPort);

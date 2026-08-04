@@ -41,6 +41,8 @@ const RESULT_GRADE_ORDER: BattleResultGrade[] = ['D', 'C', 'B', 'A', 'S', 'SS'];
 // ════════════════════════════════════════
 
 const DEFAULT_EXPEDITION_INTERVAL_MS = 15 * 60 * 1000; // 15 分钟
+const STOP_CONFIRM_POLL_INTERVAL_MS = 250;
+const STOP_CONFIRM_TIMEOUT_MS = 30_000;
 
 export class Scheduler {
   private api: ApiClient;
@@ -255,8 +257,8 @@ export class Scheduler {
   }
 
   /**
-   * 立即停止当前任务，并将其恢复为“未开始执行”状态重新放回队列。
-   * 用于用户手动点击“停止”后的可恢复场景。
+   * 请求停止当前任务，等待后端 worker 退出后再放回队列。
+   * WebSocket 完成事件和状态轮询任一确认停止即可结束等待。
    */
   async stopRunning(): Promise<void> {
     Logger.debug(`stopRunning: currentTask=${this.currentTask?.name ?? 'null'} queueLen=${this._taskQueue.length}`, 'scheduler');
@@ -272,12 +274,50 @@ export class Scheduler {
     this._stopped = true;
     this.setStatus('stopping');
     try {
-      await this.api.taskStop();
-    } catch {
-      /* ignore */
+      const response = await this.api.taskStop();
+      if (this.currentTask?.id !== runningTask.id) return;
+      if (!response.success) {
+        this._stopped = false;
+        this.setStatus('running');
+        throw new Error(response.error || '后端拒绝停止任务');
+      }
+    } catch (error) {
+      if (this.currentTask?.id === runningTask.id) {
+        this._stopped = false;
+        this.setStatus('running');
+      }
+      throw error;
     }
 
-    // 用户手动停止后，恢复为“未开始执行”状态放回队列。
+    const deadline = Date.now() + STOP_CONFIRM_TIMEOUT_MS;
+    while (this.currentTask?.id === runningTask.id) {
+      try {
+        const response = await this.api.taskStatus();
+        if (
+          response.success
+          && response.data
+          && response.data.status !== 'running'
+        ) {
+          this.finishManualStop(runningTask);
+          return;
+        }
+      } catch {
+        // WebSocket 仍可能确认结束；轮询错误在超时前继续重试。
+      }
+
+      if (Date.now() >= deadline) {
+        throw new Error('停止请求已发送，但后端在 30 秒内未确认任务结束');
+      }
+      await new Promise(resolve => {
+        setTimeout(resolve, STOP_CONFIRM_POLL_INTERVAL_MS);
+      });
+    }
+  }
+
+  /** 后端确认退出后，将手动停止的任务恢复为未开始状态。 */
+  private finishManualStop(runningTask: SchedulerTask): void {
+    if (this.currentTask?.id !== runningTask.id) return;
+
     runningTask.retryCount = 0;
     runningTask.backendTaskId = undefined;
     this.currentTask = null;
@@ -489,13 +529,8 @@ export class Scheduler {
 
     // 用户主动停止后，不再创建后续任务
     if (this._stopped) {
-      Logger.debug(`handleTaskFinished: _stopped flag set, skipping follow-up for 「${finished.name}」`, 'scheduler');
-      this._stopped = false;
-      this.callbacks.onTaskCompleted?.(finished.id, success, result, error);
-      this.callbacks.onLogicalTaskCompleted?.(finished.logicalId, false, error);
-      this.currentTask = null;
-      this.setStatus('idle');
-      this.notifyQueueChange();
+      Logger.debug(`handleTaskFinished: confirmed manual stop for 「${finished.name}」`, 'scheduler');
+      this.finishManualStop(finished);
       return;
     }
 

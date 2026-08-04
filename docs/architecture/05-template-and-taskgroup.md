@@ -60,8 +60,8 @@ interface TaskTemplate {
 
 | ID | 名称 | 说明 |
 |----|------|------|
-| `builtin_farm_loot` | 刷胖次 | 4 个方案路径可选，`stopCondition: {loot_count_ge: 50}` |
-| `builtin_weekly` | 周常任务 | 11 个章节方案 |
+| `builtin_farm_loot` | 刷胖次 | 6 个方案路径可选，`stopCondition: {loot_count_ge: 50}` |
+| `builtin_weekly_v2` | 周常任务 | 10 个章节方案 |
 | `builtin_exercise` | 自动演习 | 舰队 ID 可配置 |
 | `builtin_campaign` | 战役 | 战役类型任务 |
 | `builtin_decisive` | 决战 | 决战模式 |

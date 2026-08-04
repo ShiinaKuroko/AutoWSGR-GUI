@@ -2,6 +2,7 @@
 
 import type { PlanPresetSource, ShipLibraryShip } from './ipc.js';
 import type { NormalFightTaskConfig, ShipSlot } from './model.js';
+import type { LootPlanId } from '../shared/lootPlans.js';
 
 export interface ConfigViewObject {
   emulatorType: string;
@@ -19,7 +20,7 @@ export interface ConfigViewObject {
   autoNormalFight: boolean;
   normalFightTasks: NormalFightTaskConfig[];
   autoLoot: boolean;
-  lootPlanIndex: number;
+  lootPlanId: LootPlanId;
   lootStopCount: number;
   logLevel: 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
   logRoot: string;

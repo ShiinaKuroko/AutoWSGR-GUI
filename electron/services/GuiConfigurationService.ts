@@ -2,6 +2,13 @@
  * 读取、归一化并保存 GUI 业务设置。
  */
 import { GuiSettingsStore } from './GuiSettingsStore';
+import {
+  DEFAULT_LOOT_PLAN_ID,
+  INTERIM_LOOT_PLAN_IDS,
+  isLootPlanId,
+  lootPlanIdFromIndex,
+  type LootPlanId,
+} from '../../src/shared/lootPlans';
 
 export type BackendStartupMode = 'managed' | 'external';
 export type OcrGpuMode = 'auto' | 'cpu' | 'cuda';
@@ -11,7 +18,7 @@ export interface GuiAutomationSettings {
   expeditionInterval: number;
   battleTimes: number;
   autoLoot: boolean;
-  lootPlanIndex: number;
+  lootPlanId: LootPlanId;
   lootStopCount: number;
 }
 
@@ -226,11 +233,44 @@ export class GuiConfigurationService {
     if (typeof value.autoLoot === 'boolean') {
       settings.autoLoot = value.autoLoot;
     }
-    if (Number.isFinite(Number(value.lootPlanIndex))) {
-      settings.lootPlanIndex = Number(value.lootPlanIndex);
+    let rewrittenLootPlanId: LootPlanId | null = null;
+    let invalidLootPlan = false;
+    if (typeof value.lootPlanId === 'string') {
+      if (isLootPlanId(value.lootPlanId)) {
+        settings.lootPlanId = value.lootPlanId;
+      } else {
+        rewrittenLootPlanId = DEFAULT_LOOT_PLAN_ID;
+        invalidLootPlan = true;
+        settings.lootPlanId = DEFAULT_LOOT_PLAN_ID;
+        settings.autoLoot = false;
+      }
+    } else if (Object.hasOwn(value, 'lootPlanIndex')) {
+      const resolved = lootPlanIdFromIndex(
+        value.lootPlanIndex,
+        INTERIM_LOOT_PLAN_IDS,
+      );
+      rewrittenLootPlanId = resolved ?? DEFAULT_LOOT_PLAN_ID;
+      invalidLootPlan = resolved === null;
+      settings.lootPlanId = rewrittenLootPlanId;
+      if (invalidLootPlan) settings.autoLoot = false;
+    }
+    if (settings.autoLoot === true && !settings.lootPlanId) {
+      rewrittenLootPlanId = DEFAULT_LOOT_PLAN_ID;
+      invalidLootPlan = true;
+      settings.lootPlanId = DEFAULT_LOOT_PLAN_ID;
+      settings.autoLoot = false;
     }
     if (Number.isFinite(Number(value.lootStopCount))) {
       settings.lootStopCount = Number(value.lootStopCount);
+    }
+    if (rewrittenLootPlanId) {
+      const migrated: Record<string, unknown> = {
+        ...value,
+        lootPlanId: rewrittenLootPlanId,
+      };
+      delete migrated.lootPlanIndex;
+      if (invalidLootPlan) migrated.autoLoot = false;
+      this.store.write({ automation: migrated });
     }
     return { exists: true, settings };
   }
@@ -239,6 +279,7 @@ export class GuiConfigurationService {
   setAutomation(
     settings: GuiAutomationSettings,
   ): GuiAutomationSettings {
+    const validLootPlan = isLootPlanId(settings?.lootPlanId);
     const normalized: GuiAutomationSettings = {
       expeditionInterval: Math.max(
         1,
@@ -251,11 +292,10 @@ export class GuiConfigurationService {
         1,
         Math.trunc(Number(settings?.battleTimes) || 3),
       ),
-      autoLoot: settings?.autoLoot === true,
-      lootPlanIndex: Math.max(
-        0,
-        Math.trunc(Number(settings?.lootPlanIndex) || 0),
-      ),
+      autoLoot: settings?.autoLoot === true && validLootPlan,
+      lootPlanId: validLootPlan
+        ? settings.lootPlanId
+        : DEFAULT_LOOT_PLAN_ID,
       lootStopCount: Math.max(
         1,
         Math.min(

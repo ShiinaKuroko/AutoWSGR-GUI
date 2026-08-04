@@ -59,8 +59,11 @@ interface UserSettings {
 | `decisive_ticket_reserve` | `number` | `0` | 决战票保留数 |
 | `decisive_template_id` | `string` | `""` | 决战模板 ID |
 | `auto_loot` | `boolean` | `false` | 自动刷战利品 |
-| `loot_plan_index` | `number` | `0` | 战利品方案索引 |
+| `loot_plan_index` | `number` | `0` | 旧版战利品方案索引，读取后迁移 |
 | `loot_stop_count` | `number` | `50` | 战利品停止数量 |
+
+当前战利品方案保存在 `gui_settings.json` 的
+`automation.lootPlanId`，值为系统计划文件名，不再依赖模板数组顺序。
 
 ---
 

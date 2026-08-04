@@ -16,7 +16,9 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const yaml = require('js-yaml');
 const { TaskGroupModel } = require('../dist/src/model/TaskGroupModel.js');
+const { PlanModel } = require('../dist/src/model/PlanModel.js');
 const {
   loadGroupToQueue,
 } = require('../dist/src/controller/taskGroup/queueLoader.js');
@@ -37,7 +39,7 @@ const executablePlanPath = path.join(
 );
 const executablePlanContent = fs.readFileSync(executablePlanPath, 'utf8');
 const weeklyPlans = [
-  ['周常1章-1-2.yaml', 'bettle-周常-1-1.yaml'],
+  ['周常1章-1-2.yaml', 'bettle-周常-1-2-v1.yaml'],
   ['周常2章-2-1.yaml', 'bettle-周常-2-1.yaml'],
   ['周常3章-3-1.yaml', 'bettle-周常-3-1.yaml'],
   ['周常4章-4-1.yaml', 'bettle-周常-4-1.yaml'],
@@ -53,6 +55,18 @@ const activityPlans = [
   ['活动20260730-E5夜战.yaml', 'bettle-E5夜战.yaml'],
   ['活动20260730-H1炸鱼.yaml', 'bettle-H1炸鱼.yaml'],
   ['活动20260730-H5夜战.yaml', 'bettle-H5夜战.yaml'],
+];
+const legacyWeeklyPlans = [
+  ['周常1章-1-2.yaml', 'bettle-周常-1-2-v1.yaml', 1, 2],
+  ['周常3章-3-3.yaml', 'bettle-周常-3-3-v1.yaml', 3, 3],
+  ['周常6章-6-3.yaml', 'bettle-周常-6-3-v1.yaml', 6, 3],
+];
+const compatibilityPlanResources = [
+  ['bettle-周常-1-2-v1.yaml', 1, 2],
+  ['bettle-周常-3-3-v1.yaml', 3, 3],
+  ['bettle-周常-6-3-v1.yaml', 6, 3],
+  ['bettle-捞胖次-8-5.yaml', 8, 5],
+  ['bettle-捞胖次-9-4-6SS.yaml', 9, 4],
 ];
 
 function installBridge(initialContent) {
@@ -216,6 +230,76 @@ async function verifyActivityAliases() {
   assert.equal(state.saves, 1);
 }
 
+async function verifyLegacyWeeklyMapSemantics() {
+  const legacy = JSON.stringify({
+    activeGroup: '旧周常',
+    groups: [{
+      name: '旧周常',
+      items: legacyWeeklyPlans.map(([legacyFile]) => ({
+        path: `resource/builtin_plans/${legacyFile}`,
+        kind: 'plan',
+        times: 1,
+        label: legacyFile,
+      })),
+    }],
+  });
+  const state = installBridge(legacy);
+  const model = new TaskGroupModel();
+
+  await model.load();
+  const items = model.toJSON().groups[0].items;
+  legacyWeeklyPlans.forEach((
+    [legacyFile, managedFile, chapter, map],
+    index,
+  ) => {
+    assertManagedSystemPlan(items[index], legacyFile, managedFile);
+    const content = fs.readFileSync(path.join(
+      __dirname,
+      '..',
+      'resource',
+      'system_battle_plans',
+      managedFile,
+    ), 'utf8');
+    const plan = yaml.load(content);
+    assert.equal(plan.chapter, chapter);
+    assert.equal(plan.map, map);
+  });
+  assert.equal(state.saves, 1);
+}
+
+function verifyCompatibilityPlanResources() {
+  for (const [file, chapter, map] of compatibilityPlanResources) {
+    const filePath = path.join(
+      __dirname,
+      '..',
+      'resource',
+      'system_battle_plans',
+      file,
+    );
+    const content = fs.readFileSync(filePath, 'utf8');
+    const model = PlanModel.fromYaml(content, filePath);
+    assert.equal(model.data.chapter, chapter);
+    assert.equal(model.data.map, map);
+
+    const raw = yaml.load(content);
+    for (const preset of raw.fleet_presets ?? []) {
+      for (const slot of preset.ships ?? []) {
+        if (!Array.isArray(slot?.candidates)) continue;
+        assert.equal(
+          slot.candidates.every(candidate => (
+            candidate
+            && typeof candidate === 'object'
+            && typeof candidate.name === 'string'
+            && candidate.name.length > 0
+          )),
+          true,
+          `${file} 的 candidates 必须是带 name 的对象`,
+        );
+      }
+    }
+  }
+}
+
 async function verifyInterimVersion() {
   const state = installBridge(JSON.stringify({
     version: 2,
@@ -246,6 +330,8 @@ async function verifyInterimVersion() {
 async function run() {
   await verifyRealLegacyFixtureLifecycle();
   await verifyActivityAliases();
+  await verifyLegacyWeeklyMapSemantics();
+  verifyCompatibilityPlanResources();
   await verifyInterimVersion();
   console.log('任务组加载、保存、执行、再次加载兼容测试通过');
 }

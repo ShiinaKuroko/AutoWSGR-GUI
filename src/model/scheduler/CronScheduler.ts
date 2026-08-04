@@ -1,5 +1,6 @@
 /** 维护定时任务触发器、最后执行时间和 pending 状态。 */
 import { browserStorageStore, type StorageStore } from '../../adapter/index.js';
+import type { LootPlanId } from '../../shared/lootPlans.js';
 
 /**
  * CronScheduler —— 基于系统时钟的定时任务调度器。
@@ -35,8 +36,8 @@ export interface CronConfig {
   autoNormalFight: boolean;
   /** 启用每日自动刷战利品 */
   autoLoot: boolean;
-  /** 战利品方案索引 (builtin_farm_loot.planPaths) */
-  lootPlanIndex: number;
+  /** 战利品系统计划文件名，不依赖模板数组顺序。 */
+  lootPlanId: LootPlanId;
   /** 战利品停止数量 */
   lootStopCount: number;
 }
@@ -50,7 +51,7 @@ export interface CronCallbacks {
   /** 请求执行任务列表中所有任务 */
   onNormalFightDue?: () => void;
   /** 请求添加战利品任务 */
-  onLootDue?: (planIndex: number, stopCount: number) => void;
+  onLootDue?: (planId: LootPlanId, stopCount: number) => void;
   /** 请求添加定时方案任务 */
   onScheduledTaskDue?: (taskKey: string) => void;
   /** 日志 */
@@ -393,8 +394,8 @@ export class CronScheduler {
 
     this.lootPending = true;
     this.lootPendingDate = todayStr;
-    this.log('info', `自动战利品触发 (方案#${this.config.lootPlanIndex}, 停止数量=${this.config.lootStopCount})`);
-    this.callbacks.onLootDue?.(this.config.lootPlanIndex, this.config.lootStopCount);
+    this.log('info', `自动战利品触发 (方案=${this.config.lootPlanId}, 停止数量=${this.config.lootStopCount})`);
+    this.callbacks.onLootDue?.(this.config.lootPlanId, this.config.lootStopCount);
   }
 
   /** 检查定时方案任务 */

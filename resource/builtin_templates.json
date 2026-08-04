@@ -23,8 +23,10 @@
     "createdAt": "2026-01-01T00:00:00.000Z",
     "description": "自动刷取战利品（胖次），可选择不同地图方案",
     "planPaths": [
+      "resource/system_battle_plans/bettle-捞胖次-9-4-6SS.yaml",
       "resource/system_battle_plans/bettle-周常-9-2.yaml",
       "resource/system_battle_plans/bettle-周常-7-4.yaml",
+      "resource/system_battle_plans/bettle-捞胖次-8-5.yaml",
       "resource/system_battle_plans/bettle-周常-8-2.yaml",
       "resource/system_battle_plans/bettle-周常-2-1.yaml"
     ],
@@ -34,7 +36,7 @@
     }
   },
   {
-    "id": "builtin_weekly",
+    "id": "builtin_weekly_v2",
     "name": "周常任务",
     "type": "normal_fight",
     "builtin": true,

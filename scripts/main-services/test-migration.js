@@ -411,6 +411,167 @@ function testUserDataMigration() {
   testLegacyMigrationNotice();
   testLegacyPlanConflictRetry();
   testExistingUserDataCompatibility();
+  testLegacyLootPlanIndexMigration();
+}
+
+/** 验证不同旧版本的数字索引都迁移为原地图的稳定文件名。 */
+function testLegacyLootPlanIndexMigration() {
+  const legacyFivePlanPaths = [
+    'resource/builtin_plans/9-4胖次6SS.yaml',
+    'resource/builtin_plans/周常9章-9-2.yaml',
+    'resource/builtin_plans/周常7章-7-4.yaml',
+    'resource/builtin_plans/8-5胖次.yaml',
+    'resource/builtin_plans/周常2章-2-1.yaml',
+  ];
+  const cases = [
+    {
+      name: 'fallback-four-item-layout',
+      index: 2,
+      expected: 'bettle-捞胖次-8-5.yaml',
+    },
+    {
+      name: 'installed-five-item-index-zero',
+      index: 0,
+      planPaths: legacyFivePlanPaths,
+      expected: 'bettle-捞胖次-9-4-6SS.yaml',
+    },
+    {
+      name: 'installed-five-item-index-two',
+      index: 2,
+      planPaths: legacyFivePlanPaths,
+      expected: 'bettle-周常-7-4.yaml',
+    },
+  ];
+
+  for (const migrationCase of cases) {
+    const root = path.join(
+      temporaryDirectory,
+      `loot-index-${migrationCase.name}`,
+    );
+    const projectRoot = path.join(root, 'project');
+    const userData = path.join(root, 'user-data');
+    const appPaths = new AppPaths({
+      moduleDirectory: path.join(projectRoot, 'dist', 'electron'),
+      isPackaged: () => false,
+      getPath: name => name === 'exe'
+        ? path.join(projectRoot, 'AutoWSGR.exe')
+        : userData,
+      getResourcesPath: () => path.join(projectRoot, 'resources'),
+    });
+    const source = path.join(projectRoot, 'usersettings.yaml');
+    fs.mkdirSync(projectRoot, { recursive: true });
+    fs.writeFileSync(source, [
+      'daily_automation:',
+      `  loot_plan_index: ${migrationCase.index}`,
+      '',
+    ].join('\n'), 'utf8');
+
+    if (migrationCase.planPaths) {
+      const templateFile = path.join(
+        projectRoot,
+        'resources',
+        'resource',
+        'builtin_templates.json',
+      );
+      fs.mkdirSync(path.dirname(templateFile), { recursive: true });
+      fs.writeFileSync(templateFile, JSON.stringify([{
+        id: 'builtin_farm_loot',
+        planPaths: migrationCase.planPaths,
+      }]), 'utf8');
+    }
+
+    const migration = new UserDataMigrationService(
+      appPaths,
+      new AtomicFileStore(),
+    );
+    const result = migration.migrateLegacyUserDataFiles();
+    assert.equal(result.failed, 0);
+    const migrated = yaml.load(fs.readFileSync(
+      path.join(userData, 'usersettings.yaml'),
+      'utf8',
+    ));
+    assert.equal(
+      migrated.daily_automation.loot_plan_id,
+      migrationCase.expected,
+    );
+    assert.equal(
+      Object.hasOwn(
+        migrated.daily_automation,
+        'loot_plan_index',
+      ),
+      false,
+    );
+    assert.equal(
+      yaml.load(fs.readFileSync(source, 'utf8'))
+        .daily_automation.loot_plan_index,
+      migrationCase.index,
+      '旧安装源配置不应被修改',
+    );
+  }
+
+  const root = path.join(
+    temporaryDirectory,
+    'loot-index-already-moved-to-gui-json',
+  );
+  const projectRoot = path.join(root, 'project');
+  const userData = path.join(root, 'user-data');
+  const appPaths = new AppPaths({
+    moduleDirectory: path.join(projectRoot, 'dist', 'electron'),
+    isPackaged: () => false,
+    getPath: name => name === 'exe'
+      ? path.join(projectRoot, 'AutoWSGR.exe')
+      : userData,
+    getResourcesPath: () => path.join(projectRoot, 'resources'),
+  });
+  const source = path.join(projectRoot, 'usersettings.yaml');
+  const templateFile = path.join(
+    projectRoot,
+    'resources',
+    'resource',
+    'builtin_templates.json',
+  );
+  const guiSettingsFile = path.join(userData, 'gui_settings.json');
+  fs.mkdirSync(path.dirname(templateFile), { recursive: true });
+  fs.mkdirSync(userData, { recursive: true });
+  fs.writeFileSync(source, [
+    'daily_automation:',
+    '  auto_loot: true',
+    '  loot_plan_index: 2',
+    '',
+  ].join('\n'), 'utf8');
+  fs.writeFileSync(templateFile, JSON.stringify([{
+    id: 'builtin_farm_loot',
+    planPaths: legacyFivePlanPaths,
+  }]), 'utf8');
+  fs.writeFileSync(guiSettingsFile, JSON.stringify({
+    automation: {
+      autoLoot: true,
+      lootPlanIndex: 2,
+    },
+  }), 'utf8');
+
+  const migration = new UserDataMigrationService(
+    appPaths,
+    new AtomicFileStore(),
+  );
+  assert.equal(migration.migrateLegacyUserDataFiles().failed, 0);
+  const migratedGui = JSON.parse(fs.readFileSync(guiSettingsFile, 'utf8'));
+  assert.equal(
+    migratedGui.automation.lootPlanId,
+    'bettle-周常-7-4.yaml',
+    '已搬到 GUI JSON 的旧五项索引没有恢复原地图',
+  );
+  assert.equal(
+    Object.hasOwn(migratedGui.automation, 'lootPlanIndex'),
+    false,
+  );
+  migration.migrateLegacyUserDataFiles();
+  assert.equal(
+    JSON.parse(fs.readFileSync(guiSettingsFile, 'utf8'))
+      .automation.lootPlanId,
+    'bettle-周常-7-4.yaml',
+    '稳定标识不应在再次启动时被重复解释',
+  );
 }
 
 /** 验证迁移提示展示真实计数、失败文件和源文件保留说明。 */

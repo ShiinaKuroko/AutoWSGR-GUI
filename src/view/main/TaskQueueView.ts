@@ -229,11 +229,20 @@ export class TaskQueueView {
       }
 
       const startBtn = document.getElementById('btn-start-queue');
-      const stopBtn = document.getElementById('btn-stop-task');
+      const stopBtn = document.getElementById(
+        'btn-stop-task',
+      ) as HTMLButtonElement | null;
       const clearBtn = document.getElementById('btn-clear-queue');
       const isRunningOrStopping = vo.status === 'running' || vo.status === 'stopping';
       if (startBtn) startBtn.style.display = isRunningOrStopping ? 'none' : '';
-      if (stopBtn) stopBtn.style.display = isRunningOrStopping ? '' : 'none';
+      if (stopBtn) {
+        const isStopping = vo.status === 'stopping';
+        stopBtn.style.display = isRunningOrStopping ? '' : 'none';
+        stopBtn.disabled = isStopping;
+        stopBtn.classList.toggle('is-stopping', isStopping);
+        stopBtn.setAttribute('aria-busy', String(isStopping));
+        stopBtn.textContent = isStopping ? '停止中' : '停止任务';
+      }
       if (clearBtn) clearBtn.style.display = isRunningOrStopping ? 'none' : '';
     } else {
       this.taskAreaIdle.style.display = '';

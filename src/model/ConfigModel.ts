@@ -9,6 +9,13 @@ import type {
   NormalFightTaskConfig,
   UserSettings,
 } from '../types/model.js';
+import {
+  DEFAULT_LOOT_PLAN_ID,
+  LEGACY_LOOT_PLAN_IDS,
+  isLootPlanId,
+  lootPlanIdFromIndex,
+  normalizeLootPlanId,
+} from '../shared/lootPlans.js';
 import { Logger } from '../utils/Logger';
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -59,7 +66,7 @@ const DEFAULT_GUI_AUTOMATION: GuiAutomationSettings = {
   expeditionInterval: 15,
   battleTimes: 3,
   autoLoot: false,
-  lootPlanIndex: 0,
+  lootPlanId: DEFAULT_LOOT_PLAN_ID,
   lootStopCount: 50,
 };
 
@@ -70,6 +77,7 @@ const LEGACY_DAILY_KEYS = [
   'decisive_ticket_reserve',
   'decisive_template_id',
   'auto_loot',
+  'loot_plan_id',
   'loot_plan_index',
   'loot_stop_count',
 ] as const;
@@ -318,6 +326,7 @@ export class ConfigModel {
 
   updateGuiAutomation(partial: Partial<GuiAutomationSettings>): void {
     Object.assign(this.guiAutomation, partial);
+    const validLootPlan = isLootPlanId(this.guiAutomation.lootPlanId);
     this.guiAutomation.expeditionInterval = Math.max(
       1,
       Math.min(120, Math.trunc(this.guiAutomation.expeditionInterval || 15)),
@@ -326,10 +335,10 @@ export class ConfigModel {
       1,
       Math.trunc(this.guiAutomation.battleTimes || 3),
     );
-    this.guiAutomation.lootPlanIndex = Math.max(
-      0,
-      Math.trunc(this.guiAutomation.lootPlanIndex || 0),
+    this.guiAutomation.lootPlanId = normalizeLootPlanId(
+      this.guiAutomation.lootPlanId,
     );
+    if (!validLootPlan) this.guiAutomation.autoLoot = false;
     this.guiAutomation.lootStopCount = Math.max(
       1,
       Math.min(50, Math.trunc(this.guiAutomation.lootStopCount || 50)),
@@ -475,8 +484,24 @@ export class ConfigModel {
       output.battleTimes = Number(daily.battle_times);
     }
     if (typeof daily.auto_loot === 'boolean') output.autoLoot = daily.auto_loot;
-    if (Number.isFinite(Number(daily.loot_plan_index))) {
-      output.lootPlanIndex = Number(daily.loot_plan_index);
+    if (typeof daily.loot_plan_id === 'string') {
+      if (isLootPlanId(daily.loot_plan_id)) {
+        output.lootPlanId = daily.loot_plan_id;
+      } else {
+        output.lootPlanId = DEFAULT_LOOT_PLAN_ID;
+        output.autoLoot = false;
+      }
+    } else if (Object.hasOwn(daily, 'loot_plan_index')) {
+      const resolved = lootPlanIdFromIndex(
+        daily.loot_plan_index,
+        LEGACY_LOOT_PLAN_IDS,
+      );
+      output.lootPlanId = resolved ?? DEFAULT_LOOT_PLAN_ID;
+      if (!resolved) output.autoLoot = false;
+    }
+    if (output.autoLoot === true && !output.lootPlanId) {
+      output.lootPlanId = DEFAULT_LOOT_PLAN_ID;
+      output.autoLoot = false;
     }
     if (Number.isFinite(Number(daily.loot_stop_count))) {
       output.lootStopCount = Number(daily.loot_stop_count);

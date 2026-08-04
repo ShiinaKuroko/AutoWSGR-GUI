@@ -6,6 +6,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { isDeepStrictEqual } from 'util';
+import {
+  DEFAULT_LOOT_PLAN_ID,
+  LEGACY_LOOT_PLAN_IDS,
+  lootPlanIdFromIndex,
+  lootPlanIdFromLegacyPath,
+  type LootPlanId,
+} from '../../src/shared/lootPlans';
 import { AppPaths } from './AppPaths';
 import { AtomicFileStore } from './AtomicFileStore';
 import {
@@ -94,6 +101,7 @@ export class UserDataMigrationService {
         ),
       );
     }
+    this.reconcilePreviouslyMigratedLootPlanSelection();
     this.recordResult(
       summary,
       path.join(legacyRoot, 'task_groups.json'),
@@ -348,6 +356,9 @@ export class UserDataMigrationService {
       format,
       `旧版 ${path.basename(source)}`,
     );
+    if (format === 'yaml' && path.basename(source) === 'usersettings.yaml') {
+      this.migrateLegacyLootPlanSelection(legacy, source);
+    }
     const current = fs.existsSync(target)
       ? this.parseStructuredContent(
         fs.readFileSync(target, 'utf-8'),
@@ -372,6 +383,130 @@ export class UserDataMigrationService {
       completed: [...completed].sort(),
     });
     return true;
+  }
+
+  /**
+   * 把旧数字索引转换为稳定计划文件名。
+   *
+   * 完整旧安装优先使用其 builtin_templates.json 解释真实数组顺序；
+   * 找不到模板资源时，才按 PR 前四项布局迁移。
+   */
+  private migrateLegacyLootPlanSelection(
+    settings: Record<string, unknown>,
+    source: string,
+  ): void {
+    const daily = settings.daily_automation;
+    if (!this.isPlainObject(daily)) return;
+    if (typeof daily.loot_plan_id === 'string') return;
+    if (!Number.isFinite(Number(daily.loot_plan_index))) return;
+
+    const index = Math.trunc(Number(daily.loot_plan_index));
+    const resolved = this.resolveLegacyLootPlanId(
+      index,
+      path.dirname(source),
+    );
+    daily.loot_plan_id = resolved ?? DEFAULT_LOOT_PLAN_ID;
+    if (!resolved) daily.auto_loot = false;
+    delete daily.loot_plan_index;
+  }
+
+  /**
+   * 纠正已由中间版本搬到 GUI JSON、但尚未解释语义的旧索引。
+   * 两边索引不一致说明用户后来改过选择，此时保留 GUI JSON 的新布局语义。
+   */
+  private reconcilePreviouslyMigratedLootPlanSelection(): void {
+    const legacyRoot = this.appPaths.appRoot();
+    const source = path.join(legacyRoot, 'usersettings.yaml');
+    const target = path.join(
+      this.appPaths.userDataRoot(),
+      'gui_settings.json',
+    );
+    if (!fs.existsSync(source) || !fs.existsSync(target)) return;
+
+    try {
+      const settings = this.parseStructuredContent(
+        fs.readFileSync(source, 'utf-8'),
+        'yaml',
+        '旧版 usersettings.yaml',
+      );
+      const daily = settings.daily_automation;
+      if (!this.isPlainObject(daily)) return;
+      if (!Number.isFinite(Number(daily.loot_plan_index))) return;
+
+      const gui = this.parseStructuredContent(
+        fs.readFileSync(target, 'utf-8'),
+        'json',
+        '当前 gui_settings.json',
+      );
+      const automation = gui.automation;
+      if (!this.isPlainObject(automation)) return;
+      if (typeof automation.lootPlanId === 'string') return;
+      if (!Number.isFinite(Number(automation.lootPlanIndex))) return;
+
+      const sourceIndex = Math.trunc(Number(daily.loot_plan_index));
+      const targetIndex = Math.trunc(Number(automation.lootPlanIndex));
+      if (sourceIndex !== targetIndex) return;
+
+      const resolved = this.resolveLegacyLootPlanId(
+        sourceIndex,
+        legacyRoot,
+      );
+      const migrated: Record<string, unknown> = {
+        ...automation,
+        lootPlanId: resolved ?? DEFAULT_LOOT_PLAN_ID,
+      };
+      delete migrated.lootPlanIndex;
+      if (!resolved) migrated.autoLoot = false;
+      this.atomicFiles.write(
+        target,
+        JSON.stringify({ ...gui, automation: migrated }, null, 2),
+      );
+    } catch {
+      // 损坏文件沿用各自读取服务的既有回退，不覆盖原文件。
+    }
+  }
+
+  /** 按旧安装自己的模板顺序解释刷取计划索引。 */
+  private resolveLegacyLootPlanId(
+    index: number,
+    legacyRoot: string,
+  ): LootPlanId | null {
+    const legacyPath = this.legacyLootPlanPaths(legacyRoot)[index];
+    return lootPlanIdFromLegacyPath(legacyPath)
+      ?? lootPlanIdFromIndex(index, LEGACY_LOOT_PLAN_IDS);
+  }
+
+  /** 读取旧安装自己保存的刷胖次模板顺序。 */
+  private legacyLootPlanPaths(legacyRoot: string): string[] {
+    const candidates = [
+      path.join(
+        legacyRoot,
+        'resources',
+        'resource',
+        'builtin_templates.json',
+      ),
+      path.join(legacyRoot, 'resource', 'builtin_templates.json'),
+    ];
+    for (const file of candidates) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(file, 'utf-8')) as unknown;
+        if (!Array.isArray(parsed)) continue;
+        const template = parsed.find(item => (
+          this.isPlainObject(item)
+          && item.id === 'builtin_farm_loot'
+          && Array.isArray(item.planPaths)
+        ));
+        if (!this.isPlainObject(template) || !Array.isArray(template.planPaths)) {
+          continue;
+        }
+        return template.planPaths.filter(
+          (value): value is string => typeof value === 'string',
+        );
+      } catch {
+        // 旧模板缺失或损坏时使用已知四项布局。
+      }
+    }
+    return [];
   }
 
   private migrateTemplate(source: string, target: string): boolean {

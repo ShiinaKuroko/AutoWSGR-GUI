@@ -2,6 +2,7 @@
  * 通过 contextBridge 向渲染进程安全暴露 IPC 方法。
  */
 import { contextBridge, ipcRenderer } from 'electron';
+import type { LootPlanId } from '../src/shared/lootPlans';
 
 contextBridge.exposeInMainWorld('electronBridge', {
   getAppVersion: () => {
@@ -56,7 +57,7 @@ contextBridge.exposeInMainWorld('electronBridge', {
     expeditionInterval: number;
     battleTimes: number;
     autoLoot: boolean;
-    lootPlanIndex: number;
+    lootPlanId: LootPlanId;
     lootStopCount: number;
   }) => {
     return ipcRenderer.invoke('set-gui-automation-settings', settings);

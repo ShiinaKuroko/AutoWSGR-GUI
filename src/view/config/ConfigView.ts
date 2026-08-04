@@ -5,6 +5,7 @@
  */
 import type { NormalFightTaskConfig } from '../../types/model.js';
 import type { ConfigViewObject } from '../../types/view.js';
+import { normalizeLootPlanId } from '../../shared/lootPlans.js';
 
 type StatusKind = 'ok' | 'error' | 'unknown';
 
@@ -146,7 +147,7 @@ export class ConfigView {
     this.normalFightFleetNames.clear();
     this.renderNormalFightTasks();
     this.autoLoot.checked = vo.autoLoot;
-    this.lootPlan.value = String(vo.lootPlanIndex);
+    this.lootPlan.value = vo.lootPlanId;
     this.lootStopCount.value = String(vo.lootStopCount);
     this.logLevel.value = vo.logLevel;
     this.logRoot.value = vo.logRoot;
@@ -216,7 +217,7 @@ export class ConfigView {
       autoNormalFight: this.autoNormalFight.checked,
       normalFightTasks: this.collectNormalFightTasks(),
       autoLoot: this.autoLoot.checked,
-      lootPlanIndex: Math.trunc(this.clamp(this.lootPlan.value, 0, 999, 0)),
+      lootPlanId: normalizeLootPlanId(this.lootPlan.value),
       lootStopCount: Math.trunc(this.clamp(this.lootStopCount.value, 1, 50, 50)),
       logLevel: this.logLevel.value as ConfigViewObject['logLevel'],
       logRoot: this.logRoot.value.trim() || 'log',

@@ -254,17 +254,70 @@ function testGuiConfigurationService() {
     exists: false,
     settings: {},
   });
+  store.write({
+    automation: {
+      expeditionInterval: 20,
+      battleTimes: 4,
+      autoLoot: true,
+      lootPlanIndex: 2,
+      lootStopCount: 16,
+    },
+  });
+  assert.deepEqual(service.automation(), {
+    exists: true,
+    settings: {
+      expeditionInterval: 20,
+      battleTimes: 4,
+      autoLoot: true,
+      lootPlanId: 'bettle-周常-8-2.yaml',
+      lootStopCount: 16,
+    },
+  });
+  assert.equal(
+    Object.hasOwn(store.read().automation, 'lootPlanIndex'),
+    false,
+  );
+  store.write({
+    automation: {
+      autoLoot: true,
+      lootPlanId: 'bettle-不存在.yaml',
+    },
+  });
+  assert.deepEqual(service.automation(), {
+    exists: true,
+    settings: {
+      autoLoot: false,
+      lootPlanId: 'bettle-周常-9-2.yaml',
+    },
+  });
+  assert.deepEqual(store.read().automation, {
+    autoLoot: false,
+    lootPlanId: 'bettle-周常-9-2.yaml',
+  });
+  store.write({
+    automation: {
+      autoLoot: true,
+      lootPlanIndex: 99,
+    },
+  });
+  assert.deepEqual(service.automation(), {
+    exists: true,
+    settings: {
+      autoLoot: false,
+      lootPlanId: 'bettle-周常-9-2.yaml',
+    },
+  });
   assert.deepEqual(service.setAutomation({
     expeditionInterval: 999,
     battleTimes: 0,
     autoLoot: true,
-    lootPlanIndex: -2,
+    lootPlanId: 'bettle-捞胖次-8-5.yaml',
     lootStopCount: 0,
   }), {
     expeditionInterval: 120,
     battleTimes: 3,
     autoLoot: true,
-    lootPlanIndex: 0,
+    lootPlanId: 'bettle-捞胖次-8-5.yaml',
     lootStopCount: 50,
   });
   assert.deepEqual(service.automation(), {
@@ -273,7 +326,7 @@ function testGuiConfigurationService() {
       expeditionInterval: 120,
       battleTimes: 3,
       autoLoot: true,
-      lootPlanIndex: 0,
+      lootPlanId: 'bettle-捞胖次-8-5.yaml',
       lootStopCount: 50,
     },
   });
@@ -307,7 +360,7 @@ function testGuiConfigurationService() {
       expeditionInterval: 120,
       battleTimes: 3,
       autoLoot: true,
-      lootPlanIndex: 0,
+      lootPlanId: 'bettle-捞胖次-8-5.yaml',
       lootStopCount: 50,
     },
     preserved: 'keep',

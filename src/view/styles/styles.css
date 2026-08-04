@@ -1209,6 +1209,53 @@ input[type=checkbox]:focus-visible {
   line-height: 1;
 }
 
+#btn-stop-task {
+  min-width: 58px;
+  padding-right: 9px;
+  padding-left: 9px;
+  border-color: #b85c5c;
+  background: #c96b6b;
+  font-size: 10px;
+  font-weight: 700;
+  box-shadow: 0 2px 5px rgba(185, 92, 92, 0.18);
+}
+
+#btn-stop-task:hover {
+  background: #b85c5c;
+  border-color: #a94f4f;
+  box-shadow: 0 2px 6px rgba(185, 92, 92, 0.25);
+}
+
+#btn-stop-task.is-stopping,
+#btn-stop-task.is-stopping:disabled {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 72px;
+  border-color: #e67700;
+  background: #f08c00;
+  color: #fff;
+  cursor: wait;
+  opacity: 1;
+  box-shadow: 0 2px 7px rgba(240, 140, 0, 0.35);
+}
+
+#btn-stop-task.is-stopping::before {
+  width: 8px;
+  height: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: task-stop-spin 0.8s linear infinite;
+  content: "";
+}
+
+@keyframes task-stop-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 /* ═══ 任务队列 ═══ */
 .task-queue-list {
   max-height: 200px;

@@ -106,7 +106,7 @@ export class ConfigController {
       autoNormalFight: cfg.daily_automation.auto_normal_fight,
       normalFightTasks: cfg.daily_automation.normal_fight_tasks,
       autoLoot: gui.autoLoot,
-      lootPlanIndex: gui.lootPlanIndex,
+      lootPlanId: gui.lootPlanId,
       lootStopCount: gui.lootStopCount,
       logLevel: cfg.log.level,
       logRoot: cfg.log.root,
@@ -282,7 +282,7 @@ export class ConfigController {
       expeditionInterval: collected.expeditionInterval,
       battleTimes: collected.battleTimes,
       autoLoot: collected.autoLoot,
-      lootPlanIndex: collected.lootPlanIndex,
+      lootPlanId: collected.lootPlanId,
       lootStopCount: collected.lootStopCount,
     });
     await bridge?.setGuiAutomationSettings?.(
@@ -300,7 +300,7 @@ export class ConfigController {
       battleTimes: gui.battleTimes,
       autoNormalFight: da.auto_normal_fight,
       autoLoot: gui.autoLoot,
-      lootPlanIndex: gui.lootPlanIndex,
+      lootPlanId: gui.lootPlanId,
       lootStopCount: gui.lootStopCount,
     });
 

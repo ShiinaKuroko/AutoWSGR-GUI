@@ -119,11 +119,13 @@ flowchart TD
 `CronScheduler` 通过回调通知 `AppController`，由 Controller 调用 `Scheduler.addTask()` 入队：
 
 ```typescript
+import type { LootPlanId } from '../../src/shared/lootPlans';
+
 interface CronCallbacks {
   onExerciseDue?: (fleetId: number) => void;
   onCampaignDue?: (campaignName: string, times: number) => void;
   onNormalFightDue?: () => void;
-  onLootDue?: (planIndex: number, stopCount: number) => void;
+  onLootDue?: (planId: LootPlanId, stopCount: number) => void;
 }
 ```
 
