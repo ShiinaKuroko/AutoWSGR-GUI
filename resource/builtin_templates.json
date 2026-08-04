@@ -1,29 +1,5 @@
 [
   {
-    "id": "builtin_autowsgr_normal_fight",
-    "name": "AutoWSGR 主库出征计划",
-    "type": "normal_fight",
-    "builtin": true,
-    "createdAt": "2026-08-05T00:00:00.000Z",
-    "description": "AutoWSGR 主库提供的常规出征、练级、炸潜及战利品计划",
-    "planPaths": [
-      "resource/system_battle_plans/bettle-old-1-1捞鱼雷.yaml",
-      "resource/system_battle_plans/bettle-old-6-1炸鱼5SS.yaml",
-      "resource/system_battle_plans/bettle-old-8-2B轻巡练级.yaml",
-      "resource/system_battle_plans/bettle-old-8-2BJ低耗胖次.yaml",
-      "resource/system_battle_plans/bettle-old-8-4六潜周常.yaml",
-      "resource/system_battle_plans/bettle-old-8-5AI六潜胖次.yaml",
-      "resource/system_battle_plans/bettle-old-9-1A航空练级.yaml",
-      "resource/system_battle_plans/bettle-old-9-1B炸潜练级.yaml",
-      "resource/system_battle_plans/bettle-old-9-2ADGHM速刷胖次.yaml",
-      "resource/system_battle_plans/bettle-old-9-3AD航空练级.yaml",
-      "resource/system_battle_plans/bettle-old-9-4六潜练级.yaml",
-      "resource/system_battle_plans/bettle-old-9-5B炸潜.yaml",
-      "resource/system_battle_plans/bettle-old-9-5BE炸潜.yaml"
-    ],
-    "defaultTimes": 1
-  },
-  {
     "id": "builtin_farm_loot",
     "name": "刷胖次",
     "type": "normal_fight",
