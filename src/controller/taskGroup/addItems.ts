@@ -1,11 +1,13 @@
+/** 将方案、模板和预设添加为任务组条目。 */
 /**
  * addItems —— 向任务组添加条目的独立函数。
  */
 import type { TaskGroupModel } from '../../model/TaskGroupModel';
 import type { PlanModel } from '../../model/PlanModel';
-import type { TaskPreset } from '../../types/model';
-import type { ManagedBattlePlan } from '../../types/electronBridge';
+import type { TaskPreset } from '../../types/model.js';
+import type { ManagedBattlePlan } from '../../types/ipc.js';
 import { Logger } from '../../utils/Logger';
+import { yamlCodec } from '../../adapter';
 
 function buildInlinePlanPath(plan: PlanModel, plansDir: string): string {
   const safeMap = plan.mapName.replace(/[^a-zA-Z0-9_-]+/g, '_');
@@ -91,7 +93,7 @@ export async function addFileToGroup(
   ], plansDir || undefined);
   if (!result) return;
 
-  const parsed = (await import('js-yaml')).load(result.content) as Record<string, unknown>;
+  const parsed = yamlCodec.parse<Record<string, unknown>>(result.content);
   let itemKind: 'plan' | 'preset' = 'plan';
   if (
     parsed
@@ -103,10 +105,11 @@ export async function addFileToGroup(
   }
 
   const label = result.path.split(/[\\/]/).pop()?.replace(/\.ya?ml$/i, '') ?? result.path;
+  const parsedTimes = Number(parsed?.times);
   taskGroupModel.addItem(group.name, {
     path: result.path,
     kind: itemKind,
-    times: (parsed as any)?.times ?? 1,
+    times: Number.isFinite(parsedTimes) && parsedTimes > 0 ? parsedTimes : 1,
     label,
   });
   taskGroupModel.save();

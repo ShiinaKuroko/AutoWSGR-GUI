@@ -1,17 +1,20 @@
+/** 唯一持有就绪与延迟队列，并实现优先级和轮询排序。 */
 /**
  * TaskQueue —— 优先级任务队列 + 延迟任务管理。
  * 从 Scheduler.ts 拆出，封装队列数据结构及相关操作。
  */
-import type { TaskRequest } from '../../types/api';
+import type { TaskRequest } from '../../types/api.js';
 import type {
   StopCondition,
   BathRepairConfig,
   FleetPreset,
   BattleResultGrade,
-} from '../../types/model';
+} from '../../types/model.js';
 import type { BathingShip } from './RepairManager';
 import { TaskPriority, type SchedulerTaskType, type SchedulerTask } from '../../types/scheduler';
-import { resolveFleetPreset, resolveFleetPresetRules, toBackendName } from '../../data/shipData';
+import { resolveFleetPreset, resolveFleetPresetRules, toBackendName } from '../fleet/index.js';
+import { calculateRepairWaitMs } from './SchedulerRepairPolicy.js';
+import { createSchedulerTask, findPriorityInsertionIndex } from './SchedulerTaskPolicy.js';
 
 // ════════════════════════════════════════
 // ID 生成 & 辅助函数
@@ -77,17 +80,7 @@ export class TaskQueue {
    * beforeSamePriority=true 时，会插入到同优先级任务之前（用于重试/跟随）。
    */
   insertByPriority(task: SchedulerTask, beforeSamePriority = false): void {
-    const idx = this.queue.findIndex((t) => {
-      if (t.priority < task.priority) return false;
-      if (t.priority > task.priority) return true;
-      // 同优先级: 按 sortKey 排序
-      const tKey = t.sortKey ?? Infinity;
-      const taskKey = task.sortKey ?? Infinity;
-      if (beforeSamePriority) {
-        return tKey >= taskKey;
-      }
-      return tKey > taskKey;
-    });
+    const idx = findPriorityInsertionIndex(this.queue, task, beforeSamePriority);
     if (idx === -1) {
       this.queue.push(task);
     } else {
@@ -114,31 +107,24 @@ export class TaskQueue {
     sortKey?: number,
   ): string {
     const id = generateTaskId();
-    const unlimited = !Number.isFinite(times);
-    const normalizedTimes = unlimited ? 1 : Math.max(1, Math.trunc(times));
-    const task: SchedulerTask = {
+    const task = createSchedulerTask({
       id,
-      logicalId: id,
       name,
       type,
-      priority,
       request,
-      remainingTimes: normalizedTimes,
-      totalTimes: normalizedTimes,
-      unlimited,
+      priority,
+      times,
       stopCondition,
-      maxRetries: 2,
-      retryCount: 0,
-      forceRetry,
-      allowPolling: !!allowPolling,
       bathRepairConfig,
       fleetId,
       fleetPresets,
-      currentPresetIndex: currentPresetIndex ?? -1,
+      currentPresetIndex,
+      forceRetry,
+      allowPolling,
       endpointNodes,
       endpointResult,
       sortKey,
-    };
+    });
     this.insertByPriority(task);
     return id;
   }

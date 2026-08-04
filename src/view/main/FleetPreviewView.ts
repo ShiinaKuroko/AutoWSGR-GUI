@@ -1,9 +1,16 @@
+/** 渲染当前舰队舰船、等级和损伤状态预览。 */
 import type {
+  ElectronBridge,
   ShipLibraryManifest,
   ShipLibraryShip,
-} from '../../types/electronBridge';
-import type { CurrentFleetShipVO } from '../../types/view';
+} from '../../types/ipc.js';
+import type { CurrentFleetShipVO } from '../../types/view.js';
 import { createShipArtwork } from '../plan/ShipArtwork';
+
+export type FleetPreviewViewHost = Pick<
+  ElectronBridge,
+  'getShipLibraryManifest'
+>;
 
 /** 在主页展示当前运行任务明确携带的舰队。 */
 export class FleetPreviewView {
@@ -14,7 +21,7 @@ export class FleetPreviewView {
   private currentShips: CurrentFleetShipVO[] = [];
   private renderedSignature = '';
 
-  constructor() {
+  constructor(private readonly host: FleetPreviewViewHost) {
     this.grid = document.getElementById('current-fleet-preview')!;
     this.empty = document.getElementById('current-fleet-empty')!;
   }
@@ -49,8 +56,7 @@ export class FleetPreviewView {
     this.grid.setAttribute('aria-busy', 'true');
     this.manifestPromise = (async () => {
       try {
-        this.manifest = await window.electronBridge
-          ?.getShipLibraryManifest?.() ?? null;
+        this.manifest = await this.host.getShipLibraryManifest();
       } catch {
         this.manifest = null;
       } finally {

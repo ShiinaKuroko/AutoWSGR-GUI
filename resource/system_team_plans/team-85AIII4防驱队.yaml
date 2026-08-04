@@ -6,47 +6,47 @@ ships:
     ship_type: [bbv]
   - name: 炽热·改
     search_name: 炽热
-    ship_type: [ddgaa]
+    ship_type: [aadg]
     candidates:
-      - {name: 米切尔·改, search_name: 米切尔, ship_type: [ddgaa]}
-      - {name: 威武·改, search_name: 威武, ship_type: [ddgaa]}
-      - {name: 谦逊·改, search_name: 谦逊, ship_type: [ddgaa]}
-      - {name: 炽热·改, search_name: 炽热, ship_type: [ddgaa]}
-      - {name: 基阿特·改, search_name: 基阿特, ship_type: [ddgaa]}
-      - {name: 考文垂, ship_type: [ddgaa]}
-      - {name: 不惧(防空导弹驱逐舰), search_name: 不惧, ship_type: [ddgaa]}
-      - {name: 絮弗伦, ship_type: [ddgaa]}
+      - {name: 米切尔·改, search_name: 米切尔, ship_type: [aadg]}
+      - {name: 威武·改, search_name: 威武, ship_type: [aadg]}
+      - {name: 谦逊·改, search_name: 谦逊, ship_type: [aadg]}
+      - {name: 炽热·改, search_name: 炽热, ship_type: [aadg]}
+      - {name: 基阿特·改, search_name: 基阿特, ship_type: [aadg]}
+      - {name: 考文垂, ship_type: [aadg]}
+      - {name: 不惧(防空导弹驱逐舰), search_name: 不惧, ship_type: [aadg]}
+      - {name: 絮弗伦, ship_type: [aadg]}
   - name: 考文垂
-    ship_type: [ddgaa]
+    ship_type: [aadg]
     candidates:
-      - {name: 米切尔·改, search_name: 米切尔, ship_type: [ddgaa]}
-      - {name: 威武·改, search_name: 威武, ship_type: [ddgaa]}
-      - {name: 谦逊·改, search_name: 谦逊, ship_type: [ddgaa]}
-      - {name: 炽热·改, search_name: 炽热, ship_type: [ddgaa]}
-      - {name: 基阿特·改, search_name: 基阿特, ship_type: [ddgaa]}
-      - {name: 考文垂, ship_type: [ddgaa]}
-      - {name: 不惧(防空导弹驱逐舰), search_name: 不惧, ship_type: [ddgaa]}
-      - {name: 絮弗伦, ship_type: [ddgaa]}
+      - {name: 米切尔·改, search_name: 米切尔, ship_type: [aadg]}
+      - {name: 威武·改, search_name: 威武, ship_type: [aadg]}
+      - {name: 谦逊·改, search_name: 谦逊, ship_type: [aadg]}
+      - {name: 炽热·改, search_name: 炽热, ship_type: [aadg]}
+      - {name: 基阿特·改, search_name: 基阿特, ship_type: [aadg]}
+      - {name: 考文垂, ship_type: [aadg]}
+      - {name: 不惧(防空导弹驱逐舰), search_name: 不惧, ship_type: [aadg]}
+      - {name: 絮弗伦, ship_type: [aadg]}
   - name: 絮弗伦
-    ship_type: [ddgaa]
+    ship_type: [aadg]
     candidates:
-      - {name: 米切尔·改, search_name: 米切尔, ship_type: [ddgaa]}
-      - {name: 威武·改, search_name: 威武, ship_type: [ddgaa]}
-      - {name: 谦逊·改, search_name: 谦逊, ship_type: [ddgaa]}
-      - {name: 炽热·改, search_name: 炽热, ship_type: [ddgaa]}
-      - {name: 基阿特·改, search_name: 基阿特, ship_type: [ddgaa]}
-      - {name: 考文垂, ship_type: [ddgaa]}
-      - {name: 不惧(防空导弹驱逐舰), search_name: 不惧, ship_type: [ddgaa]}
-      - {name: 絮弗伦, ship_type: [ddgaa]}
+      - {name: 米切尔·改, search_name: 米切尔, ship_type: [aadg]}
+      - {name: 威武·改, search_name: 威武, ship_type: [aadg]}
+      - {name: 谦逊·改, search_name: 谦逊, ship_type: [aadg]}
+      - {name: 炽热·改, search_name: 炽热, ship_type: [aadg]}
+      - {name: 基阿特·改, search_name: 基阿特, ship_type: [aadg]}
+      - {name: 考文垂, ship_type: [aadg]}
+      - {name: 不惧(防空导弹驱逐舰), search_name: 不惧, ship_type: [aadg]}
+      - {name: 絮弗伦, ship_type: [aadg]}
   - name: 基阿特·改
     search_name: 基阿特
-    ship_type: [ddgaa]
+    ship_type: [aadg]
     candidates:
-      - {name: 米切尔·改, search_name: 米切尔, ship_type: [ddgaa]}
-      - {name: 威武·改, search_name: 威武, ship_type: [ddgaa]}
-      - {name: 谦逊·改, search_name: 谦逊, ship_type: [ddgaa]}
-      - {name: 炽热·改, search_name: 炽热, ship_type: [ddgaa]}
-      - {name: 基阿特·改, search_name: 基阿特, ship_type: [ddgaa]}
-      - {name: 考文垂, ship_type: [ddgaa]}
-      - {name: 不惧(防空导弹驱逐舰), search_name: 不惧, ship_type: [ddgaa]}
-      - {name: 絮弗伦, ship_type: [ddgaa]}
+      - {name: 米切尔·改, search_name: 米切尔, ship_type: [aadg]}
+      - {name: 威武·改, search_name: 威武, ship_type: [aadg]}
+      - {name: 谦逊·改, search_name: 谦逊, ship_type: [aadg]}
+      - {name: 炽热·改, search_name: 炽热, ship_type: [aadg]}
+      - {name: 基阿特·改, search_name: 基阿特, ship_type: [aadg]}
+      - {name: 考文垂, ship_type: [aadg]}
+      - {name: 不惧(防空导弹驱逐舰), search_name: 不惧, ship_type: [aadg]}
+      - {name: 絮弗伦, ship_type: [aadg]}

@@ -1,4 +1,5 @@
-import type { MainViewObject } from '../../types/view';
+/** 渲染连接、运行状态、当前任务和远征倒计时。 */
+import type { MainViewObject } from '../../types/view.js';
 import { resolveTaskProgressPercent } from './TaskQueueView';
 
 export class StatusBar {

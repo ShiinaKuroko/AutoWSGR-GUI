@@ -1,9 +1,11 @@
+/** 维护模板向导步骤、预填数据和表单提交。 */
 /**
  * wizard —— 模板向导显示/导航/完成逻辑。
  */
 import type { TemplateWizardView } from '../../view/template/TemplateWizardView';
 import type { TemplateModel } from '../../model/TemplateModel';
-import type { TaskTemplate } from '../../types/model';
+import type { TaskTemplate } from '../../types/model.js';
+import type { WizardPrefillData } from '../../types/view.js';
 import { Logger } from '../../utils/Logger';
 import { showAlert, showSaveSuccess } from '../shared/DialogHelper';
 
@@ -20,7 +22,7 @@ export function showWizard(
 
 /** 用已有模板数据预填向导（导入/编辑） */
 export function showWizardWithTemplate(
-  tpl: Record<string, any>,
+  tpl: WizardPrefillData,
   wizardView: TemplateWizardView,
   wizardPlanPaths: { value: string[] },
 ): void {
@@ -31,7 +33,7 @@ export function showWizardWithTemplate(
   if (planPaths.length > 0) {
     wizardView.renderPlanList(planPaths);
   }
-  wizardView.prefill(tpl as any);
+  wizardView.prefill(tpl);
   wizardView.setStep(2);
 }
 

@@ -1,10 +1,10 @@
+/** 渲染设置页面、收集表单输入并发出保存和检测意图。 */
 /**
  * ConfigView —— 设置页纯渲染组件。
  * 接收 ConfigViewObject 填充表单，用户修改后由 Controller 收集。
  */
-import * as yaml from 'js-yaml';
-import type { NormalFightTaskConfig } from '../../types/model';
-import type { ConfigViewObject } from '../../types/view';
+import type { NormalFightTaskConfig } from '../../types/model.js';
+import type { ConfigViewObject } from '../../types/view.js';
 
 type StatusKind = 'ok' | 'error' | 'unknown';
 
@@ -161,8 +161,8 @@ export class ConfigView {
     this.ocrGpu.checked = vo.ocrGpu;
     this.ocrMirror.value = vo.ocrMirror;
     this.setRangeValue(this.ocrConfidenceRange, this.ocrConfidence, vo.ocrConfidence);
-    this.shipNameAliases.value = this.formatStringMap(vo.shipNameAliases);
-    this.shipNameCorrections.value = this.formatStringMap(vo.shipNameCorrections);
+    this.shipNameAliases.value = vo.shipNameAliasesText;
+    this.shipNameCorrections.value = vo.shipNameCorrectionsText;
     this.cudaPath.value = vo.cudaPath;
     this.setCudaStatus(
       vo.cudaPath ? '待检测' : '系统环境',
@@ -230,8 +230,8 @@ export class ConfigView {
       ocrGpu: this.ocrGpu.checked,
       ocrMirror: this.ocrMirror.value as ConfigViewObject['ocrMirror'],
       ocrConfidence: this.clamp(this.ocrConfidence.value, 0, 1, 0.65),
-      shipNameAliases: this.parseStringMap(this.shipNameAliases.value, '自定义舰名映射'),
-      shipNameCorrections: this.parseStringMap(this.shipNameCorrections.value, '识别纠错规则'),
+      shipNameAliasesText: this.shipNameAliases.value,
+      shipNameCorrectionsText: this.shipNameCorrections.value,
       cudaPath: this.cudaPath.value.trim(),
       saveBackendScreenshots: this.saveBackendScreenshots.checked,
       pythonPath: this.pythonPath.value.trim(),
@@ -361,32 +361,6 @@ export class ConfigView {
   private clamp(value: string, min: number, max: number, fallback: number): number {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
-  }
-
-  private formatStringMap(value: Record<string, string>): string {
-    if (Object.keys(value).length === 0) return '';
-    return yaml.dump(value, { lineWidth: -1, noRefs: true }).trim();
-  }
-
-  private parseStringMap(source: string, label: string): Record<string, string> {
-    if (!source.trim()) return {};
-    let parsed: unknown;
-    try {
-      parsed = yaml.load(source);
-    } catch (error) {
-      throw new Error(`${label}不是合法 YAML: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error(`${label}必须使用“识别名称: 标准名称”的映射格式`);
-    }
-    const output: Record<string, string> = {};
-    for (const [key, value] of Object.entries(parsed)) {
-      if (!key.trim() || typeof value !== 'string' || !value.trim()) {
-        throw new Error(`${label}中的键和值都必须是非空文字`);
-      }
-      output[key.trim()] = value.trim();
-    }
-    return output;
   }
 
   private setStatus(target: HTMLElement | null, text: string, status: StatusKind): void {

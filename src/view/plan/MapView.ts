@@ -1,4 +1,5 @@
-import type { NodeViewObject, MapNodeType, MapEdgeVO } from '../../types/view';
+/** 绘制作战地图节点与连线并发出节点选择意图。 */
+import type { NodeViewObject, MapNodeType, MapEdgeVO } from '../../types/view.js';
 
 import {
   captureScrollPosition,

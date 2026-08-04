@@ -1,3 +1,4 @@
+/** 渲染决战舰队配置并向 Controller 提交编辑意图。 */
 /**
  * 旧决战计划编辑页。
  *
@@ -15,12 +16,14 @@
  * 保存时空槽不会写入 gui_settings.json。
  */
 import type {
-  DecisivePlanSettings,
   ShipLibraryLabels,
   ShipLibraryManifest,
   ShipLibraryShip,
-} from '../../types/electronBridge';
-import { TYPE_LABELS } from '../../shared/fleetShipTypes';
+} from '../../types/ipc.js';
+import {
+  SHIP_TYPE_FILTER_ORDER,
+  TYPE_LABELS,
+} from '../../shared/fleetShipTypes';
 import {
   showAlert,
   showConfirm,
@@ -32,9 +35,44 @@ import {
 } from '../shared/scrollPosition';
 import { createShipArtwork } from './ShipArtwork';
 
-type DecisiveLevel = 'level1' | 'level2';
+export type DecisiveLevel = 'level1' | 'level2';
 type FilterKind = 'group' | 'type' | 'country';
 type SortField = 'type' | 'name' | 'id';
+
+export interface DecisivePlanViewState {
+  chapter: number;
+  useQuickRepair: boolean;
+  level1: readonly string[];
+  level2: readonly string[];
+  dirty: boolean;
+}
+
+export interface DecisivePlanSaveResult {
+  success: boolean;
+  error?: unknown;
+}
+
+export interface DecisivePlanViewHost {
+  getState(): DecisivePlanViewState;
+  setChapter(chapter: number): void;
+  setUseQuickRepair(useQuickRepair: boolean): void;
+  findShip(name: string): { level: DecisiveLevel; index: number } | null;
+  placeShip(
+    name: string,
+    level: DecisiveLevel,
+    requestedIndex: number,
+    maxIndex: number,
+  ): number;
+  removeShip(level: DecisiveLevel, index: number): boolean;
+  moveShip(
+    sourceLevel: DecisiveLevel,
+    sourceIndex: number,
+    targetLevel: DecisiveLevel,
+    targetIndex: number,
+  ): number | null;
+  resetTeams(): void;
+  save(): Promise<DecisivePlanSaveResult>;
+}
 
 interface DecisiveDragData {
   source?: 'gallery' | 'queue';
@@ -62,75 +100,6 @@ const EMPTY_LABELS: ShipLibraryLabels = {
   countries: {},
   variants: {},
 };
-const SHIP_TYPE_FILTER_ORDER = [
-  'ap',
-  'av',
-  'cv',
-  'bb',
-  'bbg',
-  'bbv',
-  'bc',
-  'bm',
-  'ca',
-  'cav',
-  'cl',
-  'clt',
-  'cvl',
-  'dd',
-  'ddg',
-  'cg',
-  'ssg',
-  'sc',
-  'ss',
-  'ddgaa',
-  'cgaa',
-  'cbg',
-];
-
-export const DEFAULT_DECISIVE_PLAN_SETTINGS: DecisivePlanSettings = {
-  chapter: 6,
-  useQuickRepair: true,
-  level1: [
-    'U-47',
-    'U-1405',
-    'U-1206',
-    'U-2540',
-    'U-81',
-    'U-96',
-  ],
-  level2: [
-    'U-505',
-    '射水鱼',
-    '大青花鱼',
-    'M-296',
-    '鹦鹉螺',
-    'S-49',
-    'IIIA',
-    'K-21',
-    'U-441',
-    '潜甲',
-    '潜乙',
-    '伊-201',
-    '伊-25',
-    '鲃鱼',
-    '伊-400',
-    '激流',
-    'U-4501',
-    'U-459',
-    'U-14',
-    'U-35',
-    'K1',
-  ],
-};
-
-function cloneSettings(settings: DecisivePlanSettings): DecisivePlanSettings {
-  return {
-    chapter: settings.chapter,
-    useQuickRepair: settings.useQuickRepair,
-    level1: [...settings.level1],
-    level2: [...settings.level2],
-  };
-}
 
 function requiredElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -139,7 +108,6 @@ function requiredElement<T extends HTMLElement>(id: string): T {
 }
 
 export class DecisivePlanView {
-  private settings = cloneSettings(DEFAULT_DECISIVE_PLAN_SETTINGS);
   private readonly chapter = requiredElement<HTMLSelectElement>(
     'decisive-plan-chapter',
   );
@@ -214,9 +182,7 @@ export class DecisivePlanView {
   private descending = false;
   private galleryDragScrollTop: number | null = null;
   private backupDragScroll: { top: number; left: number } | null = null;
-  private dirty = false;
-
-  constructor() {
+  constructor(private readonly host: DecisivePlanViewHost) {
     this.galleryResizeObserver = new ResizeObserver(
       () => this.ensureGalleryFilled(),
     );
@@ -225,11 +191,11 @@ export class DecisivePlanView {
 
   bindActions(): void {
     this.chapter.addEventListener('change', () => {
-      this.settings.chapter = Number(this.chapter.value);
+      this.host.setChapter(Number(this.chapter.value));
       this.markDirty();
     });
     this.quickRepair.addEventListener('change', () => {
-      this.settings.useQuickRepair = this.quickRepair.checked;
+      this.host.setUseQuickRepair(this.quickRepair.checked);
       this.markDirty();
     });
     this.editEnabled.addEventListener('change', () => {
@@ -242,7 +208,7 @@ export class DecisivePlanView {
       if (!this.editEnabled.checked) return;
       this.backupSlotCount = Math.max(
         this.backupSlotCount,
-        this.settings.level2.length,
+        this.host.getState().level2.length,
         DEFAULT_BACKUP_SLOT_COUNT,
       ) + 1;
       this.galleryLevel = 'level2';
@@ -355,32 +321,24 @@ export class DecisivePlanView {
     this.resetButton.addEventListener('click', () => void this.resetTeam());
   }
 
-  async load(): Promise<void> {
-    const bridge = window.electronBridge;
-    try {
-      if (bridge?.getDecisivePlanSettings) {
-        this.settings = cloneSettings(
-          await bridge.getDecisivePlanSettings(),
-        );
-      }
-      await this.loadShipLibrary();
-      this.backupSlotCount = Math.max(
-        DEFAULT_BACKUP_SLOT_COUNT,
-        this.settings.level2.length,
-      );
-      this.dirty = false;
-      this.render();
-      this.setStatus('配置已加载');
-    } catch (error) {
-      this.settings = cloneSettings(DEFAULT_DECISIVE_PLAN_SETTINGS);
-      this.backupSlotCount = Math.max(
-        DEFAULT_BACKUP_SLOT_COUNT,
-        this.settings.level2.length,
-      );
-      this.render();
-      this.setStatus('读取失败，已使用默认队伍', true);
-      console.error('[DecisivePlan] 读取配置失败', error);
-    }
+  showLoaded(manifest: ShipLibraryManifest): void {
+    this.loadShipLibrary(manifest);
+    this.backupSlotCount = Math.max(
+      DEFAULT_BACKUP_SLOT_COUNT,
+      this.host.getState().level2.length,
+    );
+    this.render();
+    this.setStatus('配置已加载');
+  }
+
+  showLoadFailure(): void {
+    this.loadShipLibrary(null);
+    this.backupSlotCount = Math.max(
+      DEFAULT_BACKUP_SLOT_COUNT,
+      this.host.getState().level2.length,
+    );
+    this.render();
+    this.setStatus('读取失败，已使用默认队伍', true);
   }
 
   private bindSlotList(
@@ -407,11 +365,11 @@ export class DecisivePlanView {
     });
   }
 
-  private async loadShipLibrary(): Promise<void> {
-    const manifest = await window.electronBridge
-      ?.getShipLibraryManifest?.() as ShipLibraryManifest | null | undefined;
+  private loadShipLibrary(manifest: ShipLibraryManifest | null): void {
     if (!manifest?.ships) {
       this.galleryCount.textContent = '图鉴不可用';
+      this.labels = EMPTY_LABELS;
+      this.ships = [];
       return;
     }
 
@@ -429,8 +387,9 @@ export class DecisivePlanView {
   }
 
   private render(): void {
-    this.chapter.value = String(this.settings.chapter);
-    this.quickRepair.checked = this.settings.useQuickRepair;
+    const state = this.host.getState();
+    this.chapter.value = String(state.chapter);
+    this.quickRepair.checked = state.useQuickRepair;
     this.editEnabled.checked = false;
     this.renderEditState();
     this.renderQueues();
@@ -452,12 +411,14 @@ export class DecisivePlanView {
   }
 
   private renderQueues(): void {
+    const state = this.host.getState();
     const mainScroll = this.mainList.closest<HTMLElement>('.fleet-slot-scroll');
     const mainScrollPosition = captureScrollPosition(mainScroll);
     const mainFragment = document.createDocumentFragment();
+    const mainQueue = state.level1;
     for (let index = 0; index < MAIN_SLOT_COUNT; index += 1) {
       mainFragment.append(
-        this.createFleetSlot('level1', index, this.settings.level1[index]),
+        this.createFleetSlot('level1', index, mainQueue[index]),
       );
     }
     this.mainList.replaceChildren(mainFragment);
@@ -468,19 +429,20 @@ export class DecisivePlanView {
     this.backupSlotCount = Math.max(
       DEFAULT_BACKUP_SLOT_COUNT,
       this.backupSlotCount,
-      this.settings.level2.length,
+      state.level2.length,
     );
+    const backupQueue = state.level2;
     const backupFragment = document.createDocumentFragment();
     for (let index = 0; index < this.backupSlotCount; index += 1) {
       backupFragment.append(
-        this.createFleetSlot('level2', index, this.settings.level2[index]),
+        this.createFleetSlot('level2', index, backupQueue[index]),
       );
     }
     this.backupList.replaceChildren(backupFragment);
     restoreScrollPosition(this.backupScroll, backupScrollPosition);
 
     requiredElement<HTMLElement>('decisive-level2-count').textContent =
-      `${this.settings.level2.length} 艘`;
+      `${backupQueue.length} 艘`;
   }
 
   private createFleetSlot(
@@ -609,19 +571,22 @@ export class DecisivePlanView {
     const level = this.galleryLevel;
     let target: number;
     let replacing: boolean;
+    const state = this.host.getState();
     if (level === 'level1') {
-      const firstEmpty = this.settings.level1.length < MAIN_SLOT_COUNT
-        ? this.settings.level1.length
+      const queueLength = state.level1.length;
+      const firstEmpty = queueLength < MAIN_SLOT_COUNT
+        ? queueLength
         : -1;
-      replacing = this.activeMainIndex < this.settings.level1.length;
+      replacing = this.activeMainIndex < queueLength;
       target = replacing || firstEmpty < 0
         ? this.activeMainIndex
         : firstEmpty;
     } else {
-      const firstEmpty = this.settings.level2.length < this.backupSlotCount
-        ? this.settings.level2.length
+      const queueLength = state.level2.length;
+      const firstEmpty = queueLength < this.backupSlotCount
+        ? queueLength
         : -1;
-      replacing = this.activeBackupIndex < this.settings.level2.length;
+      replacing = this.activeBackupIndex < queueLength;
       target = replacing || firstEmpty < 0
         ? this.activeBackupIndex
         : firstEmpty;
@@ -642,23 +607,22 @@ export class DecisivePlanView {
       return;
     }
 
-    const queue = this.settings[level];
     const maxIndex = level === 'level1'
       ? MAIN_SLOT_COUNT - 1
       : this.backupSlotCount - 1;
-    let target = Math.min(Math.max(0, requestedIndex), maxIndex);
-    if (target < queue.length) {
-      queue[target] = ship.search_name;
-    } else {
-      target = Math.min(target, queue.length);
-      queue.splice(target, 0, ship.search_name);
-    }
+    const target = this.host.placeShip(
+      ship.search_name,
+      level,
+      requestedIndex,
+      maxIndex,
+    );
+    const queueLength = this.host.getState()[level].length;
 
     this.galleryLevel = level;
     if (level === 'level1') {
       this.activeMainIndex = target;
-      if (advanceToNextEmpty && queue.length < MAIN_SLOT_COUNT) {
-        this.activeMainIndex = queue.length;
+      if (advanceToNextEmpty && queueLength < MAIN_SLOT_COUNT) {
+        this.activeMainIndex = queueLength;
       }
     } else {
       this.activeBackupIndex = target;
@@ -674,15 +638,13 @@ export class DecisivePlanView {
   }
 
   private removeShip(level: DecisiveLevel, index: number): void {
-    const queue = this.settings[level];
-    if (!Number.isInteger(index) || index < 0 || index >= queue.length) return;
-    queue.splice(index, 1);
+    if (!this.host.removeShip(level, index)) return;
     if (level === 'level1') {
       this.activeMainIndex = Math.min(this.activeMainIndex, MAIN_SLOT_COUNT - 1);
     } else {
       this.backupSlotCount = Math.max(
         DEFAULT_BACKUP_SLOT_COUNT,
-        this.settings.level2.length,
+        this.host.getState().level2.length,
       );
       this.activeBackupIndex = Math.min(
         this.activeBackupIndex,
@@ -735,38 +697,14 @@ export class DecisivePlanView {
     targetLevel: DecisiveLevel,
     targetIndex: number,
   ): void {
-    const sourceQueue = this.settings[sourceLevel];
-    const targetQueue = this.settings[targetLevel];
-    const sourceName = sourceQueue[sourceIndex];
-    if (!sourceName) return;
-
-    if (sourceLevel === targetLevel) {
-      if (sourceIndex === targetIndex) return;
-      if (targetIndex < targetQueue.length) {
-        [targetQueue[sourceIndex], targetQueue[targetIndex]] = [
-          targetQueue[targetIndex],
-          sourceName,
-        ];
-      } else {
-        sourceQueue.splice(sourceIndex, 1);
-        targetQueue.push(sourceName);
-        targetIndex = targetQueue.length - 1;
-      }
-    } else {
-      const targetName = targetQueue[targetIndex];
-      if (targetName) {
-        sourceQueue[sourceIndex] = targetName;
-        targetQueue[targetIndex] = sourceName;
-      } else {
-        sourceQueue.splice(sourceIndex, 1);
-        targetQueue.splice(
-          Math.min(targetIndex, targetQueue.length),
-          0,
-          sourceName,
-        );
-        targetIndex = Math.min(targetIndex, targetQueue.length - 1);
-      }
-    }
+    const movedTarget = this.host.moveShip(
+      sourceLevel,
+      sourceIndex,
+      targetLevel,
+      targetIndex,
+    );
+    if (movedTarget === null) return;
+    targetIndex = movedTarget;
 
     this.galleryLevel = targetLevel;
     if (targetLevel === 'level1') {
@@ -776,7 +714,7 @@ export class DecisivePlanView {
     }
     this.backupSlotCount = Math.max(
       DEFAULT_BACKUP_SLOT_COUNT,
-      this.settings.level2.length,
+      this.host.getState().level2.length,
     );
     this.markDirty();
     this.renderQueues();
@@ -815,11 +753,7 @@ export class DecisivePlanView {
   private findConfiguredShip(
     name: string,
   ): { level: DecisiveLevel; index: number } | null {
-    for (const level of LEVELS) {
-      const index = this.settings[level].indexOf(name);
-      if (index >= 0) return { level, index };
-    }
-    return null;
+    return this.host.findShip(name);
   }
 
   private renderGalleryTarget(): void {
@@ -965,9 +899,10 @@ export class DecisivePlanView {
       ? 0
       : this.renderedGalleryCount;
     const search = this.normalizeGallerySearch(this.gallerySearch.value);
+    const state = this.host.getState();
     const selectedNames = new Set([
-      ...this.settings.level1,
-      ...this.settings.level2,
+      ...state.level1,
+      ...state.level2,
     ]);
     const refitSearchNames = this.refitOnly
       ? new Set(
@@ -1128,14 +1063,13 @@ export class DecisivePlanView {
       '将按最初预设名单恢复主选和备选队列；章节和快速修理设置不变。恢复后请点击“保存配置”。',
     );
     if (!confirmed) return;
-    this.settings.level1 = [...DEFAULT_DECISIVE_PLAN_SETTINGS.level1];
-    this.settings.level2 = [...DEFAULT_DECISIVE_PLAN_SETTINGS.level2];
+    this.host.resetTeams();
     this.activeMainIndex = 0;
     this.activeBackupIndex = 0;
     this.galleryLevel = 'level1';
     this.backupSlotCount = Math.max(
       DEFAULT_BACKUP_SLOT_COUNT,
-      this.settings.level2.length,
+      this.host.getState().level2.length,
     );
     this.markDirty();
     this.renderQueues();
@@ -1144,42 +1078,37 @@ export class DecisivePlanView {
   }
 
   private async save(showSavedStatus = true): Promise<boolean> {
-    const bridge = window.electronBridge;
-    if (!bridge?.setDecisivePlanSettings) {
-      await showAlert('保存失败', '请完整重启 GUI 后再操作。');
-      return false;
-    }
-    try {
-      this.settings.chapter = Number(this.chapter.value);
-      this.settings.useQuickRepair = this.quickRepair.checked;
-      this.settings = cloneSettings(
-        await bridge.setDecisivePlanSettings(this.settings),
-      );
-      this.dirty = false;
+    this.host.setChapter(Number(this.chapter.value));
+    this.host.setUseQuickRepair(this.quickRepair.checked);
+    const result = await this.host.save();
+    if (result.success) {
       if (showSavedStatus) {
         this.setStatus('配置已保存');
         showSaveSuccess('决战配置保存成功');
       }
       return true;
-    } catch (error) {
-      this.setStatus('配置保存失败', true);
-      await showAlert(
-        '保存失败',
-        error instanceof Error ? error.message : String(error),
-      );
-      return false;
     }
+    this.setStatus('配置保存失败', true);
+    await showAlert(
+      '保存失败',
+      result.error instanceof Error
+        ? result.error.message
+        : String(result.error ?? '未知错误'),
+    );
+    return false;
   }
 
   private markDirty(): void {
-    this.dirty = true;
     this.setStatus('有未保存修改');
   }
 
   private setStatus(message: string, error = false): void {
     this.status.textContent = message;
     this.status.classList.toggle('is-error', error);
-    this.status.classList.toggle('is-dirty', this.dirty && !error);
+    this.status.classList.toggle(
+      'is-dirty',
+      this.host.getState().dirty && !error,
+    );
   }
 
   private shipTypeDisplay(ship: ShipLibraryShip): string {

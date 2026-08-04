@@ -6,11 +6,12 @@
     "builtin": true,
     "createdAt": "2026-08-04T00:00:00.000Z",
     "description": "20260730 活动 E/H 难度计划",
+    "forceRetry": true,
     "planPaths": [
-      "resource/system_battle_plans/E1炸鱼.yaml",
-      "resource/system_battle_plans/E5夜战.yaml",
-      "resource/system_battle_plans/H1炸鱼.yaml",
-      "resource/system_battle_plans/H5夜战.yaml"
+      "resource/system_battle_plans/bettle-E1炸鱼.yaml",
+      "resource/system_battle_plans/bettle-E5夜战.yaml",
+      "resource/system_battle_plans/bettle-H1炸鱼.yaml",
+      "resource/system_battle_plans/bettle-H5夜战.yaml"
     ],
     "defaultTimes": 1
   },

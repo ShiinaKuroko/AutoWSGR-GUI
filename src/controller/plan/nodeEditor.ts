@@ -1,9 +1,10 @@
+/** 编排节点编辑表单与 PlanModel 节点规则更新。 */
 /**
  * nodeEditor —— 节点编辑面板值保存逻辑。
  */
 import type { PlanPreviewView } from '../../view/plan/PlanPreviewView';
 import type { PlanModel } from '../../model/PlanModel';
-import type { EnemyRule } from '../../types/model';
+import type { EnemyRule } from '../../types/model.js';
 import { Logger } from '../../utils/Logger';
 
 function normalizeRuleAction(actionRaw: string): string | number {

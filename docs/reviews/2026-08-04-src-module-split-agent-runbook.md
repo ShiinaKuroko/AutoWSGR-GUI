@@ -1,47 +1,57 @@
-# `src` TypeScript 模块拆分 Agent 执行任务书
+# `src` TypeScript 模块拆分单 Agent 执行任务书
 
 ## 1. 文档用途
 
 本文件把 [`src` TypeScript 模块拆分方案](./2026-08-04-src-module-split-plan.md)
-转换为可以逐项派发给编码 Agent 的执行队列。
+转换为一个长期 Agent 可以分阶段执行的任务书。
 
 两份文档的职责不同：
 
-- 原方案说明为什么拆、最终边界和 77 个现有模块的去向。
-- 本任务书规定谁先做什么、允许修改什么、如何验证和何时停止。
+- 原方案说明为什么拆、最终边界和现有模块的去向。
+- 本任务书规定单个 Agent 每个阶段做什么、允许修改什么、如何验证和何时停止。
 
-本任务书是完整架构治理队列，不是一次性最小修改。每个任务必须作为独立、
-可验证、可回滚的行为单元完成。禁止一个 Agent 一次领取多个任务。
+本任务书不是一次性全目录搬迁，也不是多 Agent 并行队列。实施过程按 S0-S6
+串行推进，并在每个阶段验证行为和架构边界。
 
-## 2. 队列启用门槛
-
-队列管理员必须先填写：
+本任务的目标不是机械复制 `electron/` 的目录名称，而是让 `src/` 形成同样清晰的
+职责边界：
 
 ```text
-BASE_SHA=<待填写：当前全部已接受改动提交后的 commit SHA>
-QUEUE_BRANCH=<待填写：例如 refactor/src-module-split>
-CURRENT_TASK=A00
+src/
+├─ adapter/    YAML、JSON、IPC、HTTP、WebSocket、Storage 边界
+├─ controller/ 页面和用例编排
+├─ model/      领域模型、规则和唯一状态所有者
+├─ view/       DOM/ViewObject 渲染和用户意图回调
+├─ types/      按领域和通信方向组织的类型
+└─ shared/     无状态共享工具
+```
+
+最终没有为了目录外观增加 `app/` 或 `domain/`：`AppController` 继续是 Renderer
+组合根，领域状态继续位于 `model/`。Adapter 按完整边界收敛为
+`ApiAdapter.ts`、`IpcAdapter.ts`、`JsonAdapter.ts`、`StorageAdapter.ts` 和
+`YamlAdapter.ts`，避免微型文件。
+
+## 2. 执行启用门槛
+
+本轮实际执行记录：
+
+```text
+BASE_SHA=7bd0c65
+WORK_BRANCH=ShiinaKuroko
+CURRENT_STAGE=POST_S6_TYPES_CONSOLIDATION_COMPLETED
 PATCH_LEVEL=L0
 ```
 
-`BASE_SHA` 未填写时，任何 Agent 都不得修改代码。
+维护者已明确要求以当前脏工作树为准并保留全部未提交改动，因此本轮没有创建
+独立 worktree，也没有执行 reset、checkout、stash 或覆盖用户文件。该授权只适用
+于本次连续实施；后续新一轮拆分仍应先记录基线并隔离工作树。
 
-当前共享工作树存在大量未提交改动，不能直接作为执行起点。管理员必须先：
+## 3. 单 Agent 通用执行协议
 
-1. 确认这些改动由谁负责。
-2. 完成提交、备份或独立 worktree 隔离。
-3. 记录队列基线 SHA。
-4. 在干净 worktree 中执行 `git status --short --branch`。
-5. 运行 A00，得到可复现的基线验证结果。
+### 3.1 开始阶段
 
-不得通过 `git reset --hard`、`git checkout --`、强制清理或 stash 他人改动来
-制造“干净基线”。
-
-## 3. Agent 通用执行协议
-
-### 3.1 接单
-
-Agent 只能接收一个任务 ID，例如 `D04`。接单后必须先完整读取：
+Agent 每次只执行一个阶段，例如 `S2`。阶段完成并经过维护者验收后，才可以开始
+下一个阶段。开始阶段前必须完整读取：
 
 1. `AGENTS.md`
 2. `docs/engineering-standards.md`
@@ -52,14 +62,14 @@ Agent 只能接收一个任务 ID，例如 `D04`。接单后必须先完整读�
 7. `CONTRIBUTING.md`
 8. 原拆分方案
 9. 本任务书
-10. 任务卡指定的架构文档和现有测试
+10. 当前阶段卡指定的架构文档和现有测试
 
 ### 3.2 修改前报告
 
 Agent 在写代码前必须报告：
 
 ```text
-任务 ID：
+阶段 ID：
 基线 SHA：
 当前分支/worktree：
 行为目标：
@@ -72,15 +82,16 @@ Patch 等级：
 计划执行的验证：
 ```
 
-没有完成该报告，不得开始写代码。
+没有完成该报告，不得开始写代码。阶段完成后必须暂停，不得自动进入下一阶段。
 
 ### 3.3 修改范围
 
-- 只修改任务卡的“主要范围”。
+- 只修改当前阶段卡的“主要范围”。
 - 可以修改直接 import、barrel export、对应测试和对应架构文档。
-- 需要进入未列出的业务模块时，立即停止并报告范围扩散。
+- 需要进入未列出的业务模块时，立即停止并报告范围扩散；不得顺手修改其他阶段
+  的核心文件。
 - 不修改 IPC channel、API 字段、YAML/JSON 公共格式和用户目录。
-- 不修改 UI 样式，除非任务卡明确允许。
+- 不修改 UI 样式，除非当前阶段明确允许。
 - 不进行无关格式化、依赖升级、资源更新或命名清理。
 - 不使用 `any`、类型断言、retry、sleep、fallback 或第二状态源绕过问题。
 
@@ -93,17 +104,16 @@ Patch 等级：
 3. 原公共入口暂时改为 facade 或 re-export。
 4. 修改调用方。
 5. 运行验证。
-6. 只有 F01 可以删除跨任务兼容出口。
+6. 只有 S6 可以删除跨阶段兼容出口。
 
 禁止在同一个任务中一边迁移结构，一边修改业务语义。
 
-### 3.5 每个任务的通用验证
+### 3.5 每个阶段的通用验证
 
-所有 TypeScript 任务至少执行：
+所有代码阶段至少执行：
 
 ```powershell
 npm run build
-npm run test:api-contract
 git diff --check
 git status --short
 ```
@@ -111,7 +121,7 @@ git status --short
 `npm run build` 会生成 CSS/构建输出。没有样式变化时，不得把生成差异作为任务
 成果提交。
 
-任务卡列出的专项测试必须全部执行。无法执行时，任务不得标记完成，交付记录
+阶段卡列出的专项测试必须全部执行。无法执行时，阶段不得标记完成，交付记录
 必须写明阻塞原因和未验证风险。
 
 ### 3.6 强制停止条件
@@ -119,7 +129,7 @@ git status --short
 出现任一情况，Agent 必须停止，不得继续补代码：
 
 1. 当前工作树包含无法确认归属的修改。
-2. 任务需要修改另一个未解锁任务的核心文件。
+2. 阶段需要修改另一个未解锁阶段的核心文件。
 3. 需要新增第二份可写状态、同步标志、延时或 fallback。
 4. 两次实现尝试仍未通过同一验证。
 5. 旧测试与架构文档对当前行为给出冲突结论。
@@ -149,77 +159,89 @@ git status --short
 - IPC channel、参数、返回值和错误文本保持。
 - REST/WebSocket 路径、请求和回调顺序保持。
 
-## 5. 推荐执行顺序
+## 5. 状态所有权与目标边界
 
-严格串行时按照下列顺序执行：
+### 5.1 Renderer 目标数据流
 
 ```text
-A00
-→ A01 → A02
-→ B01 → B02 → B03 → B04
-→ C01 → C02 → C03 → C04
-→ D01 → D02 → D03 → D04 → D05 → D06 → D07
-→ E01 → E02 → E03 → E04 → E05 → E06
-→ F01
+Adapter → Domain Model → Controller → ViewObject → View
+                              ↑             │
+                              └ 用户意图 ───┘
 ```
 
-即使依赖允许并行，也建议先串行。确需并行时，只允许队列管理员批准，并为每个
-任务创建独立 worktree。涉及同一个现有文件的任务不得并行。
+职责要求：
 
-## 6. 队列总表
+- `adapter/` 只处理 YAML、JSON、IPC、HTTP、WebSocket 和 Storage 边界。
+- `model/` 只持有领域状态和纯业务规则，不访问 `window`、`document`、Electron 或
+  Node 文件系统。
+- `controller/` 只编排用例和转换 ViewObject，不直接依赖 YAML/JSON parser。
+- `view/` 只渲染 DOM、读取用户输入并发出意图，不访问有状态 Model、全局 IPC 或
+  Storage；允许使用类型、不可变目录和无状态领域函数。
+- `AppController` 是 Renderer 组合根，负责生命周期和跨域协调。
+- `types/` 区分领域类型、API DTO、IPC DTO 和 ViewObject。
+- `shared/` 只放无状态、无业务所有权的共享工具。
 
-| ID | 任务 | 前置任务 | 主要状态 |
+### 5.2 单一状态所有者
+
+| 状态 | 唯一可写所有者 | 其他模块允许做什么 |
+|---|---|---|
+| 当前任务、运行状态 | `Scheduler` | 读取、发出用户意图 |
+| 就绪队列、延迟重试 | `TaskQueue` | 读取、请求入队 |
+| Cron timer、pending | `CronScheduler` | 读取、请求触发 |
+| 泡澡舰船集合 | `RepairManager` | 读取快照、请求修理 |
+| 当前作战方案 | `PlanController` | View 只能通过意图修改 |
+| 普通舰队草稿 | `FleetDraft` | Controller 只协调 mutation |
+| 决战舰队草稿 | `DecisiveFleetDraft` | Controller 只协调 mutation |
+
+Controller 不得保存 Draft、Scheduler 或 RepairManager 的镜像字段。Store、Policy、
+Factory 和 View 都不得成为第二个可写状态源。
+
+## 6. 单 Agent 阶段顺序
+
+严格串行执行以下阶段。每个阶段完成后暂停，维护者验收通过后才能继续：
+
+```text
+S0 只读审计与行为基线
+→ S1 Types 拆分
+→ S2 Adapter 边界
+→ S3 Domain 拆分
+→ S4 App 与 Controller 收口
+→ S5 View 拆分
+→ S6 兼容层清理与文档同步
+```
+
+不得把这些阶段拆给多个 Agent 并行执行。单个 Agent 必须持续掌握同一套状态所有权、
+依赖图和目标边界。
+
+## 7. 阶段总表
+
+| ID | 阶段 | 前置阶段 | 主要状态 |
 |---|---|---|---|
-| A00 | 固定行为基线 | 基线 SHA | 阻塞，等待基线 |
-| A01 | 拆 API/IPC Types | A00 | 未开始 |
-| A02 | 拆 Model/View Types | A01 | 未开始 |
-| B01 | 提取 Plan/Config YAML Codec | A02 | 未开始 |
-| B02 | 提取 TaskGroup/Template JSON Codec | B01 | 未开始 |
-| B03 | 提取 Renderer Repository/Store | B02 | 未开始 |
-| B04 | 拆 ApiClient Transport | B03 | 未开始 |
-| C01 | 收口 PlanModel/ConfigModel | B01、B03 | 未开始 |
-| C02 | 收口 TaskGroupModel/TemplateModel | B02、B03 | 未开始 |
-| C03 | 拆分 shipData 和舰队领域规则 | A02、C01 | 未开始 |
-| C04 | 提取调度纯策略和状态 Store | B03、C03 | 未开始 |
-| D01 | 拆 ConfigController | C01、B03 | 未开始 |
-| D02 | 拆 AppController | D01、B04 | 未开始 |
-| D03 | 收口 SchedulerBinder | C04、D02 | 未开始 |
-| D04 | 拆 PlanController | C01、C03、B03 | 未开始 |
-| D05 | 拆 TaskGroup/Queue Loader Controller | C02、C04 | 未开始 |
-| D06 | 拆 TemplateController | C02、B03 | 未开始 |
-| D07 | 拆 Startup 环境/更新编排 | D01、D02、B03 | 未开始 |
-| E01 | 提取共享舰船 View | C03 | 未开始 |
-| E02 | 拆 TaskListLoader/ContextMenu View | D05 | 未开始 |
-| E03 | 拆 FleetPlanner 编辑核心 | D04、E01 | 未开始 |
-| E04 | 拆 FleetPlanner 选择和计划管理 | E03、B03 | 未开始 |
-| E05 | 拆 DecisivePlan/FleetPreset View | D04、E01、E04 | 未开始 |
-| E06 | 拆 Config/PlanPreview View | D01、D04 | 未开始 |
-| F01 | 删除兼容层、死代码并同步文档 | A00-E06 | 未开始 |
+| S0 | 只读审计与行为基线 | 基线 SHA | 已完成 |
+| S1 | Types 拆分与兼容出口 | S0 | 已完成 |
+| S2 | YAML/JSON/IPC/API/Storage Adapter | S1 | 已完成 |
+| S3 | Fleet、Plan、Scheduler Domain | S2 | 已完成 |
+| S4 | App 与 Controller 收口 | S3 | 已完成 |
+| S5 | View 拆分与纯 View 边界 | S4 | 已完成 |
+| S6 | 删除兼容层、死代码并同步文档 | S0-S5 | 已完成 |
 
-## 7. 任务卡
+## 8. 阶段卡
 
-### A00 固定行为基线
+### S0 只读审计与行为基线
 
-**目标**
+**目标**：不改变业务行为，固定可复现基线。
 
-在不修改 `src` 行为的前提下，记录拆分前可复现的行为基线。
+**允许范围**：`scripts/`、`docs/reviews/`，以及为基线测试新增的最小 fixture。
 
-**主要范围**
+**必须完成**：
 
-- `scripts/`
-- `package.json` 中测试命令
-- `docs/reviews/` 中基线记录
+- 记录 `BASE_SHA`、Node/npm 版本、依赖状态和工作树状态。
+- 生成 `src` import 依赖图和直接越层访问清单。
+- 覆盖 YAML round-trip、未知字段、头部注释、candidate-only、任务队列、Cron、
+  Repair、TaskGroup/Template 迁移和 API/IPC 契约。
+- 记录每个测试的通过/失败，不在本阶段修业务。
 
-**必须覆盖**
-
-- Plan/Config YAML 解析、序列化、未知字段和注释。
-- candidate-only 经 `PlanModel → TaskQueue → API request` 后无顶层 `name`。
-- TaskQueue 优先级、延迟任务、重试和预设切换。
-- Cron 完成状态恢复。
-- RepairManager 泡澡状态恢复。
-- TaskGroup/Template 旧数据迁移。
-
-**验收**
+**验收**：
 
 ```powershell
 npm run build
@@ -233,729 +255,182 @@ npm run test:main-ipc
 git diff --check
 ```
 
-交付基线 SHA、每个命令结果和环境相关未验证项。测试失败时只记录证据，不在 A00
-顺手修业务。
+**完成后必须暂停。** 未固定基线不得进入 S1。
 
-### A01 拆 API/IPC Types
+### S1 Types 拆分与兼容出口
 
-**目标**
+**范围**：
 
-把 `types/api.ts`、`types/electronBridge.ts` 按通信领域拆开，不改变任何运行时代码。
-
-**主要范围**
-
-- `src/types/api.ts`
-- `src/types/electronBridge.ts`
-- 新增 `src/types/api/`
-- 新增 `src/types/ipc/`
-
-**要求**
-
-- 原文件保留为 re-export 兼容入口。
-- ViewObject、领域类型、API DTO、IPC DTO 不混用。
-- `FleetRuleReq.name` 继续可选，candidate 项的 `name` 继续必填。
-- 不批量修改全项目 import。
-
-**专项验收**
-
-```powershell
-npm run test:api-contract
+```text
+src/types/api.ts
+src/types/ipc.ts
+src/types/model.ts
+src/types/view.ts
+src/types/scheduler.ts
 ```
 
-### A02 拆 Model/View Types
+**要求**：
 
-**目标**
+- API DTO、IPC DTO、领域类型、ViewObject 和调度类型各自保持完整文件。
+- 不保留只做 re-export 的 Types facade 或二级子目录。
+- 不改变类型语义，不修改运行时行为。
+- 不批量迁移所有 import，只需证明新出口可用。
+- 不把默认值、迁移逻辑和 View 逻辑放入 types。
 
-把 `types/model.ts`、`types/view.ts` 按领域拆开，保留兼容出口。
+**验收**：`npm run build`、`npm run test:api-contract`。
 
-**主要范围**
+### S2 Adapter 边界
 
-- `src/types/model.ts`
-- `src/types/view.ts`
-- 新增 `src/types/model/`
-- 新增 `src/types/view/`
+**范围**：
 
-**要求**
-
-- `types/scheduler.ts` 不改。
-- 不把默认值、迁移逻辑或 View 渲染逻辑移入 Types。
-- 不批量修改调用方 import。
-
-**专项验收**
-
-```powershell
-npm run test:legacy-plan
-npm run test:settings
+```text
+src/adapter/ApiAdapter.ts
+src/adapter/IpcAdapter.ts
+src/adapter/JsonAdapter.ts
+src/adapter/StorageAdapter.ts
+src/adapter/YamlAdapter.ts
+src/model/PlanModel.ts
+src/model/ConfigModel.ts
+src/model/TaskGroupModel.ts
+src/model/TemplateModel.ts
+src/model/MapDataLoader.ts
+src/model/ApiClient.ts
 ```
 
-### B01 提取 Plan/Config YAML Codec
+**要求**：
 
-**目标**
+- YAML/JSON 解析、迁移和序列化各只有一个实现位置。
+- Repository/Store 只处理边界，不决定业务行为。
+- `ApiClient` 保留业务 facade，HTTP/WS 传输实现移入 adapter。
+- 保持未知字段、注释、旧格式、storage key、IPC channel、API path、请求体和回调
+  时序。
+- 不增加通用文件 IPC、备用 endpoint 或第二份持久化状态。
 
-让 Plan/Config 的 YAML 解析、序列化和迁移规则具有单一实现位置。
-
-**主要范围**
-
-- `src/model/PlanModel.ts`
-- `src/model/ConfigModel.ts`
-- 新增 `src/adapter/yaml/PlanYamlCodec.ts`
-- 新增 `src/adapter/yaml/ConfigYamlCodec.ts`
-- 对应测试
-
-**要求**
-
-- `PlanModel.fromYaml()`、`toYaml()` 等现有公共入口保持。
-- 旧入口只委托 Codec，不复制解析规则。
-- 保留未知字段、头部注释、活动图入口和旧字段迁移。
-- 不修改方案保存目录和 IPC。
-
-**专项验收**
+**验收**：
 
 ```powershell
 npm run test:legacy-config-upgrade
 npm run test:legacy-plan
+npm run test:task-group-migration
 npm run test:api-contract
-```
-
-### B02 提取 TaskGroup/Template JSON Codec
-
-**目标**
-
-分离任务组和模板的 JSON 校验、版本迁移与领域 CRUD。
-
-**主要范围**
-
-- `src/model/TaskGroupModel.ts`
-- `src/model/TemplateModel.ts`
-- 新增 `src/adapter/json/TaskGroupJsonCodec.ts`
-- 新增 `src/adapter/json/TemplateJsonCodec.ts`
-- 对应 fixture 和测试
-
-**要求**
-
-- 迁移幂等。
-- 未知字段保留。
-- 旧数据读取失败时不覆盖原文件。
-- 不改变模板 ID 和任务项索引语义。
-
-**专项验收**
-
-```powershell
-npm run test:task-group-migration
-npm run test:legacy-plan
-```
-
-### B03 提取 Renderer Repository/Store
-
-**目标**
-
-把 Renderer 中的 IPC 和 `localStorage` 访问封装成可注入端口。
-
-**主要范围**
-
-- 新增 `src/adapter/ipc/`
-- 新增 `src/adapter/storage/`
-- `src/model/MapDataLoader.ts`
-- `src/model/TaskGroupModel.ts`
-- `src/model/TemplateModel.ts`
-- `src/controller/app/theme.ts`
-- 直接依赖这些能力的最小调用方
-
-**要求**
-
-- Repository 使用 preload 已有的面向用例能力，不增加通用文件 IPC。
-- Model 不再出现 `(window as any).electronBridge`。
-- Store 只保存/读取状态，不决定 Cron 或修理业务行为。
-- 不改变 storage key 和数据结构。
-
-**专项验收**
-
-```powershell
-npm run test:task-group-migration
-npm run test:settings
 npm run test:main-ipc
 ```
 
-### B04 拆 ApiClient Transport
+### S3 Domain 拆分
 
-**目标**
+**范围**：
 
-保留 `ApiClient` 业务 facade，分离 REST 和 WebSocket 连接实现。
-
-**主要范围**
-
-- `src/model/ApiClient.ts`
-- 新增 `src/adapter/api/HttpTransport.ts`
-- 新增 `src/adapter/api/WebSocketTransport.ts`
-- API 契约测试
-
-**要求**
-
-- 公共方法签名、路径、请求体、回调和重连时序保持。
-- 不新增 fallback endpoint。
-- WebSocket 不保存 Scheduler 状态。
-- API DTO 继续使用 `src/types/api/`。
-
-**专项验收**
-
-```powershell
-npm run test:api-contract
+```text
+src/model/fleet/
+src/model/scheduler/
+src/data/shipData.ts
 ```
 
-需要为 Transport 增加确定性测试；只有现有 API fixture 不足以验证 WebSocket 时序。
+**Fleet 要求**：
 
-### C01 收口 PlanModel/ConfigModel
+- 集中 `ShipCatalog`、`ShipNameNormalizer`、`ShipMatcher`、`FleetRuleMapper`、
+  `FleetDraft`、`DecisiveFleetDraft`。
+- candidate-only 不得自动生成顶层 `name`。
+- candidates 顺序和每项独立规则必须保留。
+- `ship_type`、`search_name`、等级规则不能在 View 中重复解释。
+- `shipData.ts` 在迁移期只作为 facade。
 
-**目标**
+**Scheduler 要求**：
 
-完成 Codec 接入后，让两个 Model 只保留领域状态、默认值和业务更新。
+- `Scheduler` 唯一持有当前任务和运行状态。
+- `TaskQueue` 唯一持有 ready/delayed 队列。
+- `CronScheduler` 唯一持有 timer/pending。
+- `RepairManager` 唯一持有 bathingShips。
+- 提取的 Policy/Factory 只能是纯函数或无状态对象。
 
-**主要范围**
+**必须新增或补齐测试**：优先级、延迟、重试、后触发、Cron 恢复、Repair 恢复、舰队
+预设切换、candidate-only、舰种和等级规则。
 
-- `src/model/PlanModel.ts`
-- `src/model/ConfigModel.ts`
-- 新增 `src/model/config/ConfigDefaults.ts`
-- B01 Codec
+### S4 App 与 Controller 收口
 
-**要求**
+**范围**：`src/controller/app/`、`src/controller/startup/`、
+`src/controller/plan/`、`src/controller/taskGroup/`、`src/controller/template/`。
 
-- 不删除兼容公共入口。
-- 默认值只有一个来源。
-- Config 保存后对 Scheduler/Cron 的同步仍由 Controller 编排。
-- 不新增 YAML 规则。
+**要求**：
 
-**专项验收**
+- `AppController` 是唯一 Renderer 组合根。
+- `StartupController` 保留启动顺序和销毁顺序。
+- 子 Controller 只接收最小 Host/Port，不接收整个 AppController。
+- Controller 不直接依赖 YAML/JSON parser，不直接持久化业务状态。
+- Plan、TaskGroup、Template 的请求构造分别收口到明确的 mapper/factory。
+- 保持任务顺序、次数、优先级、重试、停止条件和后端连接时序。
 
-```powershell
-npm run test:legacy-config-upgrade
-npm run test:legacy-plan
-npm run test:settings
-```
+**验收**：`npm run test:settings`、`npm run test:main-services`、
+`npm run test:main-ipc`、`npm run test:python-environment`、相关 API/迁移测试。
 
-### C02 收口 TaskGroupModel/TemplateModel
+### S5 View 拆分与纯 View 边界
 
-**目标**
+**范围**：`src/view/` 以及与 View 直接相关的 Controller/ViewObject mapper。
 
-Model 只持有领域集合和 CRUD，文件读写与格式迁移全部委托 Adapter。
+**要求**：
 
-**主要范围**
+- View 只渲染 DOM、读取输入和发出用户意图。
+- View 不访问有状态 Model、全局 IPC、localStorage、js-yaml 或持久化。
+- View 可以使用类型、不可变目录和无状态领域函数，但不能取得业务状态所有权。
+- View 不保存可独立修改的业务副本。
+- `FleetPlannerView` 必须先建立唯一 `FleetDraft`，再拆编辑、规则、图鉴、选择和管理子 View。
+- `DecisivePlanView` 使用独立 `DecisiveFleetDraft`，不得复用普通草稿后叠加补偿字段。
+- 保持 candidate-only、舰队规则、保存覆盖、导入导出和预览行为。
 
-- `src/model/TaskGroupModel.ts`
-- `src/model/TemplateModel.ts`
-- B02 Codec
-- B03 Repository
+**验收**：build、API/迁移/服务测试，以及固定步骤的手工验证记录。
 
-**要求**
+### S6 兼容层清理与文档同步
 
-- 每个集合只有一个可写实例。
-- 不在 Controller/View 保存可独立修改副本。
-- 删除 `window` 和 `as any` 依赖。
+**前置**：S0-S5 全部完成并通过验收。
 
-**专项验收**
+**要求**：
 
-```powershell
-npm run test:task-group-migration
-npm run test:legacy-plan
-```
+- 先用 `rg`、bundle 检查、测试和入口检查证明旧 facade 无内部/外部依赖。
+- 再删除 types facade、`shipData` facade、旧 View re-export、无引用 helper 和 barrel。
+- 不因为目标目录存在就删除仍可能是公共入口的 facade。
+- 同步 `docs/architecture/`、本方案和本任务书，使文档与实现一致。
 
-### C03 拆分 shipData 和舰队领域规则
-
-**目标**
-
-把静态目录、显示标签、匹配、名称归一化、舰队解析和 API rule mapping 分开。
-
-**主要范围**
-
-- `src/data/shipData.ts`
-- 新增 `src/data/shipCatalog.ts`
-- 新增 `src/model/fleet/ShipNameNormalizer.ts`
-- 新增 `src/model/fleet/ShipMatcher.ts`
-- 新增 `src/model/fleet/FleetResolver.ts`
-- 新增 `src/model/fleet/FleetRuleMapper.ts`
-- 相关显示标签模块
-
-**要求**
-
-- `shipData.ts` 暂时保留为兼容 re-export。
-- candidate-only 规则只在 `FleetRuleMapper` 实现一次。
-- 显示名和后端名转换保持。
-- 舰种 whitelist 保持后端契约。
-
-**专项验收**
+**最终静态检查**：
 
 ```powershell
-npm run test:api-contract
-npm run test:legacy-plan
-```
-
-### C04 提取调度纯策略和状态 Store
-
-**目标**
-
-从 Scheduler、TaskQueue、CronScheduler、RepairManager 中只提取纯策略和持久化端口。
-
-**主要范围**
-
-- `src/model/scheduler/Scheduler.ts`
-- `src/model/scheduler/TaskQueue.ts`
-- `src/model/scheduler/CronScheduler.ts`
-- `src/model/scheduler/RepairManager.ts`
-- 新增 `TaskResultPolicy.ts`
-- 新增 `FollowUpTaskFactory.ts`
-- 新增 `FleetPresetApplicator.ts`
-- 新增 `CronTriggerPolicy.ts`
-- 新增 `RepairPolicy.ts`
-- B03 中的 Cron/Repair Store
-
-**要求**
-
-- `Scheduler` 继续唯一持有 `currentTask/status`。
-- `TaskQueue` 继续持有就绪和延迟任务。
-- `CronScheduler` 继续持有 timer/pending。
-- `RepairManager` 继续持有 `bathingShips`。
-- 新模块必须是纯函数或无业务状态端口。
-
-**专项验收**
-
-新增调度契约测试并覆盖：
-
-- 优先级稳定排序。
-- 延迟任务恢复。
-- 重试上限。
-- 后触发副本。
-- candidate-only 预设切换。
-- Cron 重启补发。
-- 泡澡状态恢复。
-
-### D01 拆 ConfigController
-
-**目标**
-
-ConfigController 只协调配置加载/保存和 Model 同步。
-
-**主要范围**
-
-- `src/controller/app/ConfigController.ts`
-- 新增 `EnvironmentSetupController.ts`
-- B03 `ConfigRepository`/`UiPreferencesStore`
-- 对应 Host 接口
-
-**要求**
-
-- 环境检测和向导进入独立控制器。
-- 不通过 `(controller as any).host` 注入依赖。
-- ConfigModel、Scheduler、CronScheduler 的更新顺序保持。
-- 不改变 GUI 配置和 usersettings 路径。
-
-**专项验收**
-
-```powershell
-npm run test:settings
-npm run test:python-environment
-```
-
-### D02 拆 AppController
-
-**目标**
-
-让 AppController 只作为唯一组合根、全局协调器和生命周期入口。
-
-**主要范围**
-
-- `src/controller/app/AppController.ts`
-- 新增 `NavigationController.ts`
-- 新增 `OperationsController.ts`
-- 新增 `DeviceController.ts`
-- 新增 `ShipLibraryController.ts`
-- 新增 `UpdateController.ts`
-- 新增 `HeartbeatController.ts`
-- `src/controller/app/index.ts`
-
-**要求**
-
-- 子控制器只接收最小 Host/Port。
-- 子控制器之间不直接调用具体实现。
-- 不创建新的全局状态或重复定时器。
-- 启动顺序和销毁顺序保持。
-
-**专项验收**
-
-```powershell
-npm run test:settings
-npm run test:main-services
-npm run test:main-ipc
-npm run test:python-environment
-```
-
-### D03 收口 SchedulerBinder
-
-**目标**
-
-保留架构文档规定的 Binder facade，只迁出日志/进度解释和 Cron 任务构造。
-
-**主要范围**
-
-- `src/controller/app/SchedulerBinder.ts`
-- 新增 `RuntimeLogPresenter.ts`
-- 新增 `CronTaskController.ts`
-- `src/controller/app/constants.ts`
-
-**要求**
-
-- Binder 仍统一绑定 Scheduler/CronScheduler 回调。
-- 等待中任务 ID 的唯一所有者不变。
-- 日志正则输出保持。
-- 只删除重新检索后仍无引用的 `resolveRepairModeLabel()`。
-
-**专项验收**
-
-使用固定日志 fixture 验证演习、战役、战斗结束和进度转换。
-
-### D04 拆 PlanController
-
-**目标**
-
-PlanController 只持有当前方案和协调下属用例。
-
-**主要范围**
-
-- `src/controller/plan/PlanController.ts`
-- `src/controller/plan/presetFlow.ts`
-- 新增 `ManagedBattlePlanPickerController.ts`
-- 新增 `PlanPersistenceController.ts`
-- 新增 `PlanExecutionController.ts`
-- 新增 `src/adapter/api/CombatPlanRequestMapper.ts`
-- 对应 Host 和测试
-
-**要求**
-
-- 当前 PlanModel 只有一个权威实例。
-- 选择弹窗状态不进入 PlanModel。
-- 保存、加载、执行公共行为和错误文本保持。
-- API mapper 保留 node decision、fleet、fleet_rules 和 candidate-only。
-
-**专项验收**
-
-```powershell
-npm run test:legacy-plan
-npm run test:api-contract
-npm run test:main-services
-```
-
-### D05 拆 TaskGroup/Queue Loader Controller
-
-**目标**
-
-分离任务组页面协调、元数据加载和不同来源的入队用例。
-
-**主要范围**
-
-- `src/controller/taskGroup/TaskGroupController.ts`
-- `src/controller/taskGroup/TaskListLoaderController.ts`
-- `src/controller/taskGroup/queueLoader.ts`
-- `src/controller/taskGroup/metaLoader.ts`
-- `src/controller/taskGroup/managedPlanReader.ts`
-- 新增 `src/controller/taskGroup/queue/`
-- 新增 `src/model/scheduler/TaskRequestFactory.ts`
-
-**要求**
-
-- `buildPlanQueueRequest()` 不再位于页面功能目录。
-- managed/group/template Loader 各自独立。
-- Scheduler 是唯一入队入口。
-- 不改变任务顺序、次数、优先级或停止条件。
-
-**专项验收**
-
-```powershell
-npm run test:task-group-migration
-npm run test:api-contract
-```
-
-新增 managed plan、task group、template 三种来源生成同等 TaskRequest 的测试。
-
-### D06 拆 TemplateController
-
-**目标**
-
-TemplateController 只协调模板库，向导状态和选择流程独立。
-
-**主要范围**
-
-- `src/controller/template/TemplateController.ts`
-- `src/controller/template/crud.ts`
-- `src/controller/template/selectors.ts`
-- `src/controller/template/useTemplate.ts`
-- `src/controller/template/wizard.ts`
-- 新增 `TemplateWizardController.ts`
-
-**要求**
-
-- 删除 `as any` ref-wrapper，改用明确状态接口。
-- Controller 不直接解析 YAML 或读写文件。
-- 模板 ID、默认值、批量导入和使用流程保持。
-
-**专项验收**
-
-新增模板创建、重命名、删除、导入和三种使用去向的契约测试。
-
-### D07 拆 Startup 环境/更新编排
-
-**目标**
-
-分离环境准备与更新检查，同时保留 StartupController 的启动时序。
-
-**主要范围**
-
-- `src/controller/startup/StartupController.ts`
-- `src/controller/startup/envAndUpdates.ts`
-- `src/controller/startup/connection.ts`
-- 新增 `environmentBootstrap.ts`
-- 新增 `updateStartup.ts`
-
-**要求**
-
-- StartupController 继续唯一编排启动顺序。
-- Python 环境检查、安装、CUDA/OCR 和启动使用同一环境描述。
-- 更新检查不改变后端启动模式。
-- 删除前重新确认 `runSetupScript()` 是否无调用。
-
-**专项验收**
-
-```powershell
-npm run test:python-environment
-npm run test:settings
-npm run test:main-services
-```
-
-### E01 提取共享舰船 View
-
-**目标**
-
-建立 FleetPlanner 和 DecisivePlan 可共用的纯 View 组件。
-
-**主要范围**
-
-- `src/view/plan/ShipArtwork.ts`
-- `src/view/plan/TeamPlanListUi.ts`
-- 新增 `src/view/shared/ShipArtwork.ts`
-- 新增 `src/view/shared/ShipGalleryView.ts`
-- 新增 `src/view/shared/TeamPlanCard.ts`
-- 新增 `src/model/fleet/TeamPlanQuery.ts`
-
-**要求**
-
-- View 只渲染传入数据和上报意图。
-- 不调用 IPC、Model 或持久化。
-- 查询/过滤/排序在 `TeamPlanQuery`，不在多个 View 复制。
-- 原文件暂时兼容 re-export。
-
-**专项验收**
-
-新增纯查询测试；手工验证舰船图片 fallback、筛选和滚动加载。
-
-### E02 拆 TaskListLoader/ContextMenu View
-
-**目标**
-
-把任务列表弹窗和右键菜单 DOM 从 Controller 移到 View。
-
-**主要范围**
-
-- `src/controller/taskGroup/TaskListLoaderController.ts`
-- `src/controller/taskGroup/contextMenu.ts`
-- 新增 `src/view/taskGroup/TaskListLoaderView.ts`
-- 新增 `src/view/taskGroup/TaskContextMenuView.ts`
-
-**要求**
-
-- Controller 持有选择和草稿状态。
-- View 只持有 DOM 和回调。
-- 拖拽排序、编辑、复制和删除行为保持。
-
-**专项验收**
-
-手工验证打开、筛选、多选、拖拽、右键操作、确认和取消。
-
-### E03 拆 FleetPlanner 编辑核心
-
-**目标**
-
-从 `FleetPlannerView` 提取单一舰队草稿、共享图鉴和编辑/规则子 View。
-
-**主要范围**
-
-- `src/view/plan/FleetPlannerView.ts`
-- 新增 `src/controller/plan/FleetPlannerController.ts`
-- 新增 `src/model/fleet/FleetDraft.ts`
-- 新增 `src/view/plan/fleetPlanner/FleetEditorView.ts`
-- 新增 `src/view/plan/fleetPlanner/FleetRuleEditorView.ts`
-- E01 共享 View
-
-**明确不包含**
-
-- 计划管理。
-- 批量导出。
-- 编队选择弹窗。
-- 备选复制弹窗。
-
-**要求**
-
-- 一个 `FleetDraft` 是唯一草稿状态。
-- 子 View 不保存业务副本。
-- 主选、备选、拖拽、舰种和等级规则保持。
-- candidate-only 不被提升为顶层 `name`。
-
-**专项验收**
-
-新增 FleetDraft 纯测试；手工验证添加、替换、拖拽、清空、规则编辑和保存前预览。
-
-### E04 拆 FleetPlanner 选择和计划管理
-
-**目标**
-
-完成 FleetPlanner 的编队选择、备选复制、计划管理和持久化拆分。
-
-**主要范围**
-
-- `src/view/plan/FleetPlannerView.ts`
-- `src/controller/plan/FleetPlannerController.ts`
-- 新增 `TeamPlanPickerView.ts`
-- 新增 `BackupCopyDialog.ts`
-- 新增 `PlanManagementView.ts`
-- 对应 Repository 调用
-
-**要求**
-
-- View 不直接调用 `window.electronBridge`。
-- 同名保存继续要求确认覆盖。
-- 系统预设不得批量导出。
-- 没有用户预设时不得展示系统预设编队。
-- 原文件最终只作为 facade。
-
-**专项验收**
-
-```powershell
-npm run test:main-services
-npm run test:main-ipc
-```
-
-手工验证保存、覆盖、重命名、删除、筛选、导入、批量导出和空用户预设。
-
-### E05 拆 DecisivePlan/FleetPreset View
-
-**目标**
-
-复用共享舰船组件，移除两个 View 中的 IPC 和业务状态。
-
-**主要范围**
-
-- `src/view/plan/DecisivePlanView.ts`
-- `src/view/plan/FleetPresetView.ts`
-- 新增 `src/controller/plan/DecisivePlanController.ts`
-- 新增 `src/controller/plan/FleetPresetController.ts`
-- 新增 `src/model/fleet/DecisiveFleetDraft.ts`
-- 新增 `src/view/plan/decisive/DecisiveFleetView.ts`
-
-**要求**
-
-- 决战草稿只有一个状态所有者。
-- FleetPresetView 只渲染并发出修改意图。
-- 两者不直接 IPC。
-- 决战章节、主选/备选和配置持久化语义保持。
-
-**专项验收**
-
-```powershell
-npm run test:settings
-npm run test:api-contract
-```
-
-手工验证决战方案保存、重载、拖拽及编队预览修改。
-
-### E06 拆 Config/PlanPreview View
-
-**目标**
-
-让 ConfigView 和 PlanPreviewView 只负责表单与 View facade。
-
-**主要范围**
-
-- `src/view/config/ConfigView.ts`
-- `src/view/plan/PlanPreviewView.ts`
-- 新增 `ConfigFormView.ts`
-- 新增 `EnvironmentSettingsView.ts`
-- 新增 `PlanFormView.ts`
-
-**要求**
-
-- ConfigView 不再导入 `js-yaml`。
-- View 上报原始文本或结构化输入，由 Controller/Codec 校验。
-- PlanPreviewView 继续作为子 View facade。
-- 错误提示和字段默认值保持。
-
-**专项验收**
-
-```powershell
-npm run test:settings
-npm run test:legacy-config-upgrade
-npm run test:legacy-plan
-```
-
-手工验证配置保存错误、复杂 YAML 字段、地图选择和节点编辑。
-
-### F01 删除兼容层、死代码并同步文档
-
-**目标**
-
-在所有调用方迁移完成后，删除临时出口和确认无引用的历史代码。
-
-**主要范围**
-
-- 兼容 `types/*.ts` facade
-- `src/data/shipData.ts` facade
-- 旧 View re-export
-- `controller/shared/ControllerHost.ts`
-- `controller/taskGroup/importExport.ts`
-- 无引用方法和 barrel export
-- `docs/architecture/`
-- 原方案和本任务书的最终状态
-
-**要求**
-
-- 每个删除项先用 `rg` 证明无引用。
-- 架构文档必须与实际目录一致。
-- 不能因为目标目录存在就删除仍被外部入口依赖的 facade。
-- 不做额外业务重构。
-
-**最终验证**
-
-```powershell
-npm run build
-npm run test:legacy-config-upgrade
-npm run test:legacy-plan
-npm run test:task-group-migration
-npm run test:api-contract
-npm run test:settings
-npm run test:main-services
-npm run test:main-ipc
-npm run test:python-environment
 rg -n "window\.electronBridge|\(window as any\)" src/model src/view
 rg -n "localStorage" src/model src/view
 rg -n "js-yaml|yaml\.load|yaml\.dump" src/controller src/model src/view
-rg -n "\bas any\b" src/controller src/model
-git diff --check
+rg -n "\bas any\b" src/controller src/model src/view
+rg -n "shipData" src scripts electron
+rg -n "types/(api|ipc|model|view)/" src scripts electron
+rg -n "controller/shared/ControllerHost|controller/(app|plan|startup|taskGroup|template|shared)/index" src scripts electron
 ```
 
-前三个静态边界检索应无结果。`as any` 只允许有注释说明的第三方边界；业务代码
-应无结果。
+最终运行全部基线测试和 `git diff --check`。`as any` 只能在明确注释的第三方边界存在，
+业务 Controller/Model/View 中不得存在。
 
-## 8. Agent 交付格式
+**实际清理结果**：
 
-每个 Agent 完成任务后必须按以下格式交付：
+- 原 4 个 Types 根 facade 已由真实定义替代，旧 Types 子目录已删除。
+- 删除 `data/shipData.ts` 和 6 个无引用 Controller barrel。
+- 删除无调用方的 `controller/shared/ControllerHost.ts` 和
+  `controller/taskGroup/importExport.ts`。
+- 保留仍有测试或业务调用方的 `model/fleet/index.ts`、
+  `model/scheduler/index.ts`、`queueLoader.ts` 和 `managedPlanReader.ts`。
+- 更新 `docs/architecture/`、拆分方案和本任务书。
+
+**最终验证结果**：
+
+- 构建、舰种契约、Fleet/Scheduler Domain、旧配置/旧方案/任务组迁移和 API 契约通过。
+- 设置持久化、主进程服务、主进程 IPC、Python 环境、舰船库更新器和活动资源测试通过。
+- 7 项静态边界/旧入口检查无匹配，删除路径均不存在。
+- `git diff --check` 通过，仅报告资源 JSON 的 CRLF/LF 转换提示。
+
+桌面 Electron 启动、舰队拖拽、模拟器连接和实际任务执行未在本轮工具环境中手工
+验证。代码仍处于未提交工作树，没有生成完成 SHA。
+
+## 9. 阶段交付格式
+
+单 Agent 完成每个阶段后必须按以下格式交付，并在交付后暂停：
 
 ```text
-任务 ID：
+阶段 ID：
 基线 SHA：
 完成 SHA：
 
@@ -982,33 +457,33 @@ git diff --check
 回滚方式：
 
 git status --short：
-下一项已解锁任务：
+下一阶段建议：
 ```
 
 交付中只说“构建通过”不算完成。必须列出专项测试和业务不变量的验证证据。
 
-## 9. 可直接派发的提示词
+## 10. 可直接派发的提示词
 
-队列管理员可以复制以下内容，只替换任务 ID 和 SHA：
+维护者可以复制以下内容，替换阶段 ID 和 SHA。不要把多个阶段一次性派给 Agent：
 
 ```text
-请执行 C:\ShiinaKuroko\01.Project\AutoWSGR-GUI\docs\reviews\2026-08-04-src-module-split-agent-runbook.md 中的任务 <TASK_ID>。
+请执行 C:\ShiinaKuroko\04.Code\AutoWSGR\AutoWSGR-GUI\docs\reviews\2026-08-04-src-module-split-agent-runbook.md 中的阶段 <STAGE_ID>。
 
 基线 SHA：<BASE_SHA>
-前置任务完成 SHA：<PREVIOUS_SHA>
+前置阶段完成 SHA：<PREVIOUS_SHA>
 
-你只能执行该任务，不得开始下一项。修改前先按任务书提交预检报告。
-使用独立分支/worktree，保护现有未提交修改。完成后执行通用验证和任务卡
-专项验证，并按“Agent 交付格式”报告。出现强制停止条件时停止写代码并报告，
-不得自行扩大范围。
+你只能执行该阶段，不得开始下一阶段。修改前先按任务书提交预检报告。
+使用独立分支/worktree，保护现有未提交修改。完成后执行通用验证和阶段卡专项验证，
+并按“阶段交付格式”报告，然后暂停等待维护者验收。出现强制停止条件时停止写代码
+并报告，不得自行扩大范围。
 ```
 
-## 10. 管理员验收
+## 11. 阶段验收
 
-管理员合并每个任务前必须确认：
+维护者接受每个阶段前必须确认：
 
 - [ ] Agent 使用了正确的基线。
-- [ ] 只完成一个任务 ID。
+- [ ] 只完成一个阶段 ID。
 - [ ] 没有混入共享工作树的旧改动。
 - [ ] 状态所有者没有复制。
 - [ ] 外部契约没有变化，或已获得单独批准。
@@ -1016,4 +491,4 @@ git status --short：
 - [ ] 失败尝试和 Patch 等级已披露。
 - [ ] 文档与实现没有互相矛盾。
 - [ ] 回滚该任务不会要求同时回滚未关联功能。
-- [ ] 下一任务基于本任务合并后的新 SHA。
+- [ ] 下一阶段基于本阶段合并后的新 SHA。

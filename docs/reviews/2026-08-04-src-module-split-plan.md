@@ -2,16 +2,17 @@
 
 ## 1. 范围和结论
 
-本方案覆盖 `src/` 下现有的 77 个 TypeScript 文件：
+本方案最初覆盖 `src/` 下 77 个 TypeScript 文件。S6 完成后的粒度复核将
+`types` 合并为完整领域文件；功能边界复核后当前 `src/` 共有 97 个 TypeScript 文件：
 
 | 目录 | 文件数 |
 |---|---:|
-| `controller` | 35 |
-| `view` | 22 |
-| `model` | 13 |
+| `controller` | 33 |
+| `view` | 28 |
+| `model` | 22 |
 | `types` | 5 |
-| `data` | 1 |
-| `utils` | 1 |
+| `adapter` | 6 |
+| 其他 `src` 目录 | 3 |
 
 拆分不以行数为唯一标准。只有出现以下情况才拆：
 
@@ -29,11 +30,12 @@
 ```text
 View
   只持有 DOM 引用、渲染 ViewObject、发出用户操作回调
-  不直接调用 electronBridge、localStorage、js-yaml 或 Model
+  不直接调用全局 electronBridge、localStorage、js-yaml 或有状态 Model
+  可以读取类型、不可变目录和无状态领域函数
 
 Controller
   持有页面/用例状态，协调 View、Model 和 Repository
-  不直接解析 YAML，不使用 any 绕过 Host/Port 契约
+  不直接依赖 YAML/JSON parser，不使用 any 绕过 Host/Port 契约
 
 Model
   持有领域状态和纯业务规则
@@ -56,141 +58,113 @@ Adapter
 | 舰队编辑草稿 | `FleetPlannerController` + 单个 `FleetDraft` |
 | 决战舰队草稿 | `DecisivePlanController` + 单个 `DecisiveFleetDraft` |
 
-## 3. 目标目录
+## 3. 最终目录
 
-只列新增或需要重组的关键模块；未列出的保留文件继续位于原目录。
+实现采用完整边界和完整业务功能作为文件粒度，没有继续执行早期草案中的微型
+Repository、Codec 或 helper 拆分。下列目录是 S6 收口后的实际结构：
 
 ```text
 src/
 ├─ adapter/
-│  ├─ api/
-│  │  ├─ HttpTransport.ts
-│  │  ├─ WebSocketTransport.ts
-│  │  └─ CombatPlanRequestMapper.ts
-│  ├─ ipc/
-│  │  ├─ ConfigRepository.ts
-│  │  ├─ ManagedPlanRepository.ts
-│  │  ├─ MapDataRepository.ts
-│  │  ├─ ShipLibraryRepository.ts
-│  │  ├─ TaskGroupRepository.ts
-│  │  └─ TemplateRepository.ts
-│  ├─ storage/
-│  │  ├─ CronStateStore.ts
-│  │  ├─ RepairStateStore.ts
-│  │  └─ UiPreferencesStore.ts
-│  ├─ json/
-│  │  ├─ TaskGroupJsonCodec.ts
-│  │  └─ TemplateJsonCodec.ts
-│  └─ yaml/
-│     ├─ ConfigYamlCodec.ts
-│     ├─ PlanMetadataReader.ts
-│     └─ PlanYamlCodec.ts
+│  ├─ ApiAdapter.ts
+│  ├─ IpcAdapter.ts
+│  ├─ JsonAdapter.ts
+│  ├─ StorageAdapter.ts
+│  ├─ YamlAdapter.ts
+│  └─ index.ts
 ├─ controller/
 │  ├─ app/
-│  │  ├─ DeviceController.ts
-│  │  ├─ EnvironmentSetupController.ts
-│  │  ├─ HeartbeatController.ts
 │  │  ├─ NavigationController.ts
 │  │  ├─ OperationsController.ts
-│  │  ├─ ShipLibraryController.ts
-│  │  ├─ UpdateController.ts
-│  │  ├─ RuntimeLogPresenter.ts
-│  │  └─ CronTaskController.ts
+│  │  ├─ AppController.ts
+│  │  ├─ ConfigController.ts
+│  │  ├─ SchedulerBinder.ts
+│  │  └─ SettingsController.ts
 │  ├─ plan/
+│  │  ├─ BattlePlanLoaderController.ts
 │  │  ├─ DecisivePlanController.ts
 │  │  ├─ FleetPlannerController.ts
-│  │  ├─ FleetPresetController.ts
-│  │  ├─ ManagedBattlePlanPickerController.ts
-│  │  ├─ PlanExecutionController.ts
-│  │  └─ PlanPersistenceController.ts
-│  ├─ taskGroup/queue/
-│  │  ├─ ManagedPlanTaskLoader.ts
-│  │  ├─ TaskGroupTaskLoader.ts
-│  │  └─ TemplateTaskLoader.ts
+│  │  └─ PlanController.ts
+│  ├─ startup/
+│  ├─ taskGroup/
 │  └─ template/
-│     └─ TemplateWizardController.ts
 ├─ model/
-│  ├─ config/ConfigDefaults.ts
 │  ├─ fleet/
 │  │  ├─ DecisiveFleetDraft.ts
 │  │  ├─ FleetDraft.ts
-│  │  ├─ FleetResolver.ts
 │  │  ├─ FleetRuleMapper.ts
+│  │  ├─ ShipCatalog.ts
 │  │  ├─ ShipMatcher.ts
 │  │  ├─ ShipNameNormalizer.ts
-│  │  └─ TeamPlanQuery.ts
+│  │  └─ index.ts
 │  └─ scheduler/
-│     ├─ CronTriggerPolicy.ts
-│     ├─ FleetPresetApplicator.ts
-│     ├─ FollowUpTaskFactory.ts
-│     ├─ RepairPolicy.ts
-│     ├─ TaskRequestFactory.ts
-│     └─ TaskResultPolicy.ts
+│     ├─ SchedulerRepairPolicy.ts
+│     ├─ SchedulerTaskPolicy.ts
+│     └─ index.ts
 ├─ view/
-│  ├─ config/
-│  │  ├─ ConfigFormView.ts
-│  │  └─ EnvironmentSettingsView.ts
 │  ├─ plan/
-│  │  ├─ BattlePlanPickerView.ts
-│  │  ├─ PlanFormView.ts
-│  │  ├─ decisive/DecisiveFleetView.ts
-│  │  └─ fleetPlanner/
-│  │     ├─ BackupCopyDialog.ts
-│  │     ├─ FleetEditorView.ts
-│  │     ├─ FleetRuleEditorView.ts
-│  │     ├─ PlanManagementView.ts
-│  │     └─ TeamPlanPickerView.ts
+│  │  ├─ FleetPlannerView.ts
+│  │  ├─ FleetEditorView.ts
+│  │  ├─ FleetRuleView.ts
+│  │  ├─ FleetGalleryView.ts
+│  │  ├─ PlanManagementView.ts
+│  │  └─ TeamPlanLoaderView.ts
+│  ├─ config/
+│  ├─ main/
+│  ├─ setup/
 │  ├─ shared/
-│  │  ├─ ShipArtwork.ts
-│  │  ├─ ShipGalleryView.ts
-│  │  └─ TeamPlanCard.ts
-│  └─ taskGroup/
-│     ├─ TaskContextMenuView.ts
-│     └─ TaskListLoaderView.ts
+│  ├─ taskGroup/
+│  └─ template/
 └─ types/
-   ├─ api/{common,game,system,task,websocket,index}.ts
-   ├─ ipc/{configuration,device,environment,plans,shipLibrary,index}.ts
-   ├─ model/{config,plan,repair,template,index}.ts
-   └─ view/{config,main,plan,setup,template,index}.ts
+   ├─ api.ts
+   ├─ ipc.ts
+   ├─ model.ts
+   ├─ view.ts
+   └─ scheduler.ts
 ```
+
+无引用的 Controller barrel 已删除。`model/fleet/index.ts` 和
+`model/scheduler/index.ts` 仍有实际调用方，因此继续作为领域公共入口。
 
 ## 4. Controller 逐文件映射
 
 | 现有文件 | 处理 | 目标 |
 |---|---|---|
-| `controller/app/AppController.ts` | 拆分 | 只保留组合、初始化和销毁；导航、常用操作、ADB、舰船库、更新、心跳分别进入 6 个子控制器 |
-| `controller/app/ConfigController.ts` | 拆分 | 保留配置用例协调；环境检测/向导进入 `EnvironmentSetupController`，IPC 和偏好读写进入 Repository/Store |
-| `controller/app/SchedulerBinder.ts` | 内部拆分 | 保留文档规定的 Binder facade；日志/进度解析进入 `RuntimeLogPresenter`，Cron 任务装载进入 `CronTaskController` |
+| `controller/app/AppController.ts` | 收口完成 | 保留唯一组合根；设置页交互进入 `SettingsController`，心跳由 `StartupController` 持有 |
+| `controller/app/ConfigController.ts` | 收口完成 | 保留完整配置用例协调，通过公开方法更新最小依赖，不再绕过私有 Host |
+| `controller/app/SchedulerBinder.ts` | 保留并收口 | 继续统一绑定 Scheduler/CronScheduler 回调，不复制调度状态 |
+| `controller/app/SettingsController.ts` | 新增并收口 | 集中设置页环境检测、ADB、舰船库、更新检查和主题交互 |
 | `controller/app/constants.ts` | 保留并清理 | 保留优先级和状态文案；删除无引用的 `resolveRepairModeLabel()` |
-| `controller/app/index.ts` | 保留 | 更新聚合导出 |
+| `controller/app/index.ts` | 已删除 | 无代码、脚本或打包入口引用 |
 | `controller/app/rendering.ts` | 保留 | 继续作为纯 ViewObject 构造模块 |
-| `controller/app/theme.ts` | 保留并注入 | DOM 主题应用保留，`localStorage` 改由 `UiPreferencesStore` 提供 |
-| `controller/plan/PlanController.ts` | 拆分 | 保留当前方案状态；选择弹窗、持久化、执行分别进入三个控制器 |
-| `controller/plan/index.ts` | 保留 | 更新聚合导出 |
+| `controller/app/theme.ts` | 保留 | 完整管理 Renderer 主题偏好和 DOM 主题应用 |
+| `controller/plan/BattlePlanLoaderController.ts` | 新增并收口 | 独立持有受管方案选择器状态并返回最终选择结果 |
+| `controller/plan/PlanController.ts` | 收口完成 | 保留当前方案编辑、地图、保存和执行；方案选择委托给 Loader |
+| `controller/plan/index.ts` | 已删除 | 无代码、脚本或打包入口引用 |
 | `controller/plan/nodeEditor.ts` | 保留 | 节点编辑用例集中，无需再拆 |
-| `controller/plan/presetFlow.ts` | 保留并收口 | 保留预设用例；API DTO 转换迁到 `CombatPlanRequestMapper` |
+| `controller/plan/presetFlow.ts` | 保留并收口 | 集中预设导入、展示和任务请求构造 |
 | `controller/plan/rendering.ts` | 保留 | 继续作为纯 ViewObject mapper |
 | `controller/plan/selectedNodes.ts` | 保留 | 单一纯规则 |
-| `controller/shared/ControllerHost.ts` | 删除确认 | 当前只有 barrel 导出、无实际使用；各控制器继续使用最小 Host |
+| `controller/shared/ControllerHost.ts` | 已删除 | 各控制器使用自己的最小 Host/Port |
 | `controller/shared/DialogHelper.ts` | 保留 | 集中的对话框适配层 |
-| `controller/shared/index.ts` | 保留并清理 | 删除 `ControllerHost` 导出 |
-| `controller/startup/StartupController.ts` | 保留并清理 | 保留启动编排；删除无调用的 `runSetupScript()` 代理后再验证 |
+| `controller/shared/index.ts` | 已删除 | 无调用方，不再保留无意义 barrel |
+| `controller/startup/StartupController.ts` | 保留并清理 | 保留环境检查、更新、后端连接和销毁顺序 |
 | `controller/startup/connection.ts` | 保留 | 后端连接启动流程集中 |
-| `controller/startup/envAndUpdates.ts` | 拆分后删除 | 拆为 `environmentBootstrap.ts` 和 `updateStartup.ts` |
-| `controller/startup/index.ts` | 保留 | 更新聚合导出 |
-| `controller/taskGroup/TaskListLoaderController.ts` | 拆分 | Controller 只持有选择/草稿；DOM 渲染和拖拽进入 `TaskListLoaderView` |
+| `controller/startup/envAndUpdates.ts` | 保留 | 环境准备和启动更新仍构成一个完整启动业务边界 |
+| `controller/startup/index.ts` | 已删除 | 无代码、脚本或打包入口引用 |
+| `controller/taskGroup/TaskListLoaderController.ts` | 保留并收口 | 继续负责完整的任务列表加载用例 |
 | `controller/taskGroup/TaskGroupController.ts` | 保留并瘦身 | 继续协调任务组；固定 DOM 事件迁到 View 回调 |
 | `controller/taskGroup/addItems.ts` | 保留并收口 | 保留添加条目用例；删除无引用的 `addFileToGroup()`，文件/YAML 处理走 Adapter |
-| `controller/taskGroup/contextMenu.ts` | 拆分 | 编辑动作保留；菜单 DOM 进入 `TaskContextMenuView` |
-| `controller/taskGroup/importExport.ts` | 删除确认 | 当前无调用方；若产品仍需要导入导出，先恢复入口并改走 Repository |
-| `controller/taskGroup/index.ts` | 保留 | 更新聚合导出 |
-| `controller/taskGroup/managedPlanReader.ts` | 迁出后删除 | 读取职责进入 `ManagedPlanRepository` |
-| `controller/taskGroup/metaLoader.ts` | 保留并收口 | 保留批量元数据编排；解析交给 `PlanMetadataReader` |
-| `controller/taskGroup/queueLoader.ts` | 拆分后删除 | 请求构造进 `TaskRequestFactory`；按 managed/group/template 拆成三个 Loader |
-| `controller/template/TemplateController.ts` | 拆分 | 保留模板页协调；向导状态和事件进入 `TemplateWizardController`，不再直接 IPC/YAML |
-| `controller/template/crud.ts` | 保留并收口 | 保留 CRUD 用例，持久化交给 `TemplateRepository` |
-| `controller/template/index.ts` | 保留 | 更新聚合导出 |
-| `controller/template/selectors.ts` | 保留并收口 | 保留选择用例，使用强类型和 `PlanMetadataReader`，移除 `any`/直接 YAML |
+| `controller/taskGroup/contextMenu.ts` | 保留并收口 | 集中上下文菜单和任务编辑意图，不再继续拆成微型文件 |
+| `controller/taskGroup/importExport.ts` | 已删除 | 两个导出函数均无调用方，且没有对应 UI 入口 |
+| `controller/taskGroup/index.ts` | 已删除 | 无代码、脚本或打包入口引用 |
+| `controller/taskGroup/managedPlanReader.ts` | 保留 | 被元数据和队列加载流程共同调用 |
+| `controller/taskGroup/metaLoader.ts` | 保留并收口 | 保留批量元数据编排；YAML 解析统一走 `yamlCodec` |
+| `controller/taskGroup/queueLoader.ts` | 保留并收口 | 集中 managed/group/template 三种来源的入队规则 |
+| `controller/template/TemplateController.ts` | 收口完成 | 保留模板页和向导协调，使用稳定的强类型状态引用 |
+| `controller/template/crud.ts` | 保留并收口 | 保留 CRUD 用例，JSON 解析统一走 `jsonCodec` |
+| `controller/template/index.ts` | 已删除 | 无代码、脚本或打包入口引用 |
+| `controller/template/selectors.ts` | 保留并收口 | 保留选择用例，使用强类型和 `yamlCodec`，移除 `any` |
 | `controller/template/useTemplate.ts` | 保留 | 用例单一 |
 | `controller/template/wizard.ts` | 保留并改契约 | 保留步骤规则；用明确状态接口替代 `as any` ref-wrapper |
 
@@ -198,21 +172,22 @@ src/
 
 | 现有文件 | 处理 | 目标 |
 |---|---|---|
-| `view/config/ConfigView.ts` | 拆分 | facade + `ConfigFormView` + `EnvironmentSettingsView`；YAML 只作为原始文本上交 Controller |
+| `view/config/ConfigView.ts` | 保留并收口 | 完整设置页纯渲染组件；不解析 YAML，不访问 IPC |
 | `view/main/FleetPreviewView.ts` | 保留并注入 | 由 Controller 传入舰船库 manifest，移除直接 IPC |
 | `view/main/LogView.ts` | 保留 | 日志渲染职责集中 |
 | `view/main/MainView.ts` | 保留 | 继续作为主页面 facade |
 | `view/main/StatusBar.ts` | 保留 | 状态栏职责集中 |
 | `view/main/TaskQueueView.ts` | 保留 | 队列渲染和拖拽回调集中 |
-| `view/plan/DecisivePlanView.ts` | 拆分 | facade + `DecisiveFleetView` + 共享 `ShipGalleryView`；保存/加载进入 Controller |
-| `view/plan/FleetEditDialog.ts` | 保留并提取规则 | 对话框保留，舰种匹配和推荐候选进入 `ShipMatcher` |
-| `view/plan/FleetPlannerView.ts` | 重点拆分 | facade + 舰队编辑、规则编辑、编队选择、备选复制、计划管理五个子 View；状态和 IPC 全部移出 |
-| `view/plan/FleetPresetView.ts` | 拆分职责 | 文件保留为纯渲染；加载、转换、绑定修改进入 `FleetPresetController` |
+| `view/plan/BattlePlanLoaderView.ts` | 新增并收口 | 集中受管方案选择弹窗、搜索筛选、列表和舰队预览 DOM |
+| `view/plan/DecisivePlanView.ts` | 保留并收口 | 通过 `DecisivePlanViewHost` 发出意图，草稿由 `DecisivePlanController` 独立持有 |
+| `view/plan/FleetEditDialog.ts` | 保留并收口 | 对话框保留，复用只读舰船目录和唯一名称规范化规则 |
+| `view/plan/FleetPlannerView.ts` | 拆分完成 | facade + `FleetEditorView`、`FleetRuleView`、`FleetGalleryView`、`PlanManagementView`、`TeamPlanLoaderView` |
+| `view/plan/FleetPresetView.ts` | 保留并收口 | 通过最小 Host 获取计划和舰船库数据，不直接访问全局 IPC |
 | `view/plan/MapView.ts` | 保留 | 地图渲染职责集中 |
 | `view/plan/NodeEditorView.ts` | 保留 | 节点编辑表单职责集中 |
-| `view/plan/PlanPreviewView.ts` | 保留 facade 并拆分 | 继续组合三个子 View；通用方案字段表单进入 `PlanFormView` |
-| `view/plan/ShipArtwork.ts` | 移动 | 移到 `view/shared/ShipArtwork.ts`，因为主页面和计划页共同使用 |
-| `view/plan/TeamPlanListUi.ts` | 拆分后删除 | 查询/排序进 `TeamPlanQuery`，卡片 DOM 进 `view/shared/TeamPlanCard.ts` |
+| `view/plan/PlanPreviewView.ts` | 保留 | 继续组合地图、节点和方案表单 |
+| `view/plan/ShipArtwork.ts` | 保留 | 集中计划页舰船图片创建和 fallback |
+| `view/plan/TeamPlanListUi.ts` | 保留 | 集中编队计划过滤、排序和卡片渲染 |
 | `view/setup/SetupWizardView.ts` | 保留 | 向导渲染职责集中 |
 | `view/shared/ShipAutocomplete.ts` | 保留 | 通用自动补全组件 |
 | `view/shared/scrollPosition.ts` | 保留 | 通用纯 DOM 工具 |
@@ -225,56 +200,56 @@ src/
 
 | 现有文件 | 处理 | 目标 |
 |---|---|---|
-| `model/ApiClient.ts` | 拆分 | 保留业务 API facade；REST 和 WebSocket 进入两个 Transport |
-| `model/ConfigModel.ts` | 拆分 | 保留配置状态/更新；默认值、迁移和 YAML codec 分离 |
-| `model/MapDataLoader.ts` | 注入式拆分 | 保留缓存和地图查询；文件读取进入 `MapDataRepository`，地图类型进入 model types |
-| `model/PlanModel.ts` | 拆分 | 保留方案状态和节点规则；YAML 解析、未知字段合并和序列化进入 `PlanYamlCodec` |
-| `model/TaskGroupModel.ts` | 拆分 | 保留任务组权威状态/CRUD；JSON 迁移与 IPC 持久化分别进入 Codec/Repository |
-| `model/TemplateModel.ts` | 拆分 | 保留模板 CRUD；JSON 校验/迁移和文件读写进入 Codec/Repository |
+| `model/ApiClient.ts` | 收口完成 | 保留业务 API facade；REST 和 WebSocket 传输委托 `ApiAdapter` |
+| `model/ConfigModel.ts` | 收口完成 | 保留配置状态、默认值和迁移；YAML 解析统一走 `yamlCodec` |
+| `model/MapDataLoader.ts` | 收口完成 | 保留缓存和地图查询；文件读取和 JSON 解析委托 Adapter |
+| `model/PlanModel.ts` | 收口完成 | 保留方案状态、未知字段合并和序列化规则；底层 YAML 解析统一走 `yamlCodec` |
+| `model/TaskGroupModel.ts` | 收口完成 | 保留任务组权威状态/CRUD；JSON 和文件持久化委托 Adapter |
+| `model/TemplateModel.ts` | 收口完成 | 保留模板 CRUD 和校验；JSON 和文件持久化委托 Adapter |
 | `model/scheduler/CronScheduler.ts` | 策略/存储提取 | 保留定时器和 pending 状态；时间规则与 `localStorage` 分离 |
 | `model/scheduler/ExpeditionTimer.ts` | 保留 | 单一定时职责 |
 | `model/scheduler/RepairManager.ts` | 策略/存储提取 | 保留 `bathingShips`；阈值判断与持久化分离 |
-| `model/scheduler/Scheduler.ts` | 提取纯策略 | 保留 `currentTask/status`、消费和 API 回调；结果判断、后触发构造提取 |
+| `model/scheduler/Scheduler.ts` | 提取纯策略 | 保留 `currentTask/status`、消费和 API 回调；纯规则进入 `SchedulerTaskPolicy` 和 `SchedulerRepairPolicy` |
 | `model/scheduler/StopConditionChecker.ts` | 保留 | 停止条件职责集中 |
-| `model/scheduler/TaskQueue.ts` | 小范围提取 | 保留就绪/延迟队列；编队请求修改进入 `FleetPresetApplicator` |
+| `model/scheduler/TaskQueue.ts` | 保留并收口 | 继续唯一持有就绪和延迟队列 |
 | `model/scheduler/index.ts` | 保留 | 继续作为调度系统公共出口 |
-| `types/api.ts` | 拆分后改为兼容出口 | 拆成 common/system/game/task/websocket，迁移完成后删除旧文件 |
-| `types/electronBridge.ts` | 拆分后改为兼容出口 | 按 IPC capability 拆成 environment/shipLibrary/plans/device/configuration |
-| `types/model.ts` | 拆分后改为兼容出口 | 拆成 plan/config/template/repair |
+| `types/api.ts` | 真实定义 | 后端请求、响应、任务 DTO 和 WebSocket 事件 |
+| `types/ipc.ts` | 真实定义 | IPC DTO、`ElectronBridge` 和全局 Window 声明 |
+| `types/model.ts` | 真实定义 | 配置、方案、模板、舰队和修理领域类型 |
 | `types/scheduler.ts` | 保留 | 调度类型内聚且规模合理 |
-| `types/view.ts` | 拆分后改为兼容出口 | 按 main/plan/config/template/setup 拆分 |
-| `data/shipData.ts` | 拆分后删除 facade | 静态目录、名称规范化、匹配、解析、API rule mapper、显示标签分别归位 |
+| `types/view.ts` | 真实定义 | 页面 ViewObject、表单值和展示状态 |
+| `data/shipData.ts` | 已删除 | 舰船目录、名称规范化、匹配和规则映射已归入 `model/fleet/` |
 | `utils/Logger.ts` | 保留 | 日志格式、级别和输出职责集中 |
 
 ## 7. 重点模块的实际拆法
 
 ### 7.1 `FleetPlannerView.ts`
 
-不能只把 3482 行机械切成几个类。正确顺序是：
+最终按完整舰队业务功能拆分，而不是按单个 helper 拆分：
 
-1. 先建立 `FleetDraft`，集中主选、备选、规则和拖拽变换。
-2. 提取共享 `ShipGalleryView`，由 Controller 提供过滤后的舰船和选择回调。
-3. 提取 `FleetEditorView`、`FleetRuleEditorView`。
-4. 提取 `TeamPlanPickerView`、`BackupCopyDialog`。
-5. 最后提取 `PlanManagementView` 和 Repository 调用。
-6. 原文件只作为 facade，目标控制在约 200 至 300 行。
+1. `FleetPlannerController` 持有唯一 `FleetDraft`。
+2. `FleetGalleryView` 负责图鉴筛选、排序、加载缓存等纯展示状态。
+3. `FleetEditorView` 负责舰队槽位编辑和拖拽意图。
+4. `FleetRuleView` 负责主选、备选、舰种和等级规则输入。
+5. `TeamPlanLoaderView` 负责编队计划选择。
+6. `PlanManagementView` 负责计划列表和管理意图。
+7. `FleetPlannerView` 只组合上述完整业务 View 并转发回调。
 
 `FleetDraft` 必须保留 candidate-only：没有明确 `name` 的槽位不能把第一个
 candidate 提升为主选。
 
 ### 7.2 `Scheduler.ts`
 
-不把执行流程拆成多个可写对象。只提取纯函数：
+不把执行流程拆成多个可写对象。只提取纯策略：
 
-- `TaskResultPolicy`：战果等级、终点和完成轮次判断。
-- `FollowUpTaskFactory`：后触发任务复制。
-- `FleetPresetApplicator`：向请求写入编队和 `fleet_rules`。
+- `SchedulerTaskPolicy`：任务完成、重试、后触发和队列请求规则。
+- `SchedulerRepairPolicy`：修理和替换相关的无状态判断。
 
 `consumeNext()`、重试时序、`currentTask` 和状态切换继续留在 `Scheduler`。
 
 ### 7.3 `PlanModel.ts` 和 `ConfigModel.ts`
 
-Model 不再直接依赖 `js-yaml`，但兼容期保留原公共方法：
+Model 不再直接依赖 `js-yaml`，公共方法继续保留：
 
 ```typescript
 PlanModel.fromYaml(content)
@@ -283,56 +258,19 @@ config.loadFromYaml(content)
 config.toYaml()
 ```
 
-这些方法先委托新 Codec，调用方迁移完成后再决定是否移除。这样每一步都能
-独立回滚，并保持 YAML 未知字段、头部注释和旧字段迁移行为。
+这些方法统一委托 `yamlCodec`，保持 YAML 未知字段、头部注释和旧字段迁移行为。
 
-## 8. 实施阶段
+## 8. 实施状态
 
-### 阶段 0：行为基线
-
-- 固化 77 个文件清单和依赖扫描。
-- 为 YAML round-trip、candidate-only、队列优先级/重试、Cron 状态恢复、
-  泡澡状态恢复补最小特征测试。
-- 当前工作区改动较多，实施应在这些改动稳定后从目标分支创建独立分支或 worktree。
-
-### 阶段 1：Types 拆分
-
-- 只拆 `types/api.ts`、`types/electronBridge.ts`、`types/model.ts`、`types/view.ts`。
-- 旧文件暂时 re-export，调用方分批改 import。
-- 不改运行时代码。
-
-### 阶段 2：Adapter 边界
-
-- 引入 YAML/JSON Codec、IPC Repository、Storage Store 和 API Transport。
-- 现有 Model/Controller API 暂时不变，内部改为委托或注入。
-- 完成后 `src/model` 和 `src/view` 中不再出现 `window.electronBridge`。
-
-### 阶段 3：Model 和共享领域规则
-
-- 拆 `PlanModel`、`ConfigModel`、`TaskGroupModel`、`TemplateModel`、`shipData`。
-- 提取 Scheduler/Cron/Repair 的纯策略，不转移可写状态。
-- 建立共享 `FleetDraft`、`DecisiveFleetDraft`、`ShipMatcher`、`FleetRuleMapper`。
-
-### 阶段 4：Controller
-
-- 先拆 `AppController` 和 `SchedulerBinder`。
-- 再拆 `PlanController`、`queueLoader`、`TaskListLoaderController`。
-- 最后处理 Template 和 Startup。
-- 每个子控制器只接收最小 Host/Port，不传整个 `AppController`。
-
-### 阶段 5：View
-
-- 先移除 View 中 IPC/YAML/localStorage。
-- 再提取共享 `ShipGalleryView` 和 `ShipArtwork`。
-- 按 FleetPlanner 编辑、选择、管理三个独立提交拆分。
-- 再复用共享组件拆 `DecisivePlanView` 和 `FleetPresetView`。
-- 最后拆 `ConfigView` 和 `PlanPreviewView` 的表单子 View。
-
-### 阶段 6：清理
-
-- 删除兼容出口、无引用文件和无引用导出。
-- 更新架构文档及模块依赖图。
-- 最终确认 `AppController` 仍是唯一 Renderer 组合根。
+| 阶段 | 状态 | 结果 |
+|---|---|---|
+| S0 行为基线 | 已完成 | 建立迁移、API、Fleet 和 Scheduler 特征测试 |
+| S1 Types | 已完成并复核粒度 | 四个领域和 Scheduler 各一个真实定义文件，不保留子目录 barrel |
+| S2 Adapter | 已完成 | 形成 5 个完整边界 Adapter 和统一入口 |
+| S3 Domain | 已完成 | Fleet/Scheduler 规则收口，状态所有权未复制 |
+| S4 Controller | 已完成 | `AppController` 保持唯一组合根，子 Controller 使用最小 Host |
+| S5 View | 已完成 | Fleet View 按完整业务功能拆分，业务草稿移出 View |
+| S6 清理 | 已完成 | facade、无引用 barrel 和死代码已删除，文档与最终回归通过 |
 
 ## 9. 每阶段验收
 
@@ -360,10 +298,20 @@ npm run test:main-ipc
 rg -n "window\.electronBridge|\(window as any\)" src/model src/view
 rg -n "localStorage" src/model src/view
 rg -n "js-yaml|yaml\.load|yaml\.dump" src/controller src/model src/view
-rg -n "\bas any\b" src/controller src/model
+rg -n "\bas any\b" src/controller src/model src/view
 ```
 
-预期前 3 条无结果；`as any` 只允许有明确注释的第三方边界，业务代码无结果。
+以上 4 条均应无结果。
+
+S6 最终验证已通过：
+
+- `npm run build`、舰种契约同步检查。
+- Fleet、Scheduler、旧配置、旧方案、任务组迁移和 API 契约测试。
+- 设置持久化、主进程服务、主进程 IPC 和 Python 环境测试。
+- 舰船库更新器、活动资源测试、静态边界检查和 `git diff --check`。
+
+桌面 Electron 启动、舰队拖拽、模拟器连接和实际任务执行没有在本轮工具环境中
+进行手工验收，仍需在合并前按下列清单验证。
 
 最终手工回归：
 

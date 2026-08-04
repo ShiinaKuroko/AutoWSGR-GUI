@@ -1,10 +1,13 @@
+/** 提供舰队预设名称、舰船和候选规则的编辑对话框。 */
 /**
  * 编队预设编辑弹窗。
  * 从 PlanPreviewView.showFleetEditDialog 提取。
  */
-import type { FleetPresetVO } from '../../types/view';
-import type { ShipSlot, ShipFilter } from '../../types/model';
-import { ALL_NATIONS, ALL_SHIPS, TYPE_LABELS, toBackendName } from '../../data/shipData';
+import type { FleetPresetVO } from '../../types/view.js';
+import type { ShipSlot, ShipFilter } from '../../types/model.js';
+import { ALL_NATIONS, ALL_SHIPS } from '../../model/fleet/ShipCatalog';
+import { toBackendName } from '../../model/fleet/ShipNameNormalizer';
+import { TYPE_LABELS } from '../../shared/fleetShipTypes';
 import { ShipAutocomplete } from '../shared/ShipAutocomplete';
 import {
   showAlert,
@@ -76,32 +79,36 @@ export function showFleetEditDialog(
   // 构建每个槽位的 HTML
   const slotsHtml = [0, 1, 2, 3, 4, 5].map(i => {
     const slot = ships[i];
-    const isObjectSlot = slot != null && typeof slot === 'object';
+    const slotFilter: ShipFilter | undefined =
+      slot != null && typeof slot === 'object' ? slot : undefined;
     const isFilter = isAdvancedFilterSlot(slot);
-    const slotName = isObjectSlot ? ((slot as any).name ?? '') : '';
+    const slotName = slotFilter?.name ?? '';
     const shipName = typeof slot === 'string' ? slot : (isFilter ? '' : slotName);
     const fixedName = isFilter ? slotName : '';
-    const nation = isFilter ? ((slot as any).nation ?? '') : '';
-    const shipType = isFilter && Array.isArray((slot as any).ship_type)
-      ? ((slot as any).ship_type[0] ?? '')
+    const nation = isFilter ? (slotFilter?.nation ?? '') : '';
+    const shipType = isFilter && Array.isArray(slotFilter?.ship_type)
+      ? (slotFilter.ship_type[0] ?? '')
       : '';
-    const candidates = isFilter && Array.isArray((slot as any).candidates)
-      ? (slot as any).candidates.map(
-          (candidate: { name?: string }) => candidate.name ?? '',
-        ).filter(Boolean).join(', ')
+    const candidates = isFilter && Array.isArray(slotFilter?.candidates)
+      ? slotFilter.candidates
+        .map(candidate => candidate.name)
+        .filter(Boolean)
+        .join(', ')
       : '';
-    const minLevel = isObjectSlot && Number.isFinite((slot as any).min_level)
-      ? String((slot as any).min_level)
+    const minLevel = typeof slotFilter?.min_level === 'number'
+      && Number.isFinite(slotFilter.min_level)
+      ? String(slotFilter.min_level)
       : '';
-    const maxLevel = isObjectSlot && Number.isFinite((slot as any).max_level)
-      ? String((slot as any).max_level)
+    const maxLevel = typeof slotFilter?.max_level === 'number'
+      && Number.isFinite(slotFilter.max_level)
+      ? String(slotFilter.max_level)
       : '';
 
     const nationOpts = `<option value="">不限</option>` + ALL_NATIONS.map(
       (n: string) => `<option value="${escapeHtml(n)}"${n === nation ? ' selected' : ''}>${escapeHtml(n)}</option>`
     ).join('');
     const typeOpts = `<option value="">不限</option>` + typeEntries.map(
-      ([code, label]) => `<option value="${escapeHtml(code)}"${code === shipType ? ' selected' : ''}>${escapeHtml(label as string)}</option>`
+      ([code, label]) => `<option value="${escapeHtml(code)}"${code === shipType ? ' selected' : ''}>${escapeHtml(label)}</option>`
     ).join('');
 
     return `

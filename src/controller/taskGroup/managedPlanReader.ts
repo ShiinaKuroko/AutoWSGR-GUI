@@ -1,3 +1,4 @@
+/** 读取受管作战方案并统一返回内容和来源信息。 */
 /**
  * Reads a task-list item from either the managed plan directories or a
  * legacy/local file path.

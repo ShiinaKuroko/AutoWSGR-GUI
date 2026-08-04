@@ -1,3 +1,4 @@
+/** 协调任务列表文件选择、解析和批量载入。 */
 /**
  * Task-list loader shown on the home page.
  *
@@ -8,7 +9,7 @@ import type {
   TaskGroupItem,
   TaskGroupModel,
 } from '../../model/TaskGroupModel';
-import type { ManagedBattlePlan } from '../../types/electronBridge';
+import type { ManagedBattlePlan } from '../../types/ipc.js';
 import {
   captureScrollPosition,
   restoreScrollPosition,

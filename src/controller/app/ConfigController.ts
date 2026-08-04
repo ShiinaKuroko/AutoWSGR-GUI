@@ -1,3 +1,4 @@
+/** 编排设置加载、环境检测、表单保存和配置持久化。 */
 /**
  * ConfigController —— 配置管理子控制器。
  * 负责 loadConfig / saveConfig / renderConfig / detectAndApplyEmulator / showSetupWizard
@@ -9,7 +10,9 @@ import type { MainView } from '../../view/main/MainView';
 import type { Scheduler, CronScheduler } from '../../model/scheduler';
 import type { TemplateController } from '../template/TemplateController';
 import type { StartupController } from '../startup/StartupController';
-import type { ConfigViewObject } from '../../types/view';
+import type { EmulatorConfig } from '../../types/model.js';
+import type { ConfigViewObject } from '../../types/view.js';
+import { yamlCodec } from '../../adapter/YamlAdapter';
 import { Logger } from '../../utils/Logger';
 import { getThemeMode, getAccentColor, applyTheme } from './theme';
 import { showAlert, showSaveSuccess } from '../shared/DialogHelper';
@@ -22,12 +25,20 @@ export interface ConfigControllerHost {
   readonly scheduler: Scheduler;
   readonly cronScheduler: CronScheduler;
   templateCtrl: TemplateController;
-  startupCtrl: StartupController;
+  startupCtrl: StartupController | null;
   configDir: string;
 }
 
 export class ConfigController {
   constructor(private readonly host: ConfigControllerHost) {}
+
+  setConfigDir(configDir: string): void {
+    this.host.configDir = configDir;
+  }
+
+  setStartupController(startupCtrl: StartupController): void {
+    this.host.startupCtrl = startupCtrl;
+  }
 
   /** 从磁盘加载 usersettings.yaml */
   async loadConfig(): Promise<void> {
@@ -109,8 +120,12 @@ export class ConfigController {
       ocrGpu: cfg.ocr.gpu,
       ocrMirror: cfg.ocr.mirror,
       ocrConfidence: cfg.ocr.ship_name_match_confidence,
-      shipNameAliases: cfg.ocr.ship_name_aliases,
-      shipNameCorrections: cfg.ocr.ship_name_corrections,
+      shipNameAliasesText: this.formatStringMap(
+        cfg.ocr.ship_name_aliases,
+      ),
+      shipNameCorrectionsText: this.formatStringMap(
+        cfg.ocr.ship_name_corrections,
+      ),
       cudaPath: window.electronBridge?.getCudaPath?.() ?? '',
       saveBackendScreenshots: window.electronBridge?.getSaveBackendScreenshots?.() ?? false,
       pythonPath: window.electronBridge?.getPythonPath?.() ?? '',
@@ -133,8 +148,18 @@ export class ConfigController {
   /** 保存配置并同步各组件 */
   async saveConfig(): Promise<void> {
     let collected: ConfigViewObject;
+    let shipNameAliases: Record<string, string>;
+    let shipNameCorrections: Record<string, string>;
     try {
       collected = this.host.configView.collect();
+      shipNameAliases = this.parseStringMap(
+        collected.shipNameAliasesText,
+        '自定义舰名映射',
+      );
+      shipNameCorrections = this.parseStringMap(
+        collected.shipNameCorrectionsText,
+        '识别纠错规则',
+      );
     } catch (error) {
       await showAlert(
         '设置格式错误',
@@ -224,8 +249,8 @@ export class ConfigController {
         gpu: collected.ocrGpu,
         mirror: collected.ocrMirror,
         ship_name_match_confidence: collected.ocrConfidence,
-        ship_name_aliases: collected.shipNameAliases,
-        ship_name_corrections: collected.shipNameCorrections,
+        ship_name_aliases: shipNameAliases,
+        ship_name_corrections: shipNameCorrections,
       },
       log: {
         ...this.host.configModel.current.log,
@@ -305,7 +330,7 @@ export class ConfigController {
       const alive = await this.host.scheduler.ping();
       if (alive) {
         Logger.info('配置已更新，正在重新连接模拟器…');
-        this.host.startupCtrl.startSystem();
+        this.host.startupCtrl?.startSystem();
       } else {
         Logger.warn('后端未运行，请重启应用');
       }
@@ -324,13 +349,15 @@ export class ConfigController {
       const result = await bridge.detectEmulator();
       if (!result) return;
 
-      const patch: { type?: string; path?: string; serial?: string } = {};
+      const patch: Partial<EmulatorConfig> = {};
       if (!cfg.emulator.path && result.path) patch.path = result.path;
       if (!cfg.emulator.serial && result.serial) patch.serial = result.serial;
       if (result.type) patch.type = result.type;
 
       if (Object.keys(patch).length > 0) {
-        this.host.configModel.update({ emulator: patch as any });
+        this.host.configModel.update({
+          emulator: { ...cfg.emulator, ...patch },
+        });
         const yamlStr = this.host.configModel.toYaml();
         await bridge.saveFile('usersettings.yaml', yamlStr);
         Logger.debug(`自动检测到模拟器: type=${result.type} path=${result.path} serial=${result.serial}`);
@@ -401,5 +428,41 @@ export class ConfigController {
         resolve();
       };
     });
+  }
+
+  private formatStringMap(value: Record<string, string>): string {
+    if (Object.keys(value).length === 0) return '';
+    return yamlCodec.stringify(
+      value,
+      { lineWidth: -1, noRefs: true },
+    ).trim();
+  }
+
+  private parseStringMap(
+    source: string,
+    label: string,
+  ): Record<string, string> {
+    if (!source.trim()) return {};
+    let parsed: unknown;
+    try {
+      parsed = yamlCodec.parse<unknown>(source);
+    } catch (error) {
+      throw new Error(
+        `${label}不是合法 YAML: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error(`${label}必须使用“识别名称: 标准名称”的映射格式`);
+    }
+    const output: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (!key.trim() || typeof value !== 'string' || !value.trim()) {
+        throw new Error(`${label}中的键和值都必须是非空文字`);
+      }
+      output[key.trim()] = value.trim();
+    }
+    return output;
   }
 }

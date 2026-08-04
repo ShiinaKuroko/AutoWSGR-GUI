@@ -1,9 +1,11 @@
+/** 持有任务组及条目状态，并负责 JSON 迁移和持久化。 */
 /**
  * TaskGroupModel —— 任务组数据模型。
  * 管理多个任务组的增删改查和持久化（通过 IPC 读写 task_groups.json）。
  */
 import { Logger } from '../utils/Logger';
-import type { PlanPresetSource } from '../types/electronBridge';
+import { jsonCodec, rendererFileRepository } from '../adapter/index.js';
+import type { PlanPresetSource } from '../types/ipc.js';
 
 // ════════════════════════════════════════
 // 数据结构
@@ -64,7 +66,17 @@ interface TaskGroupsData {
 // ════════════════════════════════════════
 
 const STORAGE_FILE = 'task_groups.json';
-const TASK_GROUPS_VERSION = 2;
+const TASK_GROUPS_VERSION = 3;
+const LEGACY_SYSTEM_PLAN_FILES: Readonly<Record<string, string>> = {
+  '活动20260730-E1炸鱼.yaml': 'bettle-E1炸鱼.yaml',
+  '活动20260730-E5夜战.yaml': 'bettle-E5夜战.yaml',
+  '活动20260730-H1炸鱼.yaml': 'bettle-H1炸鱼.yaml',
+  '活动20260730-H5夜战.yaml': 'bettle-H5夜战.yaml',
+  'E1炸鱼.yaml': 'bettle-E1炸鱼.yaml',
+  'E5夜战.yaml': 'bettle-E5夜战.yaml',
+  'H1炸鱼.yaml': 'bettle-H1炸鱼.yaml',
+  'H5夜战.yaml': 'bettle-H5夜战.yaml',
+};
 
 export class TaskGroupModel {
   private data: TaskGroupsData = { version: TASK_GROUPS_VERSION, activeGroup: '', groups: [] };
@@ -167,10 +179,8 @@ export class TaskGroupModel {
   /** 从文件加载 */
   async load(): Promise<void> {
     try {
-      const bridge = (window as any).electronBridge;
-      if (!bridge?.readFile) return;
-      const content = await bridge.readFile(STORAGE_FILE);
-      const parsed = JSON.parse(content) as Partial<TaskGroupsData> & { groups?: unknown };
+      const content = await rendererFileRepository.readFile(STORAGE_FILE);
+      const parsed = jsonCodec.parse<Partial<TaskGroupsData> & { groups?: unknown }>(content);
       if (parsed && Array.isArray(parsed.groups)) {
         const needsMigration = parsed.version !== TASK_GROUPS_VERSION;
         this.data = this.migrate({ ...parsed, groups: parsed.groups });
@@ -222,15 +232,18 @@ export class TaskGroupModel {
       ? source.managedSource
       : this.inferManagedSource(pathValue);
     const inferredFile = managedFile ?? this.inferManagedFile(pathValue);
+    const migratedFile = managedSource === 'system' && inferredFile
+      ? LEGACY_SYSTEM_PLAN_FILES[inferredFile] ?? inferredFile
+      : inferredFile;
     const label = typeof source.label === 'string' && source.label.trim()
       ? source.label
-      : (inferredFile ?? pathValue ?? '任务').split(/[\\/]/).pop()?.replace(/\.ya?ml$/i, '') ?? '任务';
+      : (migratedFile ?? pathValue ?? '任务').split(/[\\/]/).pop()?.replace(/\.ya?ml$/i, '') ?? '任务';
     return [{
       ...source,
       kind,
       path: pathValue,
       managedSource,
-      managedFile: inferredFile,
+      managedFile: migratedFile,
       times: typeof source.times === 'number' && source.times > 0 ? source.times : 1,
       label,
     } as TaskGroupItem];
@@ -254,12 +267,7 @@ export class TaskGroupModel {
   /** 保存到文件 */
   async save(): Promise<boolean> {
     try {
-      const bridge = (window as any).electronBridge;
-      if (!bridge?.saveFile) {
-        Logger.error('保存任务组失败: 文件接口不可用');
-        return false;
-      }
-      await bridge.saveFile(STORAGE_FILE, JSON.stringify(this.data, null, 2));
+      await rendererFileRepository.saveFile(STORAGE_FILE, jsonCodec.stringify(this.data));
       Logger.debug(`任务组已保存: ${this.data.groups.length} 个组`);
       return true;
     } catch (e) {

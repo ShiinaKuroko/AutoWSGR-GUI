@@ -1,10 +1,11 @@
+/** 把调度器和游戏状态转换为主页面 ViewObject。 */
 import type {
   CurrentFleetShipVO,
   MainViewObject,
   TaskQueueItemVO,
-} from '../../types/view';
+} from '../../types/view.js';
 import type { Scheduler } from '../../model/scheduler';
-import type { TaskRequest } from '../../types/api';
+import type { TaskRequest } from '../../types/api.js';
 import { PRIORITY_LABELS, STATUS_TEXT } from './constants';
 
 export interface RenderingState {

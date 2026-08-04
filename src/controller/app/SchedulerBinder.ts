@@ -1,3 +1,4 @@
+/** 绑定 Scheduler 回调并同步日志、进度、队列和连接状态。 */
 /**
  * SchedulerBinder —— 调度器回调绑定子控制器。
  * 封装 Scheduler / CronScheduler 的回调绑定逻辑 + 关联的可变状态。
@@ -7,7 +8,7 @@ import type { ApiClient } from '../../model/ApiClient';
 import type { ConfigModel } from '../../model/ConfigModel';
 import type { TemplateModel } from '../../model/TemplateModel';
 import { PlanModel } from '../../model/PlanModel';
-import type { NormalFightReq } from '../../types/api';
+import type { NormalFightReq } from '../../types/api.js';
 import { Logger } from '../../utils/Logger';
 import { normalizeSelectedNodesForBackend } from '../plan/selectedNodes';
 import { buildPlanQueueRequest } from '../taskGroup/queueLoader';

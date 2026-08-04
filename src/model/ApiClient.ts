@@ -1,3 +1,4 @@
+/** 提供后端业务 API、任务控制和 WebSocket 事件客户端。 */
 /**
  * ApiClient —— 与 AutoWSGR 后端 HTTP Server 通信的服务层。
  * 封装所有 REST 调用和 WebSocket 连接管理。
@@ -7,6 +8,13 @@ const DEFAULT_BASE_URL = 'http://localhost:8438';
 const WS_RECONNECT_DELAY = 3000;
 
 import { Logger } from '../utils/Logger';
+import {
+  createHttpTransport,
+  type HttpTransport,
+  webSocketTransport,
+  type WebSocketTransport,
+  jsonCodec,
+} from '../adapter/index.js';
 import type {
   ApiResponse,
   ApiClientCallbacks,
@@ -20,7 +28,7 @@ import type {
   WsLogMessage,
   WsTaskUpdate,
   WsTaskCompleted,
-} from '../types/api';
+} from '../types/api.js';
 
 // ════════════════════════════════════════
 // ApiClient 实现
@@ -33,9 +41,17 @@ export class ApiClient {
   private shouldReconnectWebSockets = false;
   private callbacks: ApiClientCallbacks = {};
   private reconnectTimers: { log?: ReturnType<typeof setTimeout>; task?: ReturnType<typeof setTimeout> } = {};
+  private readonly http: HttpTransport;
+  private readonly ws: WebSocketTransport;
 
-  constructor(baseUrl: string = DEFAULT_BASE_URL) {
+  constructor(
+    baseUrl: string = DEFAULT_BASE_URL,
+    http: HttpTransport = createHttpTransport(baseUrl),
+    ws: WebSocketTransport = webSocketTransport,
+  ) {
     this.baseUrl = baseUrl;
+    this.http = http;
+    this.ws = ws;
   }
 
   setCallbacks(cb: ApiClientCallbacks): void {
@@ -45,20 +61,8 @@ export class ApiClient {
   // ── HTTP 方法 ──
 
   private async request<T>(method: string, path: string, body?: unknown, timeoutMs?: number): Promise<ApiResponse<T>> {
-    const url = `${this.baseUrl}${path}`;
-    Logger.debug(`HTTP ${method} ${path}${body ? ' body=' + JSON.stringify(body) : ''}`, 'api');
-    const init: RequestInit = {
-      method,
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    };
-    if (timeoutMs) {
-      const ac = new AbortController();
-      init.signal = ac.signal;
-      setTimeout(() => ac.abort(), timeoutMs);
-    }
-    const resp = await fetch(url, init);
-    return resp.json() as Promise<ApiResponse<T>>;
+    Logger.debug(`HTTP ${method} ${path}${body ? ' body=' + jsonCodec.stringify(body) : ''}`, 'api');
+    return this.http.request<ApiResponse<T>>(method, path, body, timeoutMs);
   }
 
   // ── 系统管理 ──
@@ -108,13 +112,13 @@ export class ApiClient {
   }
 
   private static makeLegacyTaskRequest(req: TaskRequest): TaskRequest {
-    const cloned = JSON.parse(JSON.stringify(req)) as TaskRequest & {
+    const cloned = jsonCodec.parse<TaskRequest & {
       plan?: {
         fleet_rules?: unknown;
         node_defaults?: { long_missile_support?: unknown };
         node_args?: Record<string, { long_missile_support?: unknown }>;
       };
-    };
+    }>(jsonCodec.stringify(req));
 
     const plan = cloned.plan;
     if (!plan) return cloned;
@@ -204,7 +208,9 @@ export class ApiClient {
   }
 
   /** 单船泡澡修理（后端接受舰船名称，自动导航到浴室并修理） */
-  async repairShip(shipName: string): Promise<ApiResponse> {
+  async repairShip(
+    shipName: string,
+  ): Promise<ApiResponse<{ repair_seconds?: number }>> {
     return this.request('POST', '/api/repair/ship', { ship_name: shipName });
   }
 
@@ -248,37 +254,28 @@ export class ApiClient {
       || this.wsLog.readyState === WebSocket.CONNECTING
     )) return;
     try {
-      this.wsLog = new WebSocket(`${this.wsBaseUrl()}/ws/logs`);
-
-      this.wsLog.onmessage = (ev) => {
-        try {
-          const msg = JSON.parse(ev.data) as WsMessage;
-          if (msg.type === 'log' && this.callbacks.onLog) {
-            this.callbacks.onLog(msg as WsLogMessage);
+      this.wsLog = this.ws.connect(`${this.wsBaseUrl()}/ws/logs`, {
+        onMessage: data => {
+          try {
+            const msg = jsonCodec.parse<WsMessage>(data);
+            if (msg.type === 'log' && this.callbacks.onLog) this.callbacks.onLog(msg as WsLogMessage);
+          } catch {
+            Logger.debug('WS /logs: malformed message', 'api');
           }
-        } catch {
-          Logger.debug('WS /logs: malformed message', 'api');
-        }
-      };
+        },
+        onOpen: () => {
+          Logger.debug('WS /logs connected', 'api');
+          this.callbacks.onWsStatusChange?.(true);
+        },
+        onClose: () => {
+          this.callbacks.onWsStatusChange?.(false);
+          if (!this.shouldReconnectWebSockets) return;
+          Logger.debug('WS /logs disconnected, reconnect in 3s', 'api');
+          this.reconnectTimers.log = setTimeout(() => this.connectLogWs(), WS_RECONNECT_DELAY);
+        },
+        onError: () => this.wsLog?.close(),
+      });
 
-      this.wsLog.onopen = () => {
-        Logger.debug('WS /logs connected', 'api');
-        this.callbacks.onWsStatusChange?.(true);
-      };
-
-      this.wsLog.onclose = () => {
-        this.callbacks.onWsStatusChange?.(false);
-        if (!this.shouldReconnectWebSockets) return;
-        Logger.debug('WS /logs disconnected, reconnect in 3s', 'api');
-        this.reconnectTimers.log = setTimeout(
-          () => this.connectLogWs(),
-          WS_RECONNECT_DELAY,
-        );
-      };
-
-      this.wsLog.onerror = () => {
-        this.wsLog?.close();
-      };
     } catch {
       if (this.shouldReconnectWebSockets) {
         this.reconnectTimers.log = setTimeout(
@@ -296,33 +293,24 @@ export class ApiClient {
       || this.wsTask.readyState === WebSocket.CONNECTING
     )) return;
     try {
-      this.wsTask = new WebSocket(`${this.wsBaseUrl()}/ws/task`);
-
-      this.wsTask.onmessage = (ev) => {
-        try {
-          const msg = JSON.parse(ev.data) as WsMessage;
-          if (msg.type === 'task_update' && this.callbacks.onTaskUpdate) {
-            this.callbacks.onTaskUpdate(msg as WsTaskUpdate);
-          } else if (msg.type === 'task_completed' && this.callbacks.onTaskCompleted) {
-            this.callbacks.onTaskCompleted(msg as WsTaskCompleted);
+      this.wsTask = this.ws.connect(`${this.wsBaseUrl()}/ws/task`, {
+        onMessage: data => {
+          try {
+            const msg = jsonCodec.parse<WsMessage>(data);
+            if (msg.type === 'task_update' && this.callbacks.onTaskUpdate) this.callbacks.onTaskUpdate(msg as WsTaskUpdate);
+            else if (msg.type === 'task_completed' && this.callbacks.onTaskCompleted) this.callbacks.onTaskCompleted(msg as WsTaskCompleted);
+          } catch {
+            Logger.debug('WS /task: malformed message', 'api');
           }
-        } catch {
-          Logger.debug('WS /task: malformed message', 'api');
-        }
-      };
+        },
+        onClose: () => {
+          if (!this.shouldReconnectWebSockets) return;
+          Logger.debug('WS /task disconnected, reconnect in 3s', 'api');
+          this.reconnectTimers.task = setTimeout(() => this.connectTaskWs(), WS_RECONNECT_DELAY);
+        },
+        onError: () => this.wsTask?.close(),
+      });
 
-      this.wsTask.onclose = () => {
-        if (!this.shouldReconnectWebSockets) return;
-        Logger.debug('WS /task disconnected, reconnect in 3s', 'api');
-        this.reconnectTimers.task = setTimeout(
-          () => this.connectTaskWs(),
-          WS_RECONNECT_DELAY,
-        );
-      };
-
-      this.wsTask.onerror = () => {
-        this.wsTask?.close();
-      };
     } catch {
       if (this.shouldReconnectWebSockets) {
         this.reconnectTimers.task = setTimeout(

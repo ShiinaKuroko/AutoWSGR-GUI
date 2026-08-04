@@ -1,10 +1,12 @@
+/** 读取游戏统计并判断掉落、舰船上限等停止条件。 */
 /**
  * StopConditionChecker — 停止条件检查器。
  * 从 Scheduler 中拆出，负责判断任务是否满足停止条件。
  */
 import type { ApiClient } from '../ApiClient';
-import type { StopCondition } from '../../types/model';
+import type { StopCondition } from '../../types/model.js';
 import { Logger } from '../../utils/Logger';
+import { jsonCodec } from '../../adapter/index.js';
 
 export class StopConditionChecker {
   /** 从后端 [UI] 日志 OCR 中解析的战利品/舰船当前值 */
@@ -44,7 +46,7 @@ export class StopConditionChecker {
    * 仅依赖 OCR：调用 /api/game/acquisition 读取出征面板数量。
    */
   async preflightCheck(cond: StopCondition, taskName: string): Promise<boolean> {
-    Logger.debug(`[StopCond] 预飞OCR检查: 「${taskName}」 条件=${JSON.stringify(cond)}`, 'scheduler');
+    Logger.debug(`[StopCond] 预飞OCR检查: 「${taskName}」 条件=${jsonCodec.stringify(cond)}`, 'scheduler');
 
     try {
       const resp = await this.api.gameAcquisition();

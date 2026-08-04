@@ -1,18 +1,71 @@
-/** GUI 显示和 YAML 校验共用的后端舰种代码。 */
-export const TYPE_LABELS: Record<string, string> = {
-  bb: '战列', bbv: '航战', bbg: '导战',
-  bc: '战巡', cbg: '大巡',
-  cv: '航母', cvl: '轻母', av: '装母',
-  ca: '重巡', cav: '航巡',
-  cl: '轻巡', clt: '雷巡',
-  dd: '驱逐', ddg: '导驱', ddgaa: '防驱',
-  ss: '潜艇', sc: '炮潜', ssg: '导潜',
-  ss_or_ssg: '潜艇/导潜',
-  bm: '重炮', ap: '补给', cg: '导巡', cgaa: '防巡',
-};
+/** 提供 22 种规范舰种代码、标签、映射和契约校验。 */
+import {
+  NATIVE_FLEET_SHIP_TYPE_CODES,
+  NATIVE_FLEET_SHIP_TYPE_LABELS,
+} from './nativeFleetShipTypes.generated';
 
-export const FLEET_SHIP_TYPE_CODES = Object.freeze(Object.keys(TYPE_LABELS));
+export {
+  NATIVE_FLEET_SHIP_TYPE_CODES,
+  NATIVE_FLEET_SHIP_TYPE_LABELS,
+} from './nativeFleetShipTypes.generated';
+
+/** GUI 显示和 YAML 校验共用的后端舰种代码。 */
+export const TYPE_LABELS: Readonly<Record<string, string>> = Object.freeze({
+  ...NATIVE_FLEET_SHIP_TYPE_LABELS,
+  ss_or_ssg: '潜艇/导潜',
+});
+
+export const FLEET_SHIP_TYPE_CODES = Object.freeze([
+  ...NATIVE_FLEET_SHIP_TYPE_CODES,
+  'ss_or_ssg',
+]);
+
+const CANONICAL_FLEET_SHIP_TYPES = new Set(FLEET_SHIP_TYPE_CODES);
+
+/** 舰船资料库的显示优先级；native 新增类型会自动追加。 */
+const SHIP_TYPE_FILTER_PRIORITY: readonly string[] = Object.freeze([
+  'ap',
+  'av',
+  'cv',
+  'bb',
+  'bbg',
+  'bbv',
+  'bc',
+  'bm',
+  'ca',
+  'cav',
+  'cl',
+  'clt',
+  'cvl',
+  'dd',
+  'asdg',
+  'kp',
+  'ssg',
+  'sc',
+  'ss',
+  'aadg',
+  'cg',
+  'bg',
+]);
+
+export const SHIP_TYPE_FILTER_ORDER: readonly string[] = Object.freeze([
+  ...SHIP_TYPE_FILTER_PRIORITY.filter(
+    code => NATIVE_FLEET_SHIP_TYPE_CODES.includes(code),
+  ),
+  ...NATIVE_FLEET_SHIP_TYPE_CODES.filter(
+    code => !SHIP_TYPE_FILTER_PRIORITY.includes(code),
+  ),
+]);
+
+/** 规范大小写并校验后端 canonical code。 */
+export function normalizeFleetShipTypeCode(
+  value: string,
+): string | null {
+  const code = value.trim().toLowerCase();
+  return CANONICAL_FLEET_SHIP_TYPES.has(code) ? code : null;
+}
 
 export function shipTypeLabel(code: string): string {
-  return TYPE_LABELS[code] || code;
+  const canonical = normalizeFleetShipTypeCode(code);
+  return canonical ? TYPE_LABELS[canonical] : code;
 }

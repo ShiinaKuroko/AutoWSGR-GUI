@@ -1,4 +1,5 @@
-import type { MainViewObject } from '../../types/view';
+/** 渲染任务队列进度并发出删除和停止操作意图。 */
+import type { MainViewObject } from '../../types/view.js';
 import {
   captureScrollPosition,
   restoreScrollPosition,

@@ -1,17 +1,22 @@
+/** 管理任务组选择、增删改和 Model 到 ViewObject 的映射。 */
 /**
  * TaskGroupController —— 任务组控制器（瘦身版）。
- * 核心逻辑委托给 importExport / addItems / queueLoader / contextMenu / metaLoader 模块。
+ * 核心逻辑委托给 addItems / queueLoader / contextMenu / metaLoader 模块。
  */
-import { TaskGroupModel } from '../../model/TaskGroupModel';
+import {
+  TaskGroupModel,
+  type TaskGroupItem,
+} from '../../model/TaskGroupModel';
 import { TaskGroupView } from '../../view/taskGroup/TaskGroupView';
 import { TemplateModel } from '../../model/TemplateModel';
 import type { PlanModel } from '../../model/PlanModel';
 import type { Scheduler } from '../../model/scheduler';
-import type { TaskPreset } from '../../types/model';
+import type { TaskPreset } from '../../types/model.js';
+import type { TaskGroupItemViewObject } from '../../types/view.js';
 import type {
   ManagedBattlePlanSelection,
   PlanPresetSource,
-} from '../../types/electronBridge';
+} from '../../types/ipc.js';
 import type { MapData } from '../../model/MapDataLoader';
 import { showAlert, showSaveSuccess } from '../shared/DialogHelper';
 import {
@@ -23,6 +28,20 @@ import { loadGroupToQueue, loadSingleItemToQueue } from './queueLoader';
 import { showContextMenuForItem, hideContextMenu, handleContextMenuEdit, type ContextMenuTarget, type ContextMenuHost } from './contextMenu';
 import { loadItemMetas } from './metaLoader';
 import { TaskListLoaderController } from './TaskListLoaderController';
+
+function toTaskGroupItemViewObject(
+  item: TaskGroupItem,
+): TaskGroupItemViewObject {
+  return {
+    path: item.path,
+    managedSource: item.managedSource,
+    managedFile: item.managedFile,
+    templateId: item.templateId,
+    kind: item.kind,
+    times: item.times,
+    label: item.label,
+  };
+}
 
 export interface TaskGroupHost {
   readonly scheduler: Scheduler;
@@ -185,11 +204,12 @@ export class TaskGroupController {
     const groups = this.taskGroupModel.groups;
     const active = this.taskGroupModel.getActiveGroup();
     const items = active?.items ?? [];
+    const itemViews = items.map(toTaskGroupItemViewObject);
 
     this.taskGroupView.render({
       groups: groups.map(g => ({ name: g.name, itemCount: g.items.length })),
       activeGroupName: this.taskGroupModel.activeGroupName,
-      items,
+      items: itemViews,
     });
 
     if (items.length > 0) {
@@ -198,7 +218,7 @@ export class TaskGroupController {
         this.taskGroupView.render({
           groups: groups.map(g => ({ name: g.name, itemCount: g.items.length })),
           activeGroupName: this.taskGroupModel.activeGroupName,
-          items,
+          items: itemViews,
           itemMetas: metas,
         });
       });

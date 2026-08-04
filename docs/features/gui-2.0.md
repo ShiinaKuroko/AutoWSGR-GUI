@@ -1,7 +1,7 @@
 # GUI 2.0 功能说明
 
 > 文档状态：GUI 2.0 开发版
-> 对应版本：`2.0.1-dev`
+> 对应版本：`2.0.2-dev`
 > 基线分支：`upstream/main`
 > 目标平台：Windows 10/11 x64
 > 前端技术：Electron 33、TypeScript 5.6、SCSS
@@ -39,7 +39,10 @@ GUI 2.0 围绕这些问题建立新的页面结构、数据边界和持久化流
 
 - YAML 字段、允许值和业务含义以 AutoWSGR 后端模型为准。
 - GUI 只负责收集、展示、预校验和序列化。
-- 舰种参数使用后端允许的代码值，例如 `dd`、`cl`、`ddg`、`ddgaa`、
+- 舰种参数使用 `autowsgr_native.VesselType` 提供的 canonical code，例如
+  `dd`、`cl`、`asdg`、`aadg`、`kp`、`cg` 和 `bg`；业务组合项另有
+  `ss_or_ssg`。
+- GUI 舰种清单由 native 契约生成，不接受旧 Wiki code `ddg`、`ddgaa`、
   `cgaa` 和 `cbg`。
 - `fleet_presets` 保持列表结构。
 - 一份舰队 YAML 只描述一支舰队。
@@ -405,6 +408,12 @@ ships:
 `tools/ship_library/update_ship_library.py` 提供：
 
 - 从舰 R 百科 Lua 数据模块读取结构化舰船数据。
+- 以 Lua `type` 字段作为舰种语义来源，页面图标只用于定位对应资源。
+- 自动识别 Wiki legacy/native 舰种 schema；旧 code 只在导入边界转换，
+  输出结果必须通过 `autowsgr_native.VesselType` canonical 校验。
+- Wiki `CF` 在导入边界转换为后端 canonical `cav`，不进入本地舰种集合。
+- GUI 读取 schema 2/3 既有资料库时会在内存中转换旧舰种 code，
+  保留原有立绘、背景、边框和舰种图标路径，不改写用户数据库。
 - 从舰娘图鉴页读取立绘、背景、边框和舰种图标地址。
 - 使用稳定舰船编号作为主键。
 - 保存数据源版本、哈希和更新时间。
@@ -897,6 +906,7 @@ GUI 保留未知 YAML 字段，避免保存设置时破坏后端新增但当前 
 - 外部后端模式支持只连接已有服务。
 - 环境检查输出阶段性进度。
 - 错误信息区分 Python、依赖、导入来源和后端连接问题。
+- 环境检查和安装同时覆盖更新器所需的 `requests` 与 `beautifulsoup4`。
 - 启动过程不再发送无关的本地调试 HTTP 请求。
 
 ## 14. 数据持久化

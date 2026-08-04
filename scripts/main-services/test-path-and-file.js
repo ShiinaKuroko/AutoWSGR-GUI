@@ -218,10 +218,48 @@ function testSecureFileService() {
   );
 }
 
-/** 验证普通写入、覆盖写入和 Windows 失败回滚。 */
+/** 验证普通写入、覆盖写入和替换失败时保留旧文件。 */
 function testAtomicFileStore() {
   const store = new AtomicFileStore();
   const target = path.join(temporaryDirectory, 'atomic.txt');
+  const temporaryArtifacts = filePath => (
+    fs.readdirSync(path.dirname(filePath))
+      .filter(name => (
+        name.startsWith(`${path.basename(filePath)}.`)
+        && /\.(?:tmp|bak)$/.test(name)
+      ))
+  );
+  const assertRenameFailurePreservesTarget = (name, code) => {
+    const failureTarget = path.join(temporaryDirectory, name);
+    const oldContent = `old-${code}`;
+    fs.writeFileSync(failureTarget, oldContent, 'utf8');
+    const originalRename = fs.renameSync;
+    let renameCall = 0;
+    fs.renameSync = (source, destination) => {
+      if (destination === failureTarget) {
+        renameCall += 1;
+        const error = new Error(`simulated ${code} rename failure`);
+        error.code = code;
+        throw error;
+      }
+      return originalRename(source, destination);
+    };
+    try {
+      assert.throws(
+        () => store.write(failureTarget, `new-${code}`),
+        { code },
+      );
+    } finally {
+      fs.renameSync = originalRename;
+    }
+    const transient = ['EACCES', 'EBUSY', 'EPERM'].includes(code);
+    const expectedAttempts = process.platform === 'win32' && transient
+      ? 4
+      : 1;
+    assert.equal(renameCall, expectedAttempts);
+    assert.equal(fs.readFileSync(failureTarget, 'utf8'), oldContent);
+    assert.deepEqual(temporaryArtifacts(failureTarget), []);
+  };
 
   store.write(target, 'first');
   assert.equal(fs.readFileSync(target, 'utf8'), 'first');
@@ -253,31 +291,43 @@ function testAtomicFileStore() {
     assert.equal(writeCall, 2);
     assert.equal(fs.readFileSync(retryTarget, 'utf8'), 'retry-success');
 
+    const renameRetryTarget = path.join(
+      temporaryDirectory,
+      'atomic-rename-retry.txt',
+    );
+    fs.writeFileSync(renameRetryTarget, 'old-before-retry', 'utf8');
     const originalRename = fs.renameSync;
     let renameCall = 0;
     fs.renameSync = (source, destination) => {
-      renameCall += 1;
-      if (renameCall === 1 || renameCall === 3) {
-        const error = new Error('simulated replacement failure');
+      if (destination === renameRetryTarget) {
+        renameCall += 1;
+      }
+      if (destination === renameRetryTarget && renameCall <= 2) {
+        const error = new Error('simulated occupied target');
         error.code = 'EPERM';
         throw error;
       }
       return originalRename(source, destination);
     };
     try {
-      assert.throws(
-        () => store.write(target, 'must-not-replace-old-content'),
-        /simulated replacement failure/,
-      );
+      store.write(renameRetryTarget, 'new-after-retry');
     } finally {
       fs.renameSync = originalRename;
     }
-    assert.equal(fs.readFileSync(target, 'utf8'), 'second');
+    assert.equal(renameCall, 3);
+    assert.equal(
+      fs.readFileSync(renameRetryTarget, 'utf8'),
+      'new-after-retry',
+    );
+    assert.deepEqual(temporaryArtifacts(renameRetryTarget), []);
   }
 
+  assertRenameFailurePreservesTarget('atomic-occupied.txt', 'EBUSY');
+  assertRenameFailurePreservesTarget('atomic-permission.txt', 'EACCES');
+  assertRenameFailurePreservesTarget('atomic-cross-volume.txt', 'EXDEV');
+  assertRenameFailurePreservesTarget('atomic-repeated-rename.txt', 'EPERM');
   assert.deepEqual(
-    fs.readdirSync(temporaryDirectory)
-      .filter(name => name.startsWith('atomic.txt.')),
+    temporaryArtifacts(target),
     [],
   );
 }

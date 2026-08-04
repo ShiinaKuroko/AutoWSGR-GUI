@@ -1,15 +1,17 @@
-import type { FleetPresetVO } from '../../types/view';
+/** 渲染方案内舰队预设并提供应用、编辑和任务创建入口。 */
+import type { FleetPresetVO } from '../../types/view.js';
 import type {
   BathRepairConfig,
   ShipFilter,
   ShipSlot,
-} from '../../types/model';
+} from '../../types/model.js';
 import type {
+  ElectronBridge,
   ShipLibraryManifest,
   ShipLibraryShip,
   UserTeamPlan,
   UserTeamPlanSlot,
-} from '../../types/electronBridge';
+} from '../../types/ipc.js';
 import {
   appendTeamPlanCardContent,
   filterAndSortTeamPlans,
@@ -25,13 +27,18 @@ import {
   restoreScrollPosition,
 } from '../shared/scrollPosition';
 import { createShipArtwork } from './ShipArtwork';
-import { shipFilterLabel } from '../../data/shipData';
+import { shipFilterLabel } from '../../model/fleet/ShipMatcher';
 
 interface ShipPreviewRule {
   name: string;
   minLevel?: number;
   maxLevel?: number;
 }
+
+export type FleetPresetViewHost = Pick<
+  ElectronBridge,
+  'listTeamPlans' | 'getShipLibraryManifest'
+>;
 
 export class FleetPresetView {
   private readonly fleetPresetSection: HTMLElement;
@@ -63,7 +70,7 @@ export class FleetPresetView {
 
   onUserTeamChange?: (plans: FleetPresetVO[]) => void;
 
-  constructor() {
+  constructor(private readonly host: FleetPresetViewHost) {
     this.fleetPresetSection = document.getElementById('fleet-preset-section')!;
     this.fleetPresetListEl = document.getElementById('fleet-preset-list')!;
     this.fleetBindingListEl = document.getElementById('fleet-binding-list')!;
@@ -174,19 +181,12 @@ export class FleetPresetView {
   }
 
   private async loadUserTeams(version: number): Promise<void> {
-    const bridge = window.electronBridge;
-    if (!bridge?.listTeamPlans || !bridge.getShipLibraryManifest) {
-      this.fleetPresetListEl.innerHTML =
-        '<div class="fleet-team-empty">无法读取编队预设</div>';
-      return;
-    }
-
     try {
       const [result, manifest] = await Promise.all([
-        bridge.listTeamPlans(),
+        this.host.listTeamPlans(),
         this.manifest
           ? Promise.resolve(this.manifest)
-          : bridge.getShipLibraryManifest(),
+          : this.host.getShipLibraryManifest(),
       ]);
       if (version !== this.renderVersion) return;
       this.userTeams = result.plans;

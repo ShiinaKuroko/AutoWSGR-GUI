@@ -147,7 +147,7 @@ function testShipLibraryService() {
   assert.equal(manifest.schemaVersion, 1);
   assert.equal(manifest.generatedAt, '2026-01-01T00:00:00Z');
   assert.deepEqual(manifest.labels, { nationality: '国籍' });
-  assert.deepEqual(manifest.typeGroups, { surface: ['BB'] });
+  assert.deepEqual(manifest.typeGroups, { surface: ['bb'] });
   assert.match(manifest.ships[0].portraitUrl, /^file:/);
   assert.match(manifest.ships[0].portraitUrl, /portrait\.png$/);
   assert.equal(manifest.ships[0].backgroundUrl, '');
@@ -172,6 +172,117 @@ function testShipLibraryService() {
     2,
   );
 
+  const legacyManifest = JSON.parse(
+    fs.readFileSync(userManifestPath, 'utf8'),
+  );
+  legacyManifest.labels = {
+    ship_types: {
+      cav: '航空巡洋舰',
+      cg: '反舰导弹巡洋舰',
+      cgaa: '防空导弹巡洋舰',
+      cbg: '导弹大型巡洋舰',
+      ddg: '反舰导弹驱逐舰',
+      ddgaa: '防空导弹驱逐舰',
+      cf: '旗舰',
+    },
+  };
+  legacyManifest.type_groups = {
+    size_classes: {
+      medium: ['cav', 'cg', 'cgaa', 'cf'],
+      large: ['cbg'],
+      small: ['ddg', 'ddgaa'],
+    },
+  };
+  legacyManifest.ships = [
+    'cg',
+    'cgaa',
+    'cbg',
+    'ddg',
+    'ddgaa',
+    'cf',
+  ].map((shipType, index) => ({
+    id: index + 1,
+    name: `旧资料库舰船${index + 1}`,
+    ship_type: shipType,
+    portrait: 'assets/portrait.png',
+    background: '',
+    frame: '',
+    type_icon: 'assets/type.png',
+  }));
+  fs.writeFileSync(
+    userManifestPath,
+    JSON.stringify(legacyManifest),
+    'utf8',
+  );
+  const normalizedLegacyManifest = service.getManifest();
+  assert.deepEqual(
+    normalizedLegacyManifest.ships.map(ship => ship.ship_type),
+    ['kp', 'cg', 'bg', 'asdg', 'aadg', 'cav'],
+  );
+  assert.deepEqual(normalizedLegacyManifest.labels.ship_types, {
+    cav: '航空巡洋舰',
+    kp: '反舰导弹巡洋舰',
+    cg: '防空导弹巡洋舰',
+    bg: '导弹大型巡洋舰',
+    asdg: '反舰导弹驱逐舰',
+    aadg: '防空导弹驱逐舰',
+  });
+  assert.deepEqual(normalizedLegacyManifest.typeGroups, {
+    size_classes: {
+      medium: ['cav', 'kp', 'cg'],
+      large: ['bg'],
+      small: ['asdg', 'aadg'],
+    },
+  });
+  assert.equal(
+    normalizedLegacyManifest.ships.every(
+      ship => /assets\/type\.png$/.test(ship.typeIconUrl),
+    ),
+    true,
+  );
+
+  legacyManifest.schema_version = 3;
+  legacyManifest.labels.ship_types = {
+    cav: '航空巡洋舰',
+    cf: '旗舰',
+    cg: '防空导弹巡洋舰',
+  };
+  legacyManifest.type_groups = {
+    size_classes: {
+      medium: ['cav', 'cf', 'cg'],
+    },
+  };
+  legacyManifest.ships = [
+    { name: 'canonical 防巡', ship_type: 'cg' },
+    { name: '旧旗舰类型', ship_type: 'cf' },
+  ].map((ship, index) => ({
+    id: index + 1,
+    ...ship,
+    portrait: 'assets/portrait.png',
+    background: '',
+    frame: '',
+    type_icon: 'assets/type.png',
+  }));
+  fs.writeFileSync(
+    userManifestPath,
+    JSON.stringify(legacyManifest),
+    'utf8',
+  );
+  const normalizedSchemaThree = service.getManifest();
+  assert.deepEqual(
+    normalizedSchemaThree.ships.map(ship => ship.ship_type),
+    ['cg', 'cav'],
+  );
+  assert.deepEqual(normalizedSchemaThree.labels.ship_types, {
+    cav: '航空巡洋舰',
+    cg: '防空导弹巡洋舰',
+  });
+  assert.deepEqual(normalizedSchemaThree.typeGroups, {
+    size_classes: {
+      medium: ['cav', 'cg'],
+    },
+  });
+
   fs.writeFileSync(
     userManifestPath,
     JSON.stringify({
@@ -186,7 +297,7 @@ function testShipLibraryService() {
     'preserve',
     'utf8',
   );
-  writeBundledManifest(3, '2026-03-01T00:00:00Z', 'version-3');
+  writeBundledManifest(4, '2026-03-01T00:00:00Z', 'version-4');
   service.initialize();
   assert.equal(
     fs.readFileSync(
@@ -204,7 +315,7 @@ function testShipLibraryService() {
   service.initialize();
   assert.equal(
     JSON.parse(fs.readFileSync(userManifestPath, 'utf8')).schema_version,
-    3,
+    4,
   );
   assert.equal(
     fs.existsSync(path.join(service.directory(), 'newer-user.txt')),
@@ -216,7 +327,7 @@ function testShipLibraryService() {
     'must-survive',
     'utf8',
   );
-  writeBundledManifest(4, '2026-04-01T00:00:00Z', 'version-4');
+  writeBundledManifest(5, '2026-04-01T00:00:00Z', 'version-5');
   const originalRename = fs.renameSync;
   const originalConsoleError = console.error;
   let renameCall = 0;
@@ -243,7 +354,7 @@ function testShipLibraryService() {
   );
   assert.equal(
     JSON.parse(fs.readFileSync(userManifestPath, 'utf8')).schema_version,
-    3,
+    4,
   );
   assert.deepEqual(
     fs.readdirSync(userData)
@@ -343,7 +454,12 @@ async function testShipLibraryUpdater() {
     '正在检查资源 1/2，已下载 1，失败 0',
   ]);
   assert.equal(spawnCalls[0].command, 'python.exe');
-  assert.deepEqual(spawnCalls[0].args, [
+  assert.equal(spawnCalls[0].args[0], '-c');
+  assert.match(
+    spawnCalls[0].args[1],
+    /sys\.path\.insert\(0,.+runpy\.run_path/,
+  );
+  assert.deepEqual(spawnCalls[0].args.slice(2), [
     library.updaterPath(),
     '--output',
     library.directory(),

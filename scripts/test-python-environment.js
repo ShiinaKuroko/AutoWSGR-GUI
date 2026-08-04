@@ -93,6 +93,16 @@ try {
   const managedPlan = buildDependencyInstallPlan(managed, 'autowsgr');
   assert.equal(managedPlan.backendArgs.includes('--target'), true);
   assert.equal(managedPlan.backendArgs.includes(localSite), true);
+  assert.equal(managedPlan.toolArgs.includes('--target'), true);
+  assert.equal(managedPlan.toolArgs.includes(localSite), true);
+  assert.equal(
+    managedPlan.toolArgs.includes('requests>=2.32.5'),
+    true,
+  );
+  assert.equal(
+    managedPlan.toolArgs.includes('beautifulsoup4>=4.12.0'),
+    true,
+  );
 
   state.mode = 'external';
   const external = resolvePythonEnvironment(externalPython);
@@ -103,6 +113,7 @@ try {
 
   const externalPlan = buildDependencyInstallPlan(external, repoRoot);
   assert.equal(externalPlan.buildArgs.includes('--target'), false);
+  assert.equal(externalPlan.toolArgs.includes('--target'), false);
   assert.equal(externalPlan.backendArgs.includes('--target'), false);
   assert.equal(externalPlan.backendArgs.at(-1), repoRoot);
 

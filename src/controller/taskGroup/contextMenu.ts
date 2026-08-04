@@ -1,3 +1,4 @@
+/** 处理任务组条目的右键菜单、编辑、复制和删除。 */
 /**
  * contextMenu —— 右键上下文菜单逻辑。
  */
@@ -6,9 +7,10 @@ import type { Scheduler } from '../../model/scheduler';
 import { PlanModel } from '../../model/PlanModel';
 import { loadMapData, loadExMapData, loadEventMapData } from '../../model/MapDataLoader';
 import type { MapData } from '../../model/MapDataLoader';
-import type { TaskPreset } from '../../types/model';
-import type { PlanPresetSource } from '../../types/electronBridge';
+import type { TaskPreset } from '../../types/model.js';
+import type { PlanPresetSource } from '../../types/ipc.js';
 import { Logger } from '../../utils/Logger';
+import { yamlCodec } from '../../adapter';
 
 export interface ContextMenuTarget {
   source: 'taskgroup' | 'queue';
@@ -99,7 +101,7 @@ export async function openItemForEdit(
 
   try {
     const content = await bridge.readFile(filePath);
-    const parsed = (await import('js-yaml')).load(content) as Record<string, unknown>;
+    const parsed = yamlCodec.parse<Record<string, unknown>>(content);
     if (!parsed || typeof parsed !== 'object') return;
 
     if (kind === 'preset' || ('task_type' in parsed && !('map' in parsed))) {

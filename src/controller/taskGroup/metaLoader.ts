@@ -1,10 +1,12 @@
+/** 批量读取任务条目元数据并生成界面展示摘要。 */
 /**
  * metaLoader —— 异步加载任务组条目的元信息。
  */
 import type { TaskGroupItem } from '../../model/TaskGroupModel';
 import type { TemplateModel } from '../../model/TemplateModel';
-import type { TaskGroupItemMeta } from '../../view/taskGroup/TaskGroupView';
+import type { TaskGroupItemMeta } from '../../types/view.js';
 import { readTaskGroupItemFile } from './managedPlanReader';
+import { yamlCodec } from '../../adapter';
 
 const REPAIR: Record<number, string> = { 1: '中破就修', 2: '大破才修' };
 const TYPE_LABELS: Record<string, string> = {
@@ -36,7 +38,7 @@ export async function loadItemMetas(
       }
 
       const { content } = await readTaskGroupItemFile(item);
-      const parsed = (await import('js-yaml')).load(content) as Record<string, unknown>;
+      const parsed = yamlCodec.parse<Record<string, unknown>>(content);
       if (!parsed || typeof parsed !== 'object') return null;
 
       const meta: TaskGroupItemMeta = {};

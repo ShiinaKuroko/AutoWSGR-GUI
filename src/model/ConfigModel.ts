@@ -1,13 +1,14 @@
+/** 持有用户配置状态并负责默认值、迁移和 YAML 转换。 */
 /**
  * ConfigModel —— 用户配置(UserSettings)的 Model 层。
  * 负责从 YAML 加载、导出配置，以及局部更新。
  */
-import * as yaml from 'js-yaml';
+import { yamlCodec } from '../adapter/index.js';
 import type {
   GuiAutomationSettings,
   NormalFightTaskConfig,
   UserSettings,
-} from '../types/model';
+} from '../types/model.js';
 import { Logger } from '../utils/Logger';
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -102,7 +103,7 @@ export class ConfigModel {
 
   /** 从 YAML 字符串加载配置，缺失字段保留默认值 */
   loadFromYaml(yamlStr: string): void {
-    const parsed = yaml.load(yamlStr) as Record<string, unknown> | null;
+    const parsed = yamlCodec.parse<Record<string, unknown> | null>(yamlStr);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       Logger.debug('配置 YAML 解析结果为空，使用默认值');
       return;
@@ -246,8 +247,16 @@ export class ConfigModel {
     const output = structuredClone(this.rawRoot);
     output.emulator = this.mergeSection(this.rawRoot.emulator, this.settings.emulator);
     output.account = this.mergeSection(this.rawRoot.account, this.settings.account);
-    output.ocr = this.mergeSection(this.rawRoot.ocr, this.settings.ocr);
-    output.log = this.mergeSection(this.rawRoot.log, this.settings.log);
+    output.ocr = this.mergeSection(
+      this.rawRoot.ocr,
+      this.settings.ocr,
+      ['ship_name_corrections', 'ship_name_aliases'],
+    );
+    output.log = this.mergeSection(
+      this.rawRoot.log,
+      this.settings.log,
+      ['channels'],
+    );
 
     const daily = this.mergeSection(
       this.rawRoot.daily_automation,
@@ -269,7 +278,7 @@ export class ConfigModel {
     if (this.settings.plan_root) output.plan_root = this.settings.plan_root;
     else delete output.plan_root;
 
-    return yaml.dump(output, { lineWidth: -1, noRefs: true });
+    return yamlCodec.stringify(output, { lineWidth: -1, noRefs: true });
   }
 
   /** 局部更新配置 (深合并) */
@@ -336,13 +345,46 @@ export class ConfigModel {
   private mergeSection(
     raw: unknown,
     values: object,
+    stringMapKeys: readonly string[] = [],
   ): Record<string, unknown> {
-    const output = this.asRecord(raw)
-      ? structuredClone(raw as Record<string, unknown>)
-      : {};
-    Object.assign(output, structuredClone(values));
-    for (const [key, value] of Object.entries(output)) {
-      if (value === undefined) delete output[key];
+    const output = structuredClone(this.asRecord(raw) ?? {});
+    for (const [key, value] of Object.entries(values)) {
+      if (value === undefined) {
+        delete output[key];
+      } else if (stringMapKeys.includes(key)) {
+        output[key] = this.mergeStringMap(output[key], value);
+      } else {
+        const nested = this.asRecord(value);
+        output[key] = nested
+          ? this.mergeSection(output[key], nested)
+          : structuredClone(value);
+      }
+    }
+    return output;
+  }
+
+  /** 合并动态字符串映射，同时保留 GUI 无法识别的扩展值。 */
+  private mergeStringMap(
+    raw: unknown,
+    value: unknown,
+  ): Record<string, unknown> {
+    const rawEntries = this.asRecord(raw) ?? {};
+    const current = this.asRecord(value) ?? {};
+    const output = structuredClone(rawEntries);
+    for (const [key, rawValue] of Object.entries(rawEntries)) {
+      if (
+        typeof rawValue === 'string'
+        && !Object.prototype.hasOwnProperty.call(current, key)
+      ) {
+        delete output[key];
+      }
+    }
+    for (const [key, currentValue] of Object.entries(current)) {
+      if (currentValue === undefined) {
+        delete output[key];
+      } else {
+        output[key] = structuredClone(currentValue);
+      }
     }
     return output;
   }

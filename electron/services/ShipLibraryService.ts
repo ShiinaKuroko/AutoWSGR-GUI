@@ -6,6 +6,17 @@ import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { AppPaths } from './AppPaths';
 
+const NATIVE_SHIP_TYPE_SCHEMA_VERSION = 3;
+const BACKEND_CANONICAL_SHIP_TYPE_SCHEMA_VERSION = 4;
+const LEGACY_SHIP_LIBRARY_TYPE_CODES: Readonly<Record<string, string>> =
+  Object.freeze({
+    cbg: 'bg',
+    cg: 'kp',
+    cgaa: 'cg',
+    ddg: 'asdg',
+    ddgaa: 'aadg',
+  });
+
 export interface ShipLibraryStatus {
   exists: boolean;
   path: string;
@@ -201,32 +212,133 @@ export class ShipLibraryService {
     if (!Array.isArray(raw.ships)) {
       throw new Error('舰船资料库清单格式无效');
     }
+    const schemaVersion = typeof raw.schema_version === 'number'
+      ? raw.schema_version
+      : 0;
     return {
-      schemaVersion: typeof raw.schema_version === 'number'
-        ? raw.schema_version
-        : 0,
+      schemaVersion,
       generatedAt: typeof raw.generated_at === 'string'
         ? raw.generated_at
         : '',
-      labels: raw.labels && typeof raw.labels === 'object'
-        ? raw.labels as Record<string, unknown>
-        : {},
-      typeGroups: raw.type_groups && typeof raw.type_groups === 'object'
-        ? raw.type_groups as Record<string, unknown>
-        : {},
+      labels: this.normalizeLegacyLabels(raw.labels, schemaVersion),
+      typeGroups: this.normalizeLegacyTypeGroups(
+        raw.type_groups,
+        schemaVersion,
+      ),
       ships: raw.ships.map((entry) => {
         const ship = entry && typeof entry === 'object'
           ? entry as Record<string, unknown>
           : {};
+        const normalizedShip = this.normalizeLegacyShip(
+          ship,
+          schemaVersion,
+        );
         return {
-          ...ship,
-          portraitUrl: this.assetUrl(ship.portrait),
-          backgroundUrl: this.assetUrl(ship.background),
-          frameUrl: this.assetUrl(ship.frame),
-          typeIconUrl: this.assetUrl(ship.type_icon),
+          ...normalizedShip,
+          portraitUrl: this.assetUrl(normalizedShip.portrait),
+          backgroundUrl: this.assetUrl(normalizedShip.background),
+          frameUrl: this.assetUrl(normalizedShip.frame),
+          typeIconUrl: this.assetUrl(normalizedShip.type_icon),
         };
       }),
     };
+  }
+
+  /**
+   * schema 2 及更早版本使用 Wiki 旧舰种代码，schema 3 仍保留 CF。
+   * 只在资料库读取边界转换，不把源代码加入编队 API 的允许集合。
+   */
+  private normalizeLegacyShipTypeCode(
+    value: string,
+    schemaVersion: number,
+  ): string {
+    let code = value.trim().toLowerCase();
+    if (schemaVersion < NATIVE_SHIP_TYPE_SCHEMA_VERSION) {
+      code = LEGACY_SHIP_LIBRARY_TYPE_CODES[code] ?? code;
+    }
+    if (
+      schemaVersion < BACKEND_CANONICAL_SHIP_TYPE_SCHEMA_VERSION
+      && code === 'cf'
+    ) {
+      return 'cav';
+    }
+    return code;
+  }
+
+  private normalizeLegacyShip(
+    ship: Record<string, unknown>,
+    schemaVersion: number,
+  ): Record<string, unknown> {
+    if (typeof ship.ship_type !== 'string') return ship;
+    return {
+      ...ship,
+      ship_type: this.normalizeLegacyShipTypeCode(
+        ship.ship_type,
+        schemaVersion,
+      ),
+    };
+  }
+
+  private normalizeLegacyLabels(
+    value: unknown,
+    schemaVersion: number,
+  ): Record<string, unknown> {
+    const labels = value && typeof value === 'object'
+      ? { ...value as Record<string, unknown> }
+      : {};
+    if (
+      schemaVersion >= BACKEND_CANONICAL_SHIP_TYPE_SCHEMA_VERSION
+      || !labels.ship_types
+      || typeof labels.ship_types !== 'object'
+      || Array.isArray(labels.ship_types)
+    ) {
+      return labels;
+    }
+    const normalizedLabels: Record<string, unknown> = {};
+    for (
+      const [sourceCode, label]
+      of Object.entries(labels.ship_types as Record<string, unknown>)
+    ) {
+      const code = this.normalizeLegacyShipTypeCode(
+        sourceCode,
+        schemaVersion,
+      );
+      const sourceIsCanonical = sourceCode.trim().toLowerCase() === code;
+      if (!(code in normalizedLabels) || sourceIsCanonical) {
+        normalizedLabels[code] = label;
+      }
+    }
+    labels.ship_types = normalizedLabels;
+    return labels;
+  }
+
+  private normalizeLegacyTypeGroups(
+    value: unknown,
+    schemaVersion: number,
+  ): Record<string, unknown> {
+    const groups = value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : {};
+    if (schemaVersion >= BACKEND_CANONICAL_SHIP_TYPE_SCHEMA_VERSION) {
+      return groups;
+    }
+    const normalize = (entry: unknown): unknown => {
+      if (Array.isArray(entry)) {
+        return [...new Set(entry.map(item => (
+          typeof item === 'string'
+            ? this.normalizeLegacyShipTypeCode(item, schemaVersion)
+            : item
+        )))];
+      }
+      if (entry && typeof entry === 'object') {
+        return Object.fromEntries(
+          Object.entries(entry as Record<string, unknown>)
+            .map(([key, item]) => [key, normalize(item)]),
+        );
+      }
+      return entry;
+    };
+    return normalize(groups) as Record<string, unknown>;
   }
 
   /** 将资料库内部相对路径转换为本地 file URL。 */

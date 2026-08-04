@@ -1,3 +1,4 @@
+/** 读取并应用主题、强调色和系统主题变化。 */
 /** 获取当前主题模式 */
 export function getThemeMode(): 'dark' | 'light' | 'system' {
   const mode = localStorage.getItem('themeMode');

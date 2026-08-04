@@ -15,6 +15,7 @@ import {
   type PythonEnvironment,
   resolvePythonEnvironment,
 } from './environment';
+import { SHIP_LIBRARY_REQUIREMENTS } from './dependencies';
 
 const execAsync = promisify(exec);
 
@@ -171,6 +172,7 @@ export async function checkForUpdates(): Promise<UpdateCheckResult> {
 
 export interface DependencyInstallPlan {
   buildArgs: string[];
+  toolArgs: string[];
   backendArgs: string[];
 }
 
@@ -188,6 +190,12 @@ export function buildDependencyInstallPlan(
       'setuptools',
       'hatchling',
       'hatch-vcs',
+    ],
+    toolArgs: [
+      '-m', 'pip', 'install',
+      '--upgrade',
+      ...targetArgs,
+      ...SHIP_LIBRARY_REQUIREMENTS,
     ],
     backendArgs: [
       '-m', 'pip', 'install',
@@ -266,6 +274,13 @@ export async function installDependencies(pythonCmd: string): Promise<{ success:
   if (buildDeps.code !== 0) {
     ctx.sendProgress('ERROR 后端构建依赖安装失败');
     return { success: false, output: buildDeps.output.slice(-500) };
+  }
+
+  ctx.sendProgress('正在安装舰船资料库更新依赖…');
+  const toolDeps = await runPip(installPlan.toolArgs);
+  if (toolDeps.code !== 0) {
+    ctx.sendProgress('ERROR 舰船资料库更新依赖安装失败');
+    return { success: false, output: toolDeps.output.slice(-500) };
   }
 
   const installLocation = environment.installTarget

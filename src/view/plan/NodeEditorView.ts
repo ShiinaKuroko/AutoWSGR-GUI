@@ -1,5 +1,6 @@
-import type { MapNodeType } from '../../types/view';
-import type { BattleResultGrade } from '../../types/model';
+/** 渲染节点属性和敌舰规则编辑对话框。 */
+import type { MapNodeType } from '../../types/view.js';
+import type { BattleResultGrade } from '../../types/model.js';
 import { NODE_TYPE_ICON, NODE_TYPE_ICON_NIGHT, NODE_TYPE_NAME, NON_COMBAT_TYPES, escapeHtml } from './MapView';
 
 export interface NodeEditorValues {

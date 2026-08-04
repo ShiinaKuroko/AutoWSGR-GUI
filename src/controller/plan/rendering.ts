@@ -1,3 +1,4 @@
+/** 把作战方案、地图和节点数据转换为预览 ViewObject。 */
 /**
  * rendering —— 方案预览 ViewObject 构建逻辑。
  */
@@ -5,9 +6,9 @@ import type {
   PlanPreviewViewObject,
   NodeViewObject,
   MapEdgeVO,
-} from '../../types/view';
+} from '../../types/view.js';
 import type { PlanModel } from '../../model/PlanModel';
-import { FORMATION_NAMES } from '../../types/model';
+import { FORMATION_NAMES } from '../../types/model.js';
 import { getNodeType, isDetourNode, isNightNode } from '../../model/MapDataLoader';
 import type { MapData } from '../../model/MapDataLoader';
 

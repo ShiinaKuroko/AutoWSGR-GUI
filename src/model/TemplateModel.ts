@@ -1,4 +1,6 @@
-import type { TaskTemplate } from '../types/model';
+/** 管理内置与用户模板，负责校验、CRUD 和持久化。 */
+import { jsonCodec, type FileRepository } from '../adapter/index.js';
+import type { TaskTemplate, TemplateType } from '../types/model.js';
 
 const FILE_PATH = 'templates/templates.json';
 const BUILTIN_PATH = 'resource/builtin_templates.json';
@@ -8,11 +10,16 @@ function generateId(): string {
   return `tpl_${Date.now()}_${++idCounter}`;
 }
 
-/** 通过 IPC 桥读写文件的接口 */
-interface FileIO {
-  readFile: (path: string) => Promise<string>;
-  saveFile: (path: string, content: string) => Promise<void>;
+function isTemplateType(value: unknown): value is TemplateType {
+  return value === 'normal_fight'
+    || value === 'event_fight'
+    || value === 'exercise'
+    || value === 'campaign'
+    || value === 'decisive';
 }
+
+/** 通过 IPC 桥读写文件的接口 */
+type FileIO = Pick<FileRepository, 'readFile' | 'saveFile'>;
 
 export class TemplateModel {
   private builtinTemplates: TaskTemplate[] = [];
@@ -90,14 +97,16 @@ export class TemplateModel {
     for (const item of raw) {
       if (!item || typeof item !== 'object') continue;
       const rec = item as Record<string, unknown>;
-      if (!rec.name || !rec.type) continue;
+      if (typeof rec.name !== 'string' || !isTemplateType(rec.type)) continue;
       const tpl: TaskTemplate = {
-        ...(rec as any),
+        ...(rec as Partial<TaskTemplate>),
+        name: rec.name,
+        type: rec.type,
         id: generateId(),
         createdAt: new Date().toISOString(),
       };
       // 导入的模板始终为用户模板
-      delete (tpl as any).builtin;
+      delete tpl.builtin;
       this.userTemplates.push(tpl);
       count++;
     }
@@ -108,7 +117,7 @@ export class TemplateModel {
   /** 持久化用户模板到本地文件 */
   private async save(): Promise<void> {
     if (!this.io) throw new Error('模板存储尚未初始化');
-    await this.io.saveFile(FILE_PATH, JSON.stringify(this.userTemplates, null, 2));
+    await this.io.saveFile(FILE_PATH, jsonCodec.stringify(this.userTemplates));
   }
 
   /** 从本地文件加载用户模板 */
@@ -117,7 +126,7 @@ export class TemplateModel {
     try {
       const raw = await this.io.readFile(FILE_PATH);
       if (raw) {
-        this.userTemplates = JSON.parse(raw);
+        this.userTemplates = jsonCodec.parse<TaskTemplate[]>(raw);
         return;
       }
     } catch { /* 文件不存在 */ }
@@ -125,7 +134,7 @@ export class TemplateModel {
     try {
       const raw = await this.io.readFile('templates.json');
       if (raw) {
-        this.userTemplates = JSON.parse(raw);
+        this.userTemplates = jsonCodec.parse<TaskTemplate[]>(raw);
         await this.save(); // 保存到新路径
       }
     } catch { /* 旧文件也不存在，使用空列表 */ }
@@ -137,7 +146,7 @@ export class TemplateModel {
     try {
       const raw = await this.io.readFile(BUILTIN_PATH);
       if (raw) {
-        const arr = JSON.parse(raw) as TaskTemplate[];
+        const arr = jsonCodec.parse<TaskTemplate[]>(raw);
         // 确保内置标记
         this.builtinTemplates = arr.map(t => ({ ...t, builtin: true }));
       }

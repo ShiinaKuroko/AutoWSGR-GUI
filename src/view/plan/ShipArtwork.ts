@@ -1,10 +1,11 @@
+/** 创建舰船立绘元素并处理资源路径和加载失败回退。 */
 /**
  * 舰娘图鉴展示框。
  *
  * 舰队规划、编队预览和决战图鉴共用同一套图片层级。
  * 背景、立绘、边框、编号、舰型图标和名称的样式由舰队规划样式统一维护。
  */
-import type { ShipLibraryShip } from '../../types/electronBridge';
+import type { ShipLibraryShip } from '../../types/ipc.js';
 
 export function createShipArtwork(
   ship: ShipLibraryShip,

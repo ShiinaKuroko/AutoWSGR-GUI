@@ -1,9 +1,10 @@
+/** 把模板参数实例化为可加入任务组的任务条目。 */
 /**
  * useTemplate —— 模板应用到任务列表的逻辑。
  */
 import type { TemplateModel } from '../../model/TemplateModel';
 import type { TaskGroupModel } from '../../model/TaskGroupModel';
-import type { TaskTemplate } from '../../types/model';
+import type { TaskTemplate } from '../../types/model.js';
 import { Logger } from '../../utils/Logger';
 
 export interface UseTemplateCallbacks {

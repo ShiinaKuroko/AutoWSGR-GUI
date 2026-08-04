@@ -1,17 +1,21 @@
+/** 组合地图、节点编辑、舰队预设和方案参数预览。 */
 /**
  * PlanPreviewView —— 方案预览 Facade。
  * 持有 MapView / NodeEditorView / FleetPresetView 三个子视图，
  * 对外 API 保持不变，Controller 无需感知内部拆分。
  */
-import type { PlanPreviewViewObject, MapNodeType, FleetPresetVO, PresetDetailVO, PresetFormValues } from '../../types/view';
-import type { BathRepairConfig } from '../../types/model';
+import type { PlanPreviewViewObject, MapNodeType, FleetPresetVO, PresetDetailVO, PresetFormValues } from '../../types/view.js';
+import type { BathRepairConfig } from '../../types/model.js';
 import { MapView } from './MapView';
 import {
   NodeEditorView,
   type NodeEditorArgs,
   type NodeEditorValues,
 } from './NodeEditorView';
-import { FleetPresetView } from './FleetPresetView';
+import {
+  FleetPresetView,
+  type FleetPresetViewHost,
+} from './FleetPresetView';
 
 const MAP_COUNT_BY_CHAPTER: Record<string, number> = {
   '1': 5,
@@ -66,7 +70,7 @@ export class PlanPreviewView {
     this.fleetPresetView.selectedFleetPresetIndices = val;
   }
 
-  constructor() {
+  constructor(host: FleetPresetViewHost) {
     this.detailEl = document.getElementById('plan-detail')!;
     this.chapterSelect = document.getElementById('plan-edit-chapter') as HTMLSelectElement;
     this.mapSelect = document.getElementById('plan-edit-map') as HTMLSelectElement;
@@ -85,7 +89,7 @@ export class PlanPreviewView {
 
     this.mapView = new MapView();
     this.nodeEditor = new NodeEditorView();
-    this.fleetPresetView = new FleetPresetView();
+    this.fleetPresetView = new FleetPresetView(host);
 
     this.mapView.onNodeClick = (nodeId) => this.onNodeClick?.(nodeId);
 

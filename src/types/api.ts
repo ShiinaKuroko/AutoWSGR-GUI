@@ -1,11 +1,4 @@
-/**
- * API / WebSocket 通信类型定义。
- * 从 ApiClient.ts 提取，供各层直接引用。
- */
-
-// ════════════════════════════════════════
-// 后端 API 响应类型
-// ════════════════════════════════════════
+/** 定义 Renderer 与后端 HTTP/WebSocket 通信使用的请求、响应和事件类型。 */
 
 export interface ApiResponse<T = unknown> {
   success: boolean;
@@ -23,34 +16,6 @@ export interface TaskProgress {
   current: number;
   total: number;
   node: string | null;
-}
-
-export interface CombatEvent {
-  type: string;
-  node: string | null;
-  action: string | null;
-  result?: unknown;
-  enemies?: Record<string, number>;
-  ship_stats?: number[];
-}
-
-export interface RoundResult {
-  round: number;
-  success: boolean;
-  nodes?: string[];
-  mvp?: string | null;
-  ship_damage?: number[];
-  grade?: string | null;
-  node_count?: number;
-  enemies?: Record<string, Record<string, number>>;
-  events?: CombatEvent[];
-  error?: string;
-}
-
-export interface TaskResult {
-  total_runs: number;
-  success_runs: number;
-  details: RoundResult[];
 }
 
 export interface TaskStatus {
@@ -142,9 +107,33 @@ export interface GameAcquisitionData {
   loot_max: number | null;
 }
 
-// ════════════════════════════════════════
-// 请求体类型
-// ════════════════════════════════════════
+export interface CombatEvent {
+  type: string;
+  node: string | null;
+  action: string | null;
+  result?: unknown;
+  enemies?: Record<string, number>;
+  ship_stats?: number[];
+}
+
+export interface RoundResult {
+  round: number;
+  success: boolean;
+  nodes?: string[];
+  mvp?: string | null;
+  ship_damage?: number[];
+  grade?: string | null;
+  node_count?: number;
+  enemies?: Record<string, Record<string, number>>;
+  events?: CombatEvent[];
+  error?: string;
+}
+
+export interface TaskResult {
+  total_runs: number;
+  success_runs: number;
+  details: RoundResult[];
+}
 
 export interface NodeDecisionReq {
   formation?: number;
@@ -158,22 +147,15 @@ export interface NodeDecisionReq {
 }
 
 export interface FleetShipRuleReq {
-  /** 当前主选或备选的舰船名 */
   name: string;
-  /** 搜索关键词（用于同名舰船精确筛选） */
   search_name?: string;
-  /** 允许的舰种约束（如 ["ss", "ssg"]） */
   ship_type?: string[];
-  /** 等级下限（仅选择 >= 该等级） */
   min_level?: number;
-  /** 等级上限（仅选择 <= 该等级） */
   max_level?: number;
 }
 
 export interface FleetRuleReq extends Omit<FleetShipRuleReq, 'name'> {
-  /** 固定主选舰名；纯候选槽位不设置 */
   name?: string;
-  /** 当前位置的备选舰船规则（按顺序尝试） */
   candidates?: FleetShipRuleReq[];
 }
 
@@ -239,10 +221,6 @@ export type TaskRequest =
   | ExerciseReq
   | DecisiveReq;
 
-// ════════════════════════════════════════
-// WebSocket 消息类型
-// ════════════════════════════════════════
-
 export interface WsLogMessage {
   type: 'log';
   timestamp: string;
@@ -267,10 +245,6 @@ export interface WsTaskCompleted {
 }
 
 export type WsMessage = WsLogMessage | WsTaskUpdate | WsTaskCompleted;
-
-// ════════════════════════════════════════
-// 事件回调类型
-// ════════════════════════════════════════
 
 export interface ApiClientCallbacks {
   onLog?: (msg: WsLogMessage) => void;

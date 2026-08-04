@@ -57,13 +57,20 @@ enemy_rules:
 ```typescript
 interface FleetPreset {
   name: string;
-  ships: (string | ShipFilter)[];  // 6 个舰位：具体舰名或模糊筛选
+  ships: ShipSlot[];  // 6 个舰位：具体舰名、结构化规则或空位
 }
 
 interface ShipFilter {
+  name?: string;
+  search_name?: string;
   nation?: string;     // 国籍筛选
-  ship_type?: string;  // 舰型筛选
+  ship_type?: string[]; // 舰型筛选
+  candidates?: ShipRule[];
+  min_level?: number;
+  max_level?: number;
 }
+
+type ShipSlot = string | ShipFilter | null;
 ```
 
 编队预设支持**具体舰名**（如 `"85工程"`）和**模糊筛选**（如 `{nation: "苏联", ship_type: "dd"}`），后者在执行时由 `resolveFleetPreset()` 解析为实际舰船。
@@ -154,7 +161,8 @@ interface MapNode {
 
 | 文件 | 职责 |
 |------|------|
-| `PlanController.ts` | 主控制器：持有当前方案状态，协调下属模块 |
+| `PlanController.ts` | 主控制器：持有当前方案状态，协调编辑、保存和执行 |
+| `BattlePlanLoaderController.ts` | 持有受管方案选择器状态并协调读取、筛选和选择结果 |
 | `presetFlow.ts` | 任务预设的导入/查看/关闭/执行流程 |
 | `nodeEditor.ts` | 从 UI 收集节点阵型/夜战/索敌规则并写回 PlanData |
 | `rendering.ts` | 构建 `PlanPreviewViewObject`，协调地图数据和方案数据的合并 |
@@ -169,6 +177,27 @@ interface MapNode {
 | `NodeEditorView` | `view/plan/NodeEditorView.ts` | 节点详细编辑器（阵形、夜战、继续条件） |
 | `FleetPresetView` | `view/plan/FleetPresetView.ts` | 编队预设列表管理（添加、编辑、删除） |
 | `FleetEditDialog` | `view/plan/FleetEditDialog.ts` | 编队预设编辑弹窗（支持舰船自动补全） |
+| `BattlePlanLoaderView` | `view/plan/BattlePlanLoaderView.ts` | 受管方案列表、筛选、预览和舰队选择弹窗 |
+
+### Fleet Planner — 舰队计划
+
+普通舰队草稿的唯一所有者是 `FleetPlannerController` 中的单个 `FleetDraft`。
+`FleetPlannerView` 只组合完整业务子视图并转发用户意图：
+
+| 子视图 | 职责 |
+|--------|------|
+| `FleetEditorView` | 舰位、主选/备选和拖拽编辑 |
+| `FleetRuleView` | 舰种、国籍、等级等规则输入 |
+| `FleetGalleryView` | 图鉴筛选、排序和展示缓存 |
+| `PlanManagementView` | 保存、覆盖、重命名、删除和批量导出 |
+| `TeamPlanLoaderView` | 系统/用户编队方案选择 |
+
+决战舰队由 `DecisivePlanController` 的独立 `DecisiveFleetDraft` 管理，不与普通
+舰队共享草稿。两类 View 都不直接访问 Model、IPC 或持久化。
+
+Fleet 规则集中在 `src/model/fleet/`：`ShipMatcher` 负责匹配和显示标签，
+`FleetRuleMapper` 负责 API rule 映射，`ShipNameNormalizer` 负责后端舰名。
+candidate-only 槽位不会生成顶层 `name`，候选顺序和各候选的舰种/等级规则保持。
 
 ---
 
@@ -252,11 +281,13 @@ flowchart TB
 
 ## 系统方案
 
-`resource/system_battle_plans/` 当前包含 10 个周常预制方案：
+`resource/system_battle_plans/` 当前包含周常和活动预制方案。活动计划从
+AutoWSGR 主库经 `PlanManagementService` 的现有升级链路导入：
 
 | 分类 | 数量 | 示例 |
 |------|------|------|
 | 周常 | 10 | `bettle-周常-1-1.yaml` ~ `bettle-周常-10-1.yaml` |
+| 20260730 活动 | 4 | `bettle-E1炸鱼.yaml`、`bettle-E5夜战.yaml`、`bettle-H1炸鱼.yaml`、`bettle-H5夜战.yaml` |
 
 ---
 

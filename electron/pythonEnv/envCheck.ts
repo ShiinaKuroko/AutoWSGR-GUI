@@ -21,6 +21,7 @@ import {
   type PythonEnvironment,
   resolvePythonEnvironment,
 } from './environment';
+import { PYTHON_DEPENDENCY_SPECS } from './dependencies';
 
 const execAsync = promisify(exec);
 
@@ -144,6 +145,8 @@ type CoreDepProbeResult = {
   uvicorn: boolean;
   fastapi: boolean;
   scipy: boolean;
+  requests: boolean;
+  beautifulSoup: boolean;
   autowsgr: string | null;
 };
 
@@ -174,7 +177,11 @@ async function probeCoreDependencies(
         ]
       : []),
     'r = {}',
-    "checks = [('uvicorn', 'uvicorn'), ('fastapi', 'fastapi'), ('scipy', 'scipy._lib')]",
+    `checks = ${JSON.stringify(
+      PYTHON_DEPENDENCY_SPECS.map(
+        dependency => [dependency.key, dependency.importName],
+      ),
+    )}`,
     'for key, mod in checks:',
     '    try:',
     '        __import__(mod); r[key] = True',
@@ -220,6 +227,8 @@ async function probeCoreDependencies(
       uvicorn: Boolean(depResult.uvicorn),
       fastapi: Boolean(depResult.fastapi),
       scipy: Boolean(depResult.scipy),
+      requests: Boolean(depResult.requests),
+      beautifulSoup: Boolean(depResult.beautifulSoup),
       autowsgr: depResult.autowsgr == null || !usesExpectedAutowsgr
         ? null
         : String(depResult.autowsgr),
@@ -252,9 +261,11 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
     if (!markerProbe) {
       markerBrokenDeps.push('dep-check');
     } else {
-      if (!markerProbe.uvicorn) markerBrokenDeps.push('uvicorn');
-      if (!markerProbe.fastapi) markerBrokenDeps.push('fastapi');
-      if (!markerProbe.scipy) markerBrokenDeps.push('scipy');
+      for (const dependency of PYTHON_DEPENDENCY_SPECS) {
+        if (!markerProbe[dependency.key]) {
+          markerBrokenDeps.push(dependency.packageName);
+        }
+      }
       if (markerProbe.autowsgr == null) markerBrokenDeps.push('autowsgr');
     }
 
@@ -333,12 +344,12 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
       throw new Error('依赖探测失败');
     }
 
-    for (const pkg of ['uvicorn', 'fastapi', 'scipy'] as const) {
-      if (depResult[pkg]) {
-        ctx.sendProgress(`  ${pkg} \u2713`);
+    for (const dependency of PYTHON_DEPENDENCY_SPECS) {
+      if (depResult[dependency.key]) {
+        ctx.sendProgress(`  ${dependency.packageName} \u2713`);
       } else {
-        missingPackages.push(pkg);
-        ctx.sendProgress(`  ${pkg} \u2717`);
+        missingPackages.push(dependency.packageName);
+        ctx.sendProgress(`  ${dependency.packageName} \u2717`);
       }
     }
 
@@ -351,7 +362,12 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
       ctx.sendProgress(`  autowsgr \u2717`);
     }
   } catch {
-    missingPackages.push('uvicorn', 'fastapi', 'scipy', 'autowsgr');
+    missingPackages.push(
+      ...PYTHON_DEPENDENCY_SPECS.map(
+        dependency => dependency.packageName,
+      ),
+      'autowsgr',
+    );
     ctx.sendProgress('  依赖检查失败');
   }
 

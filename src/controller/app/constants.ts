@@ -1,5 +1,6 @@
+/** 维护任务优先级、状态文案和修理模式等界面常量。 */
 import { TaskPriority } from '../../model/scheduler';
-import { REPAIR_MODE_NAMES } from '../../types/model';
+import { REPAIR_MODE_NAMES } from '../../types/model.js';
 
 /** 优先级 → 中文标签 */
 export const PRIORITY_LABELS: Record<number, string> = {

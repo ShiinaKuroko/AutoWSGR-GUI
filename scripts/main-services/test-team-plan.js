@@ -86,20 +86,27 @@ function testTeamPlanServices() {
     serializedObject.ships[0].candidates[0].customCandidate,
     true,
   );
-  for (const shipType of ['ap', 'bbg', 'sc', 'ddg', 'ddgaa', 'cg', 'cgaa']) {
+  const nativeShipTypes = [
+    'aadg', 'ap', 'asdg', 'av', 'bb', 'bbg', 'bbv', 'bc', 'bg', 'bm',
+    'ca', 'cav', 'cg', 'cl', 'clt', 'cv', 'cvl', 'dd', 'kp', 'sc',
+    'ss', 'ssg', 'ss_or_ssg',
+  ];
+  for (const shipType of nativeShipTypes) {
     const plan = codec.normalize({
       name: `舰种-${shipType}`,
       ships: [{ name: '测试舰船', ship_type: [shipType] }],
     });
     assert.deepEqual(plan.ships[0].ship_type, [shipType]);
   }
-  assert.throws(
-    () => codec.normalize({
-      name: '已删除舰种',
-      ships: [{ name: '测试舰船', ship_type: ['cf'] }],
-    }),
-    /不符合后端接口: cf/,
-  );
+  for (const invalidShipType of ['cf', 'cgaa', 'cbg', 'ddg', 'ddgaa']) {
+    assert.throws(
+      () => codec.normalize({
+        name: '非 canonical 舰种',
+        ships: [{ name: '测试舰船', ship_type: [invalidShipType] }],
+      }),
+      new RegExp(`不符合后端接口: ${invalidShipType}`),
+    );
+  }
   assert.equal(codec.fileName('测试/编队'), 'team-测试_编队.yaml');
 
   const systemPath = path.join(

@@ -1,6 +1,6 @@
 # 后端通信
 
-> 涉及文件：`electron/preload.ts` · `electron/main.ts`（组合根）· `electron/ipc/` · `electron/services/` · `src/model/ApiClient.ts` · `src/types/api.ts` · `src/types/electronBridge.ts`
+> 涉及文件：`electron/preload.ts` · `electron/main.ts`（组合根）· `electron/ipc/` · `electron/services/` · `src/model/ApiClient.ts` · `src/types/api.ts` · `src/types/ipc.ts`
 
 ## 概述
 

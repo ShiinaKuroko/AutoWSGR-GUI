@@ -32,83 +32,113 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
-
-WIKI_ROOT = 'https://www.zjsnrwiki.com'
-WIKI_API = f'{WIKI_ROOT}/api.php'
-SHIP_INDEX_URL = (
-    f'{WIKI_ROOT}/wiki/'
-    '%E8%88%B0%E5%A8%98%E5%9B%BE%E9%89%B4'
-)
-DATABASE_MODULE = '模块:数据库/舰娘'
-PATCH_MODULE = '模块:特殊数据/舰娘'
-USER_AGENT = (
-    'AutoWSGR-GUI ship-library-updater/1.0 '
-    '(local incremental cache)'
+from native_fleet_types import (
+    NATIVE_FLEET_TYPE_LABELS,
+    canonical_native_fleet_type,
 )
 
-TYPE_LABELS_ZH = {
-    'ap': '补给舰',
-    'av': '装甲航空母舰',
-    'bb': '战列舰',
-    'bbg': '导弹战列舰',
-    'bbv': '航空战列舰',
-    'bc': '战列巡洋舰',
-    'bm': '浅水重炮舰',
-    'ca': '重巡洋舰',
-    'cav': '航空巡洋舰',
-    'cbg': '导弹大型巡洋舰',
-    'cf': '旗舰',
-    'cg': '反舰导弹巡洋舰',
-    'cgaa': '防空导弹巡洋舰',
-    'cl': '轻巡洋舰',
-    'clt': '重雷装巡洋舰',
-    'cv': '航空母舰',
-    'cvl': '轻型航空母舰',
-    'dd': '驱逐舰',
-    'ddg': '反舰导弹驱逐舰',
-    'ddgaa': '防空导弹驱逐舰',
-    'sc': '重炮潜艇',
-    'ss': '潜水艇',
-    'ssg': '导弹潜艇',
+WIKI_ROOT = "https://www.zjsnrwiki.com"
+WIKI_API = f"{WIKI_ROOT}/api.php"
+SHIP_INDEX_URL = f"{WIKI_ROOT}/wiki/%E8%88%B0%E5%A8%98%E5%9B%BE%E9%89%B4"
+DATABASE_MODULE = "模块:数据库/舰娘"
+PATCH_MODULE = "模块:特殊数据/舰娘"
+USER_AGENT = "AutoWSGR-GUI ship-library-updater/1.0 (local incremental cache)"
+
+NATIVE_TYPE_LABELS_ZH = {
+    "aadg": "防空导弹驱逐舰",
+    "ap": "补给舰",
+    "asdg": "反舰导弹驱逐舰",
+    "av": "装甲航空母舰",
+    "bb": "战列舰",
+    "bbg": "导弹战列舰",
+    "bbv": "航空战列舰",
+    "bc": "战列巡洋舰",
+    "bm": "浅水重炮舰",
+    "ca": "重巡洋舰",
+    "cav": "航空巡洋舰",
+    "bg": "导弹大型巡洋舰",
+    "cg": "防空导弹巡洋舰",
+    "cl": "轻巡洋舰",
+    "clt": "重雷装巡洋舰",
+    "cv": "航空母舰",
+    "cvl": "轻型航空母舰",
+    "dd": "驱逐舰",
+    "kp": "反舰导弹巡洋舰",
+    "sc": "重炮潜艇",
+    "ss": "潜水艇",
+    "ssg": "导弹潜艇",
 }
+if set(NATIVE_TYPE_LABELS_ZH) != set(NATIVE_FLEET_TYPE_LABELS):
+    raise RuntimeError("Wiki 中文舰种标签未覆盖 autowsgr_native 普通舰种")
+TYPE_LABELS_ZH = NATIVE_TYPE_LABELS_ZH
+LEGACY_WIKI_TYPE_TO_CANONICAL_CODE = {
+    "CBG": "bg",
+    "CG": "kp",
+    "CGAA": "cg",
+    "DDG": "asdg",
+    "DDGAA": "aadg",
+}
+LEGACY_ONLY_WIKI_TYPE_CODES = frozenset(
+    set(LEGACY_WIKI_TYPE_TO_CANONICAL_CODE) - {"CG"},
+)
+NATIVE_ONLY_WIKI_TYPE_CODES = frozenset({"AADG", "ASDG", "BG", "KP"})
 SIZE_LABELS_ZH = {
-    'large': '大型舰',
-    'medium': '中型舰',
-    'small': '小型舰',
+    "large": "大型舰",
+    "medium": "中型舰",
+    "small": "小型舰",
 }
 ROLE_LABELS_ZH = {
-    'main_force': '主力舰',
-    'escort': '护卫舰',
+    "main_force": "主力舰",
+    "escort": "护卫舰",
 }
 SIZE_TYPE_GROUPS = {
-    'large': ('cv', 'av', 'bb', 'bbv', 'bc', 'cbg', 'bbg'),
-    'medium': ('cvl', 'ca', 'cav', 'cl', 'clt', 'cg', 'cgaa', 'cf'),
-    'small': ('dd', 'ddg', 'ddgaa', 'bm', 'ss', 'sc', 'ssg', 'ap'),
+    "large": ("cv", "av", "bb", "bbv", "bc", "bg", "bbg"),
+    "medium": ("cvl", "ca", "cav", "cl", "clt", "kp", "cg"),
+    "small": ("dd", "asdg", "aadg", "bm", "ss", "sc", "ssg", "ap"),
 }
 ROLE_TYPE_GROUPS = {
-    'main_force': (
-        'cv', 'av', 'bb', 'bbv', 'bc', 'cbg', 'bbg', 'cg', 'ddg', 'ssg',
+    "main_force": (
+        "cv",
+        "av",
+        "bb",
+        "bbv",
+        "bc",
+        "bg",
+        "bbg",
+        "kp",
+        "asdg",
+        "ssg",
     ),
-    'escort': (
-        'cvl', 'ca', 'cav', 'cl', 'clt', 'cgaa', 'cf',
-        'dd', 'ddgaa', 'bm', 'ss', 'sc', 'ap',
+    "escort": (
+        "cvl",
+        "ca",
+        "cav",
+        "cl",
+        "clt",
+        "cg",
+        "dd",
+        "aadg",
+        "bm",
+        "ss",
+        "sc",
+        "ap",
     ),
 }
 COUNTRY_LABELS_ZH = {
-    'china': '中国',
-    'france': '法国',
-    'germany': '德国',
-    'italy': '意大利',
-    'japan': '日本',
-    'other': '其他',
-    'soviet_union': '苏联',
-    'united_kingdom': '英国',
-    'united_states': '美国',
+    "china": "中国",
+    "france": "法国",
+    "germany": "德国",
+    "italy": "意大利",
+    "japan": "日本",
+    "other": "其他",
+    "soviet_union": "苏联",
+    "united_kingdom": "英国",
+    "united_states": "美国",
 }
 
 SHIP_BLOCK_RE = re.compile(
@@ -119,7 +149,7 @@ PATCH_RE = re.compile(
     r"patchShips\(data,\s*'((?:\\.|[^'])+)',\s*"
     r"'([^']+)',\s*(?:'((?:\\.|[^'])*)'|(-?\d+(?:\.\d+)?))\)",
 )
-SHIP_NAME_NOTE_SUFFIX_RE = re.compile(r'\s*[（(][^（）()]*[)）]\s*$')
+SHIP_NAME_NOTE_SUFFIX_RE = re.compile(r"\s*[（(][^（）()]*[)）]\s*$")
 
 
 @dataclass(frozen=True)
@@ -170,9 +200,9 @@ def utc_now() -> str:
 
 def request_headers() -> dict[str, str]:
     return {
-        'User-Agent': USER_AGENT,
-        'Referer': f'{WIKI_ROOT}/',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.5',
+        "User-Agent": USER_AGENT,
+        "Referer": f"{WIKI_ROOT}/",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.5",
     }
 
 
@@ -180,43 +210,45 @@ def fetch_revision(session: requests.Session, title: str) -> SourceRevision:
     response = session.get(
         WIKI_API,
         params={
-            'action': 'query',
-            'prop': 'revisions',
-            'rvprop': 'ids|timestamp|sha1|content',
-            'rvslots': 'main',
-            'titles': title,
-            'format': 'json',
-            'formatversion': '2',
+            "action": "query",
+            "prop": "revisions",
+            "rvprop": "ids|timestamp|sha1|content",
+            "rvslots": "main",
+            "titles": title,
+            "format": "json",
+            "formatversion": "2",
         },
         timeout=60,
     )
     response.raise_for_status()
-    page = response.json()['query']['pages'][0]
-    if page.get('missing'):
-        raise RuntimeError(f'Wiki source page is missing: {title}')
-    revision = page['revisions'][0]
+    page = response.json()["query"]["pages"][0]
+    if page.get("missing"):
+        raise RuntimeError(f"Wiki source page is missing: {title}")
+    revision = page["revisions"][0]
     return SourceRevision(
         title=title,
-        revision_id=int(revision['revid']),
-        timestamp=str(revision['timestamp']),
-        sha1=str(revision['sha1']),
-        content=str(revision['slots']['main']['content']),
+        revision_id=int(revision["revid"]),
+        timestamp=str(revision["timestamp"]),
+        sha1=str(revision["sha1"]),
+        content=str(revision["slots"]["main"]["content"]),
     )
 
 
 def lua_unescape(value: str) -> str:
-    return value.replace("\\'", "'").replace('\\\\', '\\')
+    return value.replace("\\'", "'").replace("\\\\", "\\")
 
 
 def read_lua_field(body: str, key: str) -> str | None:
     match = re.search(
         rf"\b{re.escape(key)}\s*=\s*(?:'((?:\\.|[^'])*)'|"
-        r'(-?\d+(?:\.\d+)?))',
+        r"(-?\d+(?:\.\d+)?))",
         body,
     )
     if not match:
         return None
-    return lua_unescape(match.group(1)) if match.group(1) is not None else match.group(2)
+    return (
+        lua_unescape(match.group(1)) if match.group(1) is not None else match.group(2)
+    )
 
 
 def parse_ship_module(
@@ -227,19 +259,19 @@ def parse_ship_module(
     for match in SHIP_BLOCK_RE.finditer(database_source):
         name = lua_unescape(match.group(1))
         body = match.group(2)
-        index = read_lua_field(body, 'index')
-        rarity = read_lua_field(body, 'rarity')
-        ship_type = read_lua_field(body, 'type')
-        country = read_lua_field(body, 'country')
-        size = read_lua_field(body, 'size')
+        index = read_lua_field(body, "index")
+        rarity = read_lua_field(body, "rarity")
+        ship_type = read_lua_field(body, "type")
+        country = read_lua_field(body, "country")
+        size = read_lua_field(body, "size")
         if None in (index, rarity, ship_type, country, size):
-            raise ValueError(f'Incomplete Wiki ship record: {name}')
+            raise ValueError(f"Incomplete Wiki ship record: {name}")
         by_name[name] = {
-            'index': int(float(index)),
-            'rarity': int(float(rarity)),
-            'type': ship_type,
-            'country': country,
-            'size': size,
+            "index": int(float(index)),
+            "rarity": int(float(rarity)),
+            "type": ship_type,
+            "country": country,
+            "size": size,
         }
 
     # The patch module is part of the Wiki data contract and overrides fields.
@@ -254,28 +286,76 @@ def parse_ship_module(
         if name in by_name and attribute in by_name[name]:
             by_name[name][attribute] = value
 
-    by_id = {int(data['index']): {'name': name, **data} for name, data in by_name.items()}
+    by_id = {
+        int(data["index"]): {"name": name, **data} for name, data in by_name.items()
+    }
     if len(by_id) != len(by_name):
-        raise ValueError('Duplicate ship indexes found in Wiki module')
+        raise ValueError("Duplicate ship indexes found in Wiki module")
     return by_id
 
 
+WikiTypeSchema = Literal["legacy", "native"]
+
+
+def detect_wiki_type_schema(
+    module_ships: dict[int, dict[str, Any]],
+) -> WikiTypeSchema:
+    """按完整 Lua 数据集识别 Wiki 使用的旧舰种或 native 舰种体系。"""
+    source_codes = {
+        str(source["type"]).strip().upper() for source in module_ships.values()
+    }
+    legacy_codes = source_codes & LEGACY_ONLY_WIKI_TYPE_CODES
+    native_codes = source_codes & NATIVE_ONLY_WIKI_TYPE_CODES
+    if legacy_codes and native_codes:
+        raise ValueError(
+            "Wiki 舰种数据混用了 legacy/native code: "
+            f"legacy={sorted(legacy_codes)}, native={sorted(native_codes)}",
+        )
+    if legacy_codes:
+        return "legacy"
+    if native_codes:
+        return "native"
+    if "CG" in source_codes:
+        raise ValueError("Wiki 舰种 schema 无法确定: CG 在两套体系中的语义不同")
+    return "native"
+
+
+def canonical_wiki_type_code(
+    value: str,
+    schema: WikiTypeSchema,
+) -> str:
+    """只在 Wiki 导入边界把旧 code 转换为 native canonical code。"""
+    source_code = value.strip().upper()
+    if source_code == "CF":
+        source_code = "cav"
+    if schema == "legacy":
+        source_code = LEGACY_WIKI_TYPE_TO_CANONICAL_CODE.get(
+            source_code,
+            source_code.lower(),
+        )
+    elif schema == "native":
+        source_code = source_code.lower()
+    else:
+        raise ValueError(f"不支持的 Wiki 舰种 schema: {schema}")
+    return canonical_native_fleet_type(source_code)
+
+
 def country_group(source_country: str) -> str:
-    normalized = re.sub(r'\s+', '', source_country)
+    normalized = re.sub(r"\s+", "", source_country)
     direct = {
-        '中国': 'china',
-        '法国': 'france',
-        '德国': 'germany',
-        '意大利': 'italy',
-        '日本': 'japan',
-        '英国': 'united_kingdom',
-        '美国': 'united_states',
+        "中国": "china",
+        "法国": "france",
+        "德国": "germany",
+        "意大利": "italy",
+        "日本": "japan",
+        "英国": "united_kingdom",
+        "美国": "united_states",
     }
     if normalized in direct:
         return direct[normalized]
-    if normalized in {'苏联', '沙俄'}:
-        return 'soviet_union'
-    return 'other'
+    if normalized in {"苏联", "沙俄"}:
+        return "soviet_union"
+    return "other"
 
 
 def ship_type_groups(ship_type_code: str) -> tuple[str, str]:
@@ -291,103 +371,109 @@ def ship_type_groups(ship_type_code: str) -> tuple[str, str]:
     ]
     if len(size_matches) != 1 or len(role_matches) != 1:
         raise ValueError(
-            f'Unsupported or duplicate ship type group: {ship_type_code}',
+            f"Unsupported or duplicate ship type group: {ship_type_code}",
         )
     return size_matches[0], role_matches[0]
 
 
 def variant_code(ship_id: int, source_name: str) -> str:
-    if source_name.endswith('·改') or 1000 <= ship_id < 2000:
-        return 'refit'
+    if source_name.endswith("·改") or 1000 <= ship_id < 2000:
+        return "refit"
     if ship_id >= 8000:
-        return 'special'
-    return 'normal'
+        return "special"
+    return "normal"
 
 
 def search_name(source_name: str) -> str:
-    name = source_name[:-2] if source_name.endswith('·改') else source_name
-    return SHIP_NAME_NOTE_SUFFIX_RE.sub('', name).strip()
+    name = source_name[:-2] if source_name.endswith("·改") else source_name
+    return SHIP_NAME_NOTE_SUFFIX_RE.sub("", name).strip()
 
 
 def card_image_url(card: Any, pattern: str) -> str:
-    for image in card.find_all('img'):
-        source = str(image.get('src', ''))
+    for image in card.find_all("img"):
+        source = str(image.get("src", ""))
         if re.search(pattern, source):
             return urljoin(WIKI_ROOT, source)
-    raise ValueError(f'Card asset not found: {pattern}')
+    raise ValueError(f"Card asset not found: {pattern}")
 
 
 def build_ship_records(
     index_html: str,
     module_ships: dict[int, dict[str, Any]],
+    type_schema: WikiTypeSchema,
 ) -> list[ShipRecord]:
-    soup = BeautifulSoup(index_html, 'html.parser')
+    soup = BeautifulSoup(index_html, "html.parser")
     records: list[ShipRecord] = []
-    portrait_pattern = re.compile(r'/M_NORMAL_WEBP/M_NORMAL_(\d+)\.webp$')
+    portrait_pattern = re.compile(r"/M_NORMAL_WEBP/M_NORMAL_(\d+)\.webp$")
 
-    for portrait in soup.find_all('img', src=portrait_pattern):
-        portrait_url = urljoin(WIKI_ROOT, str(portrait['src']))
-        ship_id = int(portrait_pattern.search(str(portrait['src'])).group(1))
+    for portrait in soup.find_all("img", src=portrait_pattern):
+        portrait_url = urljoin(WIKI_ROOT, str(portrait["src"]))
+        ship_id = int(portrait_pattern.search(str(portrait["src"])).group(1))
         source = module_ships.get(ship_id)
         if not source:
-            raise ValueError(f'Index ship {ship_id} is missing from Wiki module')
+            raise ValueError(f"Index ship {ship_id} is missing from Wiki module")
         card = portrait.find_parent(
-            'div',
-            style=lambda value: value and 'position: relative' in value,
+            "div",
+            style=lambda value: value and "position: relative" in value,
         )
         if card is None:
-            raise ValueError(f'Cannot locate ship card for index {ship_id}')
+            raise ValueError(f"Cannot locate ship card for index {ship_id}")
 
-        background_url = card_image_url(card, r'/\d+star_bg\.webp$')
-        frame_url = card_image_url(card, r'/\d+star_box\.webp$')
+        background_url = card_image_url(card, r"/\d+star_bg\.webp$")
+        frame_url = card_image_url(card, r"/\d+star_box\.webp$")
+        source_type_code = str(source["type"]).strip().lower()
         type_icons = []
-        for image in card.find_all('img'):
-            image_url = urljoin(WIKI_ROOT, str(image.get('src', '')))
-            file_name = image_url.rsplit('/', maxsplit=1)[-1]
-            type_code = file_name.removesuffix('.webp').lower()
-            if type_code in TYPE_LABELS_ZH:
+        for image in card.find_all("img"):
+            image_url = urljoin(WIKI_ROOT, str(image.get("src", "")))
+            file_name = image_url.rsplit("/", maxsplit=1)[-1]
+            type_code = file_name.removesuffix(".webp").lower()
+            if type_code == source_type_code:
                 type_icons.append((type_code, image_url))
         if len(type_icons) != 1:
             raise ValueError(
-                f'Expected one type icon for ship {ship_id}, got {type_icons}',
+                f"Expected one type icon for ship {ship_id}, got {type_icons}",
             )
-        ship_type_code, type_icon_url = type_icons[0]
+        _, type_icon_url = type_icons[0]
+        ship_type_code = canonical_wiki_type_code(
+            str(source["type"]),
+            type_schema,
+        )
 
-        anchor = portrait.find_parent('a')
-        wiki_url = urljoin(WIKI_ROOT, str(anchor.get('href', ''))) if anchor else ''
+        anchor = portrait.find_parent("a")
+        wiki_url = urljoin(WIKI_ROOT, str(anchor.get("href", ""))) if anchor else ""
         size_code, role_code = ship_type_groups(ship_type_code)
-        source_name = str(source['name'])
-        rarity = int(source['rarity'])
+        source_name = str(source["name"])
+        rarity = int(source["rarity"])
         data = {
-            'ship_id': ship_id,
-            'source_name': source_name,
-            'display_name_zh': source_name,
-            'search_name': search_name(source_name),
-            'variant_code': variant_code(ship_id, source_name),
-            'rarity': rarity,
-            'ship_type_code': ship_type_code,
-            'size_class_code': size_code,
-            'role_class_code': role_code,
-            'country_code': country_group(str(source['country'])),
-            'source_country_zh': re.sub(r'\s+', '', str(source['country'])),
-            'portrait_path': f'assets/portraits/{ship_id}.webp',
-            'background_path': f'assets/backgrounds/rarity-{rarity}.webp',
-            'frame_path': f'assets/frames/rarity-{rarity}.webp',
-            'type_icon_path': f'assets/type-icons/{ship_type_code}.webp',
-            'wiki_url': wiki_url,
-            'portrait_url': portrait_url,
-            'background_url': background_url,
-            'frame_url': frame_url,
-            'type_icon_url': type_icon_url,
+            "ship_id": ship_id,
+            "source_name": source_name,
+            "display_name_zh": source_name,
+            "search_name": search_name(source_name),
+            "variant_code": variant_code(ship_id, source_name),
+            "rarity": rarity,
+            "ship_type_code": ship_type_code,
+            "size_class_code": size_code,
+            "role_class_code": role_code,
+            "country_code": country_group(str(source["country"])),
+            "source_country_zh": re.sub(r"\s+", "", str(source["country"])),
+            "portrait_path": f"assets/portraits/{ship_id}.webp",
+            "background_path": f"assets/backgrounds/rarity-{rarity}.webp",
+            "frame_path": f"assets/frames/rarity-{rarity}.webp",
+            "type_icon_path": f"assets/type-icons/{source_type_code}.webp",
+            "wiki_url": wiki_url,
+            "portrait_url": portrait_url,
+            "background_url": background_url,
+            "frame_url": frame_url,
+            "type_icon_url": type_icon_url,
         }
         source_hash = hashlib.sha256(
-            json.dumps(data, ensure_ascii=False, sort_keys=True).encode('utf-8'),
+            json.dumps(data, ensure_ascii=False, sort_keys=True).encode("utf-8"),
         ).hexdigest()
         records.append(ShipRecord(**data, source_hash=source_hash))
 
     records.sort(key=lambda item: item.ship_id)
     if len({item.ship_id for item in records}) != len(records):
-        raise ValueError('Duplicate ship indexes found on Wiki index page')
+        raise ValueError("Duplicate ship indexes found on Wiki index page")
     return records
 
 
@@ -484,14 +570,14 @@ def asset_specs(
     for record in records:
         values = (
             AssetSpec(
-                'portrait',
+                "portrait",
                 record.portrait_path,
                 record.portrait_url,
                 record.ship_id in changed_ids,
             ),
-            AssetSpec('background', record.background_path, record.background_url),
-            AssetSpec('frame', record.frame_path, record.frame_url),
-            AssetSpec('type_icon', record.type_icon_path, record.type_icon_url),
+            AssetSpec("background", record.background_path, record.background_url),
+            AssetSpec("frame", record.frame_path, record.frame_url),
+            AssetSpec("type_icon", record.type_icon_path, record.type_icon_url),
         )
         for spec in values:
             current = unique.get(spec.path)
@@ -510,8 +596,8 @@ def asset_specs(
 
 def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
-    with path.open('rb') as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
 
@@ -529,16 +615,16 @@ def download_asset(
         and not force_assets
         and not spec.refresh
         and previous
-        and previous.get('url') == spec.url
+        and previous.get("url") == spec.url
     ):
         return spec, None, None
 
     headers = request_headers()
-    if target.exists() and previous and previous.get('url') == spec.url:
-        if previous.get('etag'):
-            headers['If-None-Match'] = str(previous['etag'])
-        if previous.get('last_modified'):
-            headers['If-Modified-Since'] = str(previous['last_modified'])
+    if target.exists() and previous and previous.get("url") == spec.url:
+        if previous.get("etag"):
+            headers["If-None-Match"] = str(previous["etag"])
+        if previous.get("last_modified"):
+            headers["If-Modified-Since"] = str(previous["last_modified"])
 
     error: str | None = None
     for attempt in range(3):
@@ -551,33 +637,32 @@ def download_asset(
             if response.status_code == 304 and target.exists():
                 return spec, None, None
             response.raise_for_status()
-            content_type = response.headers.get('content-type', '')
+            content_type = response.headers.get("content-type", "")
             is_webp = (
-                target.suffix.lower() == '.webp'
-                and response.content.startswith(b'RIFF')
-                and response.content[8:12] == b'WEBP'
+                target.suffix.lower() == ".webp"
+                and response.content.startswith(b"RIFF")
+                and response.content[8:12] == b"WEBP"
             )
             if len(response.content) < 100 or (
-                'image/' not in content_type
-                and not is_webp
+                "image/" not in content_type and not is_webp
             ):
                 raise ValueError(
-                    f'Unexpected asset response: {content_type}, '
-                    f'{len(response.content)} bytes',
+                    f"Unexpected asset response: {content_type}, "
+                    f"{len(response.content)} bytes",
                 )
             target.parent.mkdir(parents=True, exist_ok=True)
-            temporary = target.with_suffix(f'{target.suffix}.tmp')
+            temporary = target.with_suffix(f"{target.suffix}.tmp")
             temporary.write_bytes(response.content)
             os.replace(temporary, target)
             metadata = {
-                'path': spec.path,
-                'kind': spec.kind,
-                'url': spec.url,
-                'etag': response.headers.get('etag'),
-                'last_modified': response.headers.get('last-modified'),
-                'sha256': hashlib.sha256(response.content).hexdigest(),
-                'byte_size': len(response.content),
-                'updated_at': utc_now(),
+                "path": spec.path,
+                "kind": spec.kind,
+                "url": spec.url,
+                "etag": response.headers.get("etag"),
+                "last_modified": response.headers.get("last-modified"),
+                "sha256": hashlib.sha256(response.content).hexdigest(),
+                "byte_size": len(response.content),
+                "updated_at": utc_now(),
             }
             return spec, metadata, None
         except Exception as exc:  # Retry transient CDN or network failures.
@@ -594,8 +679,8 @@ def download_assets(
     force_assets: bool,
 ) -> tuple[list[dict[str, Any]], list[str], int]:
     previous = {
-        str(row['path']): dict(row)
-        for row in connection.execute('SELECT * FROM assets')
+        str(row["path"]): dict(row)
+        for row in connection.execute("SELECT * FROM assets")
     }
     updates: list[dict[str, Any]] = []
     failures: list[str] = []
@@ -619,11 +704,11 @@ def download_assets(
                 updates.append(metadata)
                 downloaded += 1
             if error:
-                failures.append(f'{spec.path}: {error}')
+                failures.append(f"{spec.path}: {error}")
             if completed % 25 == 0 or completed == len(specs):
                 print(
-                    f'PROGRESS assets {completed}/{len(specs)} '
-                    f'downloaded={downloaded} failed={len(failures)}',
+                    f"PROGRESS assets {completed}/{len(specs)} "
+                    f"downloaded={downloaded} failed={len(failures)}",
                     flush=True,
                 )
     return updates, failures, downloaded
@@ -631,38 +716,36 @@ def download_assets(
 
 def write_json_atomic(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(f'{path.suffix}.tmp')
+    temporary = path.with_suffix(f"{path.suffix}.tmp")
     temporary.write_text(
-        json.dumps(value, ensure_ascii=False, indent=2) + '\n',
-        encoding='utf-8',
+        json.dumps(value, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
     )
     os.replace(temporary, path)
 
 
 def labels_manifest() -> dict[str, Any]:
     return {
-        'locale': 'zh-CN',
-        'ship_types': TYPE_LABELS_ZH,
-        'size_classes': SIZE_LABELS_ZH,
-        'role_classes': ROLE_LABELS_ZH,
-        'countries': COUNTRY_LABELS_ZH,
-        'variants': {
-            'normal': '普通',
-            'refit': '改造',
-            'special': '特殊',
+        "locale": "zh-CN",
+        "ship_types": TYPE_LABELS_ZH,
+        "size_classes": SIZE_LABELS_ZH,
+        "role_classes": ROLE_LABELS_ZH,
+        "countries": COUNTRY_LABELS_ZH,
+        "variants": {
+            "normal": "普通",
+            "refit": "改造",
+            "special": "特殊",
         },
     }
 
 
 def type_groups_manifest() -> dict[str, dict[str, list[str]]]:
     return {
-        'size_classes': {
-            group: list(ship_types)
-            for group, ship_types in SIZE_TYPE_GROUPS.items()
+        "size_classes": {
+            group: list(ship_types) for group, ship_types in SIZE_TYPE_GROUPS.items()
         },
-        'role_classes': {
-            group: list(ship_types)
-            for group, ship_types in ROLE_TYPE_GROUPS.items()
+        "role_classes": {
+            group: list(ship_types) for group, ship_types in ROLE_TYPE_GROUPS.items()
         },
     }
 
@@ -678,26 +761,26 @@ def update_database(
 ) -> tuple[int, int, int]:
     now = utc_now()
     old_rows = {
-        int(row['ship_id']): dict(row)
+        int(row["ship_id"]): dict(row)
         for row in connection.execute(
-            'SELECT ship_id, source_hash, is_active FROM ships',
+            "SELECT ship_id, source_hash, is_active FROM ships",
         )
     }
     active_ids = {record.ship_id for record in records}
     added = sum(record.ship_id not in old_rows for record in records)
     updated = sum(
         record.ship_id in old_rows
-        and old_rows[record.ship_id]['source_hash'] != record.source_hash
+        and old_rows[record.ship_id]["source_hash"] != record.source_hash
         for record in records
     )
     removed = sum(
-        bool(row['is_active']) and ship_id not in active_ids
+        bool(row["is_active"]) and ship_id not in active_ids
         for ship_id, row in old_rows.items()
     )
 
     with connection:
-        connection.execute('UPDATE ships SET is_active = 0')
-        connection.execute('DELETE FROM ship_type_groups')
+        connection.execute("UPDATE ships SET is_active = 0")
+        connection.execute("DELETE FROM ship_type_groups")
         connection.executemany(
             """
             INSERT INTO ship_type_groups (
@@ -770,8 +853,8 @@ def update_database(
                 """,
                 {
                     **values,
-                    'source_revision': revisions[0].revision_id,
-                    'updated_at': now,
+                    "source_revision": revisions[0].revision_id,
+                    "updated_at": now,
                 },
             )
         for asset in asset_updates:
@@ -837,20 +920,20 @@ def update_database(
 
 def manifest_ship(record: ShipRecord) -> dict[str, Any]:
     return {
-        'id': record.ship_id,
-        'name': record.display_name_zh,
-        'search_name': record.search_name,
-        'variant': record.variant_code,
-        'rarity': record.rarity,
-        'ship_type': record.ship_type_code,
-        'size_class': record.size_class_code,
-        'role_class': record.role_class_code,
-        'country': record.country_code,
-        'portrait': record.portrait_path,
-        'background': record.background_path,
-        'frame': record.frame_path,
-        'type_icon': record.type_icon_path,
-        'wiki_url': record.wiki_url,
+        "id": record.ship_id,
+        "name": record.display_name_zh,
+        "search_name": record.search_name,
+        "variant": record.variant_code,
+        "rarity": record.rarity,
+        "ship_type": record.ship_type_code,
+        "size_class": record.size_class_code,
+        "role_class": record.role_class_code,
+        "country": record.country_code,
+        "portrait": record.portrait_path,
+        "background": record.background_path,
+        "frame": record.frame_path,
+        "type_icon": record.type_icon_path,
+        "wiki_url": record.wiki_url,
     }
 
 
@@ -870,28 +953,33 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     session = requests.Session()
     session.headers.update(request_headers())
 
-    print('PROGRESS sources fetching Wiki data', flush=True)
+    print("PROGRESS sources fetching Wiki data", flush=True)
     database_revision = fetch_revision(session, DATABASE_MODULE)
     patch_revision = fetch_revision(session, PATCH_MODULE)
     index_response = session.get(SHIP_INDEX_URL, timeout=60)
     index_response.raise_for_status()
-    index_response.encoding = 'utf-8'
+    index_response.encoding = "utf-8"
 
     module_ships = parse_ship_module(
         database_revision.content,
         patch_revision.content,
     )
-    records = build_ship_records(index_response.text, module_ships)
+    type_schema = detect_wiki_type_schema(module_ships)
+    records = build_ship_records(
+        index_response.text,
+        module_ships,
+        type_schema,
+    )
     if not records:
-        raise RuntimeError('Wiki index returned no ship records')
-    print(f'PROGRESS records parsed={len(records)}', flush=True)
+        raise RuntimeError("Wiki index returned no ship records")
+    print(f"PROGRESS records parsed={len(records)}", flush=True)
 
-    database_path = output / 'database' / 'ships.sqlite3'
+    database_path = output / "database" / "ships.sqlite3"
     connection = open_database(database_path)
     try:
         previous_hashes = {
-            int(row['ship_id']): str(row['source_hash'])
-            for row in connection.execute('SELECT ship_id, source_hash FROM ships')
+            int(row["ship_id"]): str(row["source_hash"])
+            for row in connection.execute("SELECT ship_id, source_hash FROM ships")
         }
         changed_ids = {
             record.ship_id
@@ -907,21 +995,24 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             bool(args.force_assets),
         )
         missing_assets = validate_assets(output, specs)
-        failed_paths = sorted({
-            *missing_assets,
-            *(failure.partition(': ')[0] for failure in download_failures),
-        })
-        failure_details = sorted(set(
-            download_failures
-            + [
-                path
-                for path in missing_assets
-                if not any(
-                    failure.startswith(f'{path}: ')
-                    for failure in download_failures
-                )
-            ]
-        ))
+        failed_paths = sorted(
+            {
+                *missing_assets,
+                *(failure.partition(": ")[0] for failure in download_failures),
+            }
+        )
+        failure_details = sorted(
+            set(
+                download_failures
+                + [
+                    path
+                    for path in missing_assets
+                    if not any(
+                        failure.startswith(f"{path}: ") for failure in download_failures
+                    )
+                ]
+            )
+        )
         added, updated, removed = update_database(
             connection,
             records,
@@ -937,60 +1028,61 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     generated_at = utc_now()
     labels = labels_manifest()
     manifest = {
-        'schema_version': 2,
-        'generated_at': generated_at,
-        'source': {
-            'wiki': WIKI_ROOT,
-            'index_url': SHIP_INDEX_URL,
-            'database_revision': database_revision.revision_id,
-            'patch_revision': patch_revision.revision_id,
+        "schema_version": 4,
+        "generated_at": generated_at,
+        "source": {
+            "wiki": WIKI_ROOT,
+            "index_url": SHIP_INDEX_URL,
+            "database_revision": database_revision.revision_id,
+            "patch_revision": patch_revision.revision_id,
+            "ship_type_schema": type_schema,
         },
-        'counts': {
-            'ships': len(records),
-            'assets': len(specs),
-            'missing_assets': len(missing_assets),
+        "counts": {
+            "ships": len(records),
+            "assets": len(specs),
+            "missing_assets": len(missing_assets),
         },
-        'labels': labels,
-        'type_groups': type_groups_manifest(),
-        'ships': [manifest_ship(record) for record in records],
+        "labels": labels,
+        "type_groups": type_groups_manifest(),
+        "ships": [manifest_ship(record) for record in records],
     }
-    write_json_atomic(output / 'manifest.json', manifest)
-    write_json_atomic(output / 'labels.zh-CN.json', labels)
+    write_json_atomic(output / "manifest.json", manifest)
+    write_json_atomic(output / "labels.zh-CN.json", labels)
 
     return {
-        'success': not failed_paths,
-        'output': str(output),
-        'generated_at': generated_at,
-        'ship_count': len(records),
-        'asset_count': len(specs),
-        'added': added,
-        'updated': updated,
-        'removed': removed,
-        'downloaded': downloaded,
-        'failed': len(failed_paths),
-        'failures': failure_details[:20],
+        "success": not failed_paths,
+        "output": str(output),
+        "generated_at": generated_at,
+        "ship_count": len(records),
+        "asset_count": len(specs),
+        "added": added,
+        "updated": updated,
+        "removed": removed,
+        "downloaded": downloaded,
+        "failed": len(failed_paths),
+        "failures": failure_details[:20],
     }
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description='Incrementally update the AutoWSGR GUI ship library.',
+        description="Incrementally update the AutoWSGR GUI ship library.",
     )
     parser.add_argument(
-        '--output',
+        "--output",
         required=True,
-        help='Ship library output directory.',
+        help="Ship library output directory.",
     )
     parser.add_argument(
-        '--workers',
+        "--workers",
         type=int,
         default=8,
-        help='Concurrent asset downloads (default: 8).',
+        help="Concurrent asset downloads (default: 8).",
     )
     parser.add_argument(
-        '--force-assets',
-        action='store_true',
-        help='Conditionally verify every existing asset.',
+        "--force-assets",
+        action="store_true",
+        help="Conditionally verify every existing asset.",
     )
     return parser.parse_args()
 
@@ -1000,15 +1092,15 @@ def main() -> int:
         result = run(parse_args())
     except Exception as exc:
         result = {
-            'success': False,
-            'error': f'{type(exc).__name__}: {exc}',
+            "success": False,
+            "error": f"{type(exc).__name__}: {exc}",
         }
     print(
-        'RESULT_JSON=' + json.dumps(result, ensure_ascii=False),
+        "RESULT_JSON=" + json.dumps(result, ensure_ascii=False),
         flush=True,
     )
-    return 0 if result.get('success') else 1
+    return 0 if result.get("success") else 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

@@ -1,8 +1,9 @@
+/** 持有作战方案状态并处理节点规则、迁移和 YAML 往返。 */
 /**
  * PlanModel —— 战斗方案(Plan)的 Model 层。
  * 负责从 YAML 文件解析战斗方案，并提供节点参数的查询与合并。
  */
-import * as yaml from 'js-yaml';
+import { yamlCodec } from '../adapter/index.js';
 import type {
   PlanData,
   NodeArgs,
@@ -12,7 +13,7 @@ import type {
   ShipRule,
   EnemyRule,
   BattleResultGrade,
-} from '../types/model';
+} from '../types/model.js';
 
 type YamlPath = string[];
 const BATTLE_RESULT_GRADES = new Set<BattleResultGrade>(['D', 'C', 'B', 'A', 'S', 'SS']);
@@ -27,7 +28,7 @@ function isYamlScalar(value: unknown): boolean {
 
 /** 使用 YAML 流式语法输出单个值，不改变值本身。 */
 function dumpFlowYaml(value: unknown): string {
-  return yaml.dump(value, {
+  return yamlCodec.stringify(value, {
     flowLevel: 0,
     lineWidth: -1,
     noCompatMode: true,
@@ -154,7 +155,7 @@ export class PlanModel {
   /** 从 YAML 字符串 + 文件路径创建 PlanModel */
   static fromYaml(content: string, path: string): PlanModel {
     const comment = PlanModel.extractComment(content);
-    const parsed = yaml.load(content) as Record<string, unknown>;
+    const parsed = yamlCodec.parse<Record<string, unknown>>(content);
     if (!parsed || typeof parsed !== 'object') {
       throw new Error('无效的方案文件');
     }

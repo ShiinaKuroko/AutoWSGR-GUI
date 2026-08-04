@@ -1,12 +1,13 @@
+/** 协调作战方案加载、预览、编辑、保存和任务执行。 */
 /**
  * 编排受管方案、任务预设、节点编辑和计划预览。
  */
 import { PlanPreviewView } from '../../view/plan/PlanPreviewView';
 import { PlanModel } from '../../model/PlanModel';
-import type { CombatPlanReq, EventFightReq, NodeDecisionReq, NormalFightReq } from '../../types/api';
+import type { CombatPlanReq, EventFightReq, NodeDecisionReq, NormalFightReq } from '../../types/api.js';
 import type { Scheduler } from '../../model/scheduler';
 import { TaskPriority } from '../../model/scheduler';
-import type { FleetPreset, NodeArgs, TaskPreset } from '../../types/model';
+import type { FleetPreset, NodeArgs, TaskPreset } from '../../types/model.js';
 import {
   getNodeType,
   isNightNode,
@@ -18,14 +19,16 @@ import {
 } from '../../model/MapDataLoader';
 import type { MapData } from '../../model/MapDataLoader';
 import type {
-  ManagedBattlePlan,
   ManagedBattlePlanSelection,
-  ManagedTeamPlan,
   PlanPresetSource,
-  PlanTeamBinding,
-} from '../../types/electronBridge';
-import { appendTeamPlanCardContent } from '../../view/plan/TeamPlanListUi';
-import { toBackendName, resolveFleetPreset, resolveFleetPresetRules, shipSlotLabel } from '../../data/shipData';
+} from '../../types/ipc.js';
+import { BattlePlanLoaderView } from '../../view/plan/BattlePlanLoaderView';
+import {
+  resolveFleetPreset,
+  shipSlotLabel,
+} from '../../model/fleet/ShipMatcher';
+import { resolveFleetPresetRules } from '../../model/fleet/FleetRuleMapper';
+import { toBackendName } from '../../model/fleet/ShipNameNormalizer';
 import { Logger } from '../../utils/Logger';
 import {
   showAlert,
@@ -33,9 +36,11 @@ import {
   showSaveSuccess,
 } from '../shared/DialogHelper';
 import { importTaskPresetFlow, closePresetDetailFlow, executePresetFlow, type PresetState } from './presetFlow';
+import { yamlCodec, jsonCodec } from '../../adapter';
 import { saveNodeEditorValues } from './nodeEditor';
 import { buildPlanPreviewVO } from './rendering';
 import { normalizeSelectedNodesForBackend } from './selectedNodes';
+import { BattlePlanLoaderController } from './BattlePlanLoaderController';
 
 export interface PlanHost {
   readonly scheduler: Scheduler;
@@ -55,71 +60,40 @@ export class PlanController {
   private currentManagedPlanFile: string | null = null;
   private currentPlanSource: PlanPresetSource = 'user';
   private savedPlanSnapshot = '';
-  private battlePlanLoaderPlans: ManagedBattlePlan[] = [];
-  private selectedBattlePlan: ManagedBattlePlan | null = null;
-  private selectedBattlePlanFleetIndex: number | null = null;
-  private battlePlanLoaderSortField: 'name' | 'modifiedAt' = 'modifiedAt';
-  private battlePlanLoaderPurpose:
-    'editor' | 'queue' | 'task-list' | 'automation' = 'editor';
-  private resolveBattlePlanSelection: (
-    (selection: ManagedBattlePlanSelection | null) => void
-  ) | null = null;
+  private readonly battlePlanLoader: BattlePlanLoaderController;
 
   constructor(
     private readonly planView: PlanPreviewView,
     readonly host: PlanHost,
-  ) {}
+  ) {
+    this.battlePlanLoader = new BattlePlanLoaderController(
+      new BattlePlanLoaderView(),
+      {
+        getCurrentPlanIdentity: () => ({
+          file: this.currentManagedPlanFile,
+          source: this.currentPlanSource,
+        }),
+        openManagedPlan: (file, source) => (
+          this.openManagedPlan(file, source)
+        ),
+      },
+    );
+  }
 
   // ── 公共访问器 ──
 
   getCurrentPlan(): PlanModel | null { return this.currentPlan; }
 
   pickManagedBattlePlan(): Promise<ManagedBattlePlanSelection | null> {
-    this.finishBattlePlanSelection(null);
-    this.battlePlanLoaderPurpose = 'task-list';
-    this.selectedBattlePlanFleetIndex = null;
-    this.updateBattlePlanLoaderCopy();
-    const searchInput = document.getElementById(
-      'battle-plan-loader-search',
-    ) as HTMLInputElement | null;
-    if (searchInput) searchInput.value = '';
-    this.openBattlePlanLoader();
-    void this.refreshBattlePlanLoader().then(() => searchInput?.focus());
-    return new Promise((resolve) => {
-      this.resolveBattlePlanSelection = resolve;
-    });
+    return this.battlePlanLoader.pick('task-list');
   }
 
   pickManagedBattlePlanForQueue(): Promise<ManagedBattlePlanSelection | null> {
-    this.finishBattlePlanSelection(null);
-    this.battlePlanLoaderPurpose = 'queue';
-    this.selectedBattlePlanFleetIndex = null;
-    this.updateBattlePlanLoaderCopy();
-    const searchInput = document.getElementById(
-      'battle-plan-loader-search',
-    ) as HTMLInputElement | null;
-    if (searchInput) searchInput.value = '';
-    this.openBattlePlanLoader();
-    void this.refreshBattlePlanLoader().then(() => searchInput?.focus());
-    return new Promise((resolve) => {
-      this.resolveBattlePlanSelection = resolve;
-    });
+    return this.battlePlanLoader.pick('queue');
   }
 
   pickManagedBattlePlanForAutomation(): Promise<ManagedBattlePlanSelection | null> {
-    this.finishBattlePlanSelection(null);
-    this.battlePlanLoaderPurpose = 'automation';
-    this.selectedBattlePlanFleetIndex = null;
-    this.updateBattlePlanLoaderCopy();
-    const searchInput = document.getElementById(
-      'battle-plan-loader-search',
-    ) as HTMLInputElement | null;
-    if (searchInput) searchInput.value = '';
-    this.openBattlePlanLoader();
-    void this.refreshBattlePlanLoader().then(() => searchInput?.focus());
-    return new Promise((resolve) => {
-      this.resolveBattlePlanSelection = resolve;
-    });
+    return this.battlePlanLoader.pick('automation');
   }
 
   setCurrentPlan(plan: PlanModel, mapData: MapData | null): void {
@@ -171,7 +145,7 @@ export class PlanController {
       'click',
       () => void this.savePlan(),
     );
-    this.bindBattlePlanLoaderActions();
+    this.battlePlanLoader.bindActions();
 
     // 节点编辑
     this.planView.onNodeClick = (nodeId) => {
@@ -186,7 +160,7 @@ export class PlanController {
       const canDetour = this.currentMapData ? isDetourNode(this.currentMapData, nodeId) : false;
       const isEndpoint = (this.currentPlan.data.endpoint_nodes ?? []).includes(nodeId);
       const isTerminal = this.currentMapData ? isTerminalNode(this.currentMapData, nodeId) : false;
-      this.planView.showNodeEditor(nodeId, nodeType as any, {
+      this.planView.showNodeEditor(nodeId, nodeType, {
         enabled: isEnabled,
         formation: args.formation ?? 2,
         night: args.night ?? false,
@@ -294,7 +268,7 @@ export class PlanController {
         await showAlert('加载失败', result.error || '无法读取出征计划');
         return false;
       }
-      const parsed = (await import('js-yaml')).load(result.content);
+      const parsed = yamlCodec.parse<unknown>(result.content);
       if (
         parsed
         && typeof parsed === 'object'
@@ -348,757 +322,7 @@ export class PlanController {
   }
 
   private async loadPlan(): Promise<void> {
-    this.finishBattlePlanSelection(null);
-    this.battlePlanLoaderPurpose = 'editor';
-    this.updateBattlePlanLoaderCopy();
-    const searchInput = document.getElementById(
-      'battle-plan-loader-search',
-    ) as HTMLInputElement | null;
-    if (searchInput) searchInput.value = '';
-    this.openBattlePlanLoader();
-    await this.refreshBattlePlanLoader();
-    searchInput?.focus();
-  }
-
-  private async importLocalBattlePlan(): Promise<void> {
-    const bridge = window.electronBridge;
-    if (!bridge?.importLocalCombatPlan) {
-      await showAlert('导入失败', '请完整重启 GUI 后再操作');
-      return;
-    }
-    const button = document.getElementById(
-      'btn-import-local-battle-plan',
-    ) as HTMLButtonElement | null;
-    if (button) button.disabled = true;
-    try {
-      const result = await bridge.importLocalCombatPlan();
-      if (result.canceled) return;
-      if (!result.success || !result.file) {
-        throw new Error(result.error || '本地 YAML 导入失败');
-      }
-
-      await this.refreshBattlePlanLoader();
-      const imported = this.battlePlanLoaderPlans.find(plan => (
-        plan.source === 'user' && plan.file === result.file
-      ));
-      if (imported) this.selectBattlePlan(imported);
-      Logger.info(`本地出征计划已升级并导入: ${result.file}`);
-      showSaveSuccess(
-        result.kind === 'preset'
-          ? '已添加本地任务预设'
-          : `已添加本地 YAML，并升级 ${
-            result.teamFiles?.length ?? 0
-          } 支关联编队`,
-      );
-    } catch (error) {
-      await showAlert(
-        '导入失败',
-        error instanceof Error ? error.message : String(error),
-      );
-    } finally {
-      if (button) button.disabled = false;
-    }
-  }
-
-  private bindBattlePlanLoaderActions(): void {
-    const dialog = document.getElementById('battle-plan-loader');
-    document.getElementById('btn-cancel-battle-plan-loader')?.addEventListener(
-      'click',
-      () => this.closeBattlePlanLoader(),
-    );
-    document.getElementById('btn-import-local-battle-plan')?.addEventListener(
-      'click',
-      () => void this.importLocalBattlePlan(),
-    );
-    document.getElementById('btn-refresh-battle-plan-loader')?.addEventListener(
-      'click',
-      () => void this.refreshBattlePlanLoader(),
-    );
-    document.getElementById('battle-plan-loader-search')?.addEventListener(
-      'input',
-      () => this.renderBattlePlanLoaderList(),
-    );
-    document.getElementById('battle-plan-loader-filter-system')?.addEventListener(
-      'change',
-      () => this.renderBattlePlanLoaderList(),
-    );
-    document.getElementById('battle-plan-loader-sort-asc')?.addEventListener(
-      'change',
-      () => this.renderBattlePlanLoaderList(),
-    );
-    document.querySelectorAll<HTMLElement>('[data-battle-plan-sort-field]').forEach((button) => {
-      button.addEventListener('click', () => {
-        this.battlePlanLoaderSortField = button.dataset['battlePlanSortField'] === 'name'
-          ? 'name'
-          : 'modifiedAt';
-        document.querySelectorAll<HTMLElement>('[data-battle-plan-sort-field]').forEach((item) => {
-          item.classList.toggle(
-            'active',
-            item.dataset['battlePlanSortField'] === this.battlePlanLoaderSortField,
-          );
-        });
-        this.renderBattlePlanLoaderList();
-      });
-    });
-    document.getElementById('battle-plan-loader-list')?.addEventListener(
-      'click',
-      (event) => {
-        const button = (event.target as HTMLElement).closest<HTMLButtonElement>(
-          '[data-battle-plan-file]',
-        );
-        if (!button) return;
-        const selected = this.battlePlanLoaderPlans.find(plan => (
-          plan.file === button.dataset['battlePlanFile']
-          && plan.source === button.dataset['battlePlanSource']
-        ));
-        if (selected) this.selectBattlePlan(selected);
-      },
-    );
-    document.getElementById('btn-confirm-battle-plan-loader')?.addEventListener(
-      'click',
-      () => void this.confirmBattlePlanLoader(),
-    );
-    dialog?.addEventListener('click', (event) => {
-      if (event.target === dialog) this.closeBattlePlanLoader();
-    });
-  }
-
-  private openBattlePlanLoader(): void {
-    const dialog = document.getElementById('battle-plan-loader');
-    if (dialog) dialog.style.display = 'flex';
-  }
-
-  private closeBattlePlanLoader(): void {
-    const dialog = document.getElementById('battle-plan-loader');
-    if (dialog) dialog.style.display = 'none';
-    this.finishBattlePlanSelection(null);
-    this.selectedBattlePlanFleetIndex = null;
-    this.battlePlanLoaderPurpose = 'editor';
-    this.updateBattlePlanLoaderCopy();
-  }
-
-  private finishBattlePlanSelection(
-    selection: ManagedBattlePlanSelection | null,
-  ): void {
-    const resolve = this.resolveBattlePlanSelection;
-    this.resolveBattlePlanSelection = null;
-    resolve?.(selection);
-  }
-
-  private updateBattlePlanLoaderCopy(): void {
-    const pickingForQueue = this.battlePlanLoaderPurpose === 'queue';
-    const pickingForTaskList = this.battlePlanLoaderPurpose === 'task-list';
-    const pickingForAutomation = this.battlePlanLoaderPurpose === 'automation';
-    const title = document.getElementById('battle-plan-loader-title');
-    const description = document.getElementById(
-      'battle-plan-loader-description',
-    );
-    const confirm = document.getElementById(
-      'btn-confirm-battle-plan-loader',
-    );
-    if (title) {
-      title.textContent = pickingForQueue
-        ? '加载计划到任务队列'
-        : pickingForTaskList
-          ? '添加计划到任务列表'
-          : pickingForAutomation
-            ? '加载自动出征计划'
-            : '加载出征配置';
-    }
-    if (description) {
-      description.textContent = pickingForQueue
-        ? '选择加入任务队列的作战计划；计划包含编队时需选择本次使用的编队。'
-        : pickingForTaskList
-          ? '选择作战计划；计划包含编队时需选择本次使用的编队。'
-          : pickingForAutomation
-            ? '选择自动出征使用的作战计划和队伍。'
-            : '读取系统与用户作战计划目录中的合法 YAML 配置。';
-    }
-    if (confirm) {
-      confirm.textContent = pickingForQueue
-        ? '加入队列'
-        : pickingForTaskList
-          ? '添加到列表'
-          : '加载';
-    }
-  }
-
-  private async refreshBattlePlanLoader(): Promise<void> {
-    const bridge = window.electronBridge;
-    const status = document.getElementById('battle-plan-loader-status');
-    if (!bridge?.getPlanManagement) {
-      if (status) {
-        status.hidden = false;
-        status.textContent = '请完整重启 GUI 后再操作';
-      }
-      return;
-    }
-    if (status) {
-      status.hidden = false;
-      status.textContent = '正在读取作战计划...';
-    }
-    try {
-      const result = await bridge.getPlanManagement();
-      const detailedPlans = (
-        result as typeof result & { battlePlans?: ManagedBattlePlan[] }
-      ).battlePlans;
-      const compatibilityMode = !Array.isArray(detailedPlans)
-        || detailedPlans.some(plan => (
-          !Array.isArray(plan.fleets)
-          || typeof plan.fleetId !== 'number'
-        ));
-      this.battlePlanLoaderPlans = compatibilityMode
-        ? this.battlePlansFromBindings(result.bindings, result.teamPlans)
-        : detailedPlans;
-      const visiblePlans = this.visibleBattlePlans();
-      this.selectedBattlePlan = visiblePlans.find(plan => (
-        Boolean(this.currentManagedPlanFile)
-        && plan.file === this.currentManagedPlanFile
-        && plan.source === this.currentPlanSource
-      )) ?? visiblePlans[0] ?? null;
-      this.resetBattlePlanFleetSelection(this.selectedBattlePlan);
-      const count = document.getElementById('battle-plan-loader-count');
-      if (count) {
-        count.textContent = `共读取 ${this.battlePlanLoaderPlans.length} 个作战配置`;
-      }
-      const errorCount = result.errors.filter(error => error.kind === 'battle').length;
-      if (status) {
-        const message = compatibilityMode
-          ? '当前主进程未更新，已显示基础列表；完整重启 GUI 后显示计划摘要'
-          : errorCount > 0
-            ? `${errorCount} 个 YAML 无法读取，已从列表中排除`
-            : '';
-        status.textContent = message;
-        status.hidden = !message;
-      }
-      this.renderBattlePlanLoaderList();
-    } catch (error) {
-      this.battlePlanLoaderPlans = [];
-      this.clearBattlePlanSelection();
-      if (status) {
-        status.hidden = false;
-        status.textContent = `读取失败：${error instanceof Error ? error.message : String(error)}`;
-      }
-      this.renderBattlePlanLoaderList();
-    }
-  }
-
-  private battlePlansFromBindings(
-    bindings: PlanTeamBinding[],
-    teamPlans: ManagedTeamPlan[],
-  ): ManagedBattlePlan[] {
-    const plans = new Map<string, ManagedBattlePlan>();
-    bindings.forEach((binding) => {
-      const key = `${binding.source}/${binding.planFile}`;
-      const existing = plans.get(key);
-      if (existing) {
-        if (binding.teamName) {
-          existing.fleets.push(this.compatibilityFleetSummary(
-            binding.teamName,
-            binding.source,
-            teamPlans,
-          ));
-          existing.fleetCount = existing.fleets.length;
-        }
-        return;
-      }
-      const fleets = binding.teamName
-        ? [this.compatibilityFleetSummary(
-          binding.teamName,
-          binding.source,
-          teamPlans,
-        )]
-        : [];
-      plans.set(key, {
-        kind: 'battle',
-        file: binding.planFile,
-        name: binding.planName,
-        source: binding.source,
-        modifiedAt: 0,
-        chapter: '?',
-        map: '?',
-        times: 0,
-        gap: 0,
-        fleetId: 1,
-        repairMode: 1,
-        result: null,
-        lootCountGe: -1,
-        shipCountGe: -1,
-        fleetCount: fleets.length,
-        nodeCount: 0,
-        fleets,
-      });
-    });
-    return [...plans.values()];
-  }
-
-  private compatibilityFleetSummary(
-    name: string,
-    battleSource: PlanPresetSource,
-    teamPlans: ManagedTeamPlan[],
-  ): ManagedBattlePlan['fleets'][number] {
-    const matchingPlan = teamPlans.find(plan => (
-      plan.name === name && plan.source === battleSource
-    )) ?? teamPlans.find(plan => plan.name === name);
-    return {
-      name,
-      source: matchingPlan?.source ?? 'deleted',
-      primaryCount: 0,
-      backupCount: 0,
-    };
-  }
-
-  private visibleBattlePlans(): ManagedBattlePlan[] {
-    const searchInput = document.getElementById(
-      'battle-plan-loader-search',
-    ) as HTMLInputElement | null;
-    const filterSystem = document.getElementById(
-      'battle-plan-loader-filter-system',
-    ) as HTMLInputElement | null;
-    const sortAsc = document.getElementById(
-      'battle-plan-loader-sort-asc',
-    ) as HTMLInputElement | null;
-    const keyword = (searchInput?.value ?? '').trim().toLocaleLowerCase('zh-CN');
-    const direction = sortAsc?.checked ? 1 : -1;
-    return this.battlePlanLoaderPlans
-      .filter(plan => (
-        this.battlePlanLoaderPurpose !== 'automation'
-        || plan.kind === 'battle'
-      ))
-      .filter(plan => !filterSystem?.checked || plan.source !== 'system')
-      .filter((plan) => {
-        if (!keyword) return true;
-        return [
-          plan.name,
-          plan.file,
-          String(plan.chapter),
-          String(plan.map),
-          `${plan.chapter}-${plan.map}`,
-          plan.taskType ?? '',
-          plan.campaignName ?? '',
-        ].some(value => value.toLocaleLowerCase('zh-CN').includes(keyword));
-      })
-      .sort((left, right) => {
-        const result = this.battlePlanLoaderSortField === 'name'
-          ? left.name.localeCompare(right.name, 'zh-CN')
-          : left.modifiedAt - right.modifiedAt;
-        return (result || left.name.localeCompare(right.name, 'zh-CN')) * direction;
-      });
-  }
-
-  private renderBattlePlanLoaderList(): void {
-    const list = document.getElementById('battle-plan-loader-list');
-    if (!list) return;
-    const visiblePlans = this.visibleBattlePlans();
-    const previousSelection = this.selectedBattlePlan;
-    if (
-      !this.selectedBattlePlan
-      || !visiblePlans.some(plan => this.sameBattlePlan(plan, this.selectedBattlePlan))
-    ) {
-      this.selectedBattlePlan = visiblePlans[0] ?? null;
-    }
-    if (!this.sameBattlePlan(this.selectedBattlePlan, previousSelection)) {
-      this.resetBattlePlanFleetSelection(this.selectedBattlePlan);
-    }
-    list.replaceChildren();
-    if (visiblePlans.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'fleet-team-loader-preview-empty';
-      empty.textContent = this.battlePlanLoaderPlans.length === 0
-        ? '未读取到合法的作战配置'
-        : '没有符合当前条件的作战配置';
-      list.append(empty);
-      this.clearBattlePlanSelection();
-      return;
-    }
-    visiblePlans.forEach((plan) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'fleet-team-loader-item battle-plan-loader-item';
-      button.dataset['battlePlanFile'] = plan.file;
-      button.dataset['battlePlanSource'] = plan.source;
-      button.classList.toggle(
-        'active',
-        this.sameBattlePlan(plan, this.selectedBattlePlan),
-      );
-
-      const heading = document.createElement('div');
-      heading.className = 'fleet-team-loader-item-heading';
-      const name = document.createElement('strong');
-      name.textContent = plan.name;
-      const badge = document.createElement('span');
-      badge.className = `fleet-team-source-badge ${plan.source}`;
-      badge.textContent = plan.source === 'system' ? '系统预设' : '用户预设';
-      heading.append(name, badge);
-
-      const fileName = document.createElement('span');
-      fileName.className = 'battle-plan-loader-item-file';
-      fileName.textContent = plan.file;
-      fileName.title = plan.file;
-      const meta = document.createElement('span');
-      meta.className = 'battle-plan-loader-item-meta';
-      meta.textContent = plan.kind === 'preset'
-        ? `${this.taskPresetTypeLabel(plan)} · 任务预设`
-        : plan.modifiedAt > 0
-          ? `${this.battlePlanMapLabel(plan)} · ${plan.fleetCount} 支关联编队`
-        : `${plan.fleetCount} 支关联编队 · 重启后显示完整摘要`;
-      button.append(heading, fileName, meta);
-      list.append(button);
-    });
-    if (this.selectedBattlePlan) {
-      this.renderBattlePlanPreview(this.selectedBattlePlan);
-    }
-  }
-
-  private selectBattlePlan(plan: ManagedBattlePlan): void {
-    if (!this.sameBattlePlan(plan, this.selectedBattlePlan)) {
-      this.resetBattlePlanFleetSelection(plan);
-    }
-    this.selectedBattlePlan = plan;
-    document.querySelectorAll<HTMLElement>('[data-battle-plan-file]').forEach((item) => {
-      item.classList.toggle(
-        'active',
-        item.dataset['battlePlanFile'] === plan.file
-          && item.dataset['battlePlanSource'] === plan.source,
-      );
-    });
-    this.renderBattlePlanPreview(plan);
-  }
-
-  private resetBattlePlanFleetSelection(plan: ManagedBattlePlan | null): void {
-    this.selectedBattlePlanFleetIndex = (
-      this.isPickingBattlePlanWithFleet()
-      && plan?.kind === 'battle'
-      && plan?.fleets.length === 1
-    ) ? 0 : null;
-  }
-
-  private selectBattlePlanFleet(plan: ManagedBattlePlan, index: number): void {
-    if (
-      !this.isPickingBattlePlanWithFleet()
-      || !this.sameBattlePlan(plan, this.selectedBattlePlan)
-      || !plan.fleets[index]
-    ) {
-      return;
-    }
-    this.selectedBattlePlanFleetIndex = index;
-    this.renderBattlePlanPreview(plan);
-  }
-
-  private renderBattlePlanPreview(plan: ManagedBattlePlan): void {
-    const title = document.getElementById('battle-plan-loader-preview-title');
-    const badge = document.getElementById('battle-plan-loader-preview-source');
-    const body = document.getElementById('battle-plan-loader-preview-body');
-    const confirmButton = document.getElementById(
-      'btn-confirm-battle-plan-loader',
-    ) as HTMLButtonElement | null;
-    if (title) title.textContent = `配置预览：${plan.name}`;
-    if (badge) {
-      badge.hidden = false;
-      badge.className = `fleet-team-source-badge ${plan.source}`;
-      badge.textContent = plan.source === 'system' ? '系统预设' : '用户预设';
-    }
-    if (body) {
-      const hasDetails = plan.modifiedAt > 0;
-      if (plan.kind === 'preset') {
-        body.replaceChildren(
-          this.createBattlePlanPreviewField(
-            '任务类型',
-            this.taskPresetTypeLabel(plan),
-          ),
-          this.createBattlePlanPreviewField(
-            '执行次数',
-            `${plan.times} 次`,
-          ),
-          this.createBattlePlanPreviewField(
-            '任务参数',
-            this.taskPresetParameterLabel(plan),
-            true,
-          ),
-          this.createBattlePlanPreviewField(
-            '完整配置',
-            '加载后可在任务预设页面查看',
-            true,
-          ),
-        );
-      } else {
-        body.replaceChildren(
-          this.createBattlePlanPreviewField('章节关卡', this.battlePlanMapLabel(plan)),
-          this.createBattlePlanPreviewField(
-            '执行次数',
-            hasDetails ? `${plan.times} 次` : '重启后显示',
-          ),
-          this.createBattlePlanPreviewField(
-            '维修方案',
-            hasDetails
-              ? `${this.battlePlanRepairLabel(plan.repairMode)}-${this.battlePlanRepairMethodLabel()}`
-              : '重启后显示',
-          ),
-          this.createBattlePlanPreviewField(
-            '终点战果判断',
-            hasDetails ? this.battlePlanResultLabel(plan.result) : '重启后显示',
-          ),
-          this.createBattlePlanFleetPreview(plan, hasDetails),
-          this.createBattlePlanStopPreview(plan, hasDetails),
-        );
-      }
-    }
-    if (confirmButton) {
-      confirmButton.disabled = (
-        this.requiresBattlePlanFleetSelection(plan)
-        && this.selectedBattlePlanFleetIndex === null
-      );
-    }
-  }
-
-  private createBattlePlanPreviewField(
-    label: string,
-    value: string,
-    wide = false,
-  ): HTMLElement {
-    const field = document.createElement('div');
-    field.className = `battle-plan-preview-field${wide ? ' wide' : ''}`;
-    const caption = document.createElement('span');
-    caption.textContent = label;
-    const content = document.createElement('strong');
-    content.textContent = value;
-    content.title = value;
-    field.append(caption, content);
-    return field;
-  }
-
-  private createBattlePlanFleetPreview(
-    plan: ManagedBattlePlan,
-    hasDetails: boolean,
-  ): HTMLElement {
-    const section = document.createElement('section');
-    section.className = 'battle-plan-preview-section wide';
-
-    const heading = document.createElement('div');
-    heading.className = 'battle-plan-preview-section-heading';
-    const title = document.createElement('span');
-    title.textContent = '使用舰队';
-    const fleetId = document.createElement('strong');
-    fleetId.textContent = hasDetails
-      ? `舰队编号：第 ${plan.fleetId} 舰队`
-      : '舰队编号：重启后显示';
-    heading.append(title, fleetId);
-
-    const list = document.createElement('div');
-    list.className = 'battle-plan-preview-fleet-list';
-    if (plan.fleets.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'battle-plan-preview-empty';
-      empty.textContent = this.battlePlanLoaderPurpose === 'automation'
-        ? '没有可选择的编队，无法用于自动出征'
-        : this.isPickingBattlePlanWithFleet()
-          ? '未配置编队预设，将使用 YAML 的舰队编号和游戏当前编成'
-          : '未配置编队预设';
-      list.append(empty);
-    } else {
-      const selectable = this.isPickingBattlePlanWithFleet();
-      plan.fleets.forEach((fleet, index) => {
-        const card = document.createElement(selectable ? 'button' : 'div');
-        if (card instanceof HTMLButtonElement) card.type = 'button';
-        card.className = 'fleet-team-loader-item battle-plan-preview-fleet-card';
-        card.classList.toggle('selectable', selectable);
-        card.classList.toggle(
-          'active',
-          selectable && this.selectedBattlePlanFleetIndex === index,
-        );
-        appendTeamPlanCardContent(card, {
-          name: fleet.name,
-          source: fleet.source,
-          primaryCount: fleet.primaryCount,
-          backupCount: fleet.backupCount,
-        });
-        if (selectable) {
-          const state = document.createElement('span');
-          state.className = 'battle-plan-fleet-selection-state';
-          state.textContent = this.selectedBattlePlanFleetIndex === index
-            ? '已选择'
-            : '点击选择';
-          card.append(state);
-          card.setAttribute(
-            'aria-pressed',
-            String(this.selectedBattlePlanFleetIndex === index),
-          );
-          card.addEventListener(
-            'click',
-            () => this.selectBattlePlanFleet(plan, index),
-          );
-        }
-        list.append(card);
-      });
-    }
-    section.append(heading, list);
-    return section;
-  }
-
-  private createBattlePlanStopPreview(
-    plan: ManagedBattlePlan,
-    hasDetails: boolean,
-  ): HTMLElement {
-    const field = document.createElement('section');
-    field.className = 'battle-plan-preview-section wide';
-    const heading = document.createElement('div');
-    heading.className = 'battle-plan-preview-section-heading';
-    const title = document.createElement('span');
-    title.textContent = '停止检测';
-    heading.append(title);
-
-    const values = document.createElement('div');
-    values.className = 'battle-plan-preview-stop-values';
-    const loot = document.createElement('div');
-    const lootLabel = document.createElement('span');
-    lootLabel.textContent = '战利品检测';
-    const lootValue = document.createElement('strong');
-    lootValue.textContent = hasDetails ? String(plan.lootCountGe) : '重启后显示';
-    loot.append(lootLabel, lootValue);
-    const ship = document.createElement('div');
-    const shipLabel = document.createElement('span');
-    shipLabel.textContent = '掉落检测';
-    const shipValue = document.createElement('strong');
-    shipValue.textContent = hasDetails ? String(plan.shipCountGe) : '重启后显示';
-    ship.append(shipLabel, shipValue);
-    values.append(loot, ship);
-    field.append(heading, values);
-    return field;
-  }
-
-  private battlePlanRepairLabel(repairMode: number | number[]): string {
-    const label = (value: number): string => {
-      if (value === 1) return '中破就修';
-      if (value === 2) return '大破才修';
-      return String(value);
-    };
-    return Array.isArray(repairMode)
-      ? `按舰位：${repairMode.map(label).join(' / ')}`
-      : label(repairMode);
-  }
-
-  private battlePlanRepairMethodLabel(): string {
-    const method = document.getElementById(
-      'plan-edit-repair-method',
-    ) as HTMLSelectElement | null;
-    return method?.value === 'bath' ? '泡澡维修' : '快速维修';
-  }
-
-  private battlePlanResultLabel(result: ManagedBattlePlan['result']): string {
-    if (!result) return '不判断';
-    return result === 'SS' ? result : `${result}及以上`;
-  }
-
-  private clearBattlePlanSelection(): void {
-    this.selectedBattlePlan = null;
-    this.selectedBattlePlanFleetIndex = null;
-    const title = document.getElementById('battle-plan-loader-preview-title');
-    const badge = document.getElementById('battle-plan-loader-preview-source');
-    const body = document.getElementById('battle-plan-loader-preview-body');
-    const confirmButton = document.getElementById(
-      'btn-confirm-battle-plan-loader',
-    ) as HTMLButtonElement | null;
-    if (title) title.textContent = '配置预览：未选择';
-    if (badge) badge.hidden = true;
-    if (body) {
-      const empty = document.createElement('div');
-      empty.className = 'fleet-team-loader-preview-empty';
-      empty.textContent = '从左侧选择一个出征配置查看摘要';
-      body.replaceChildren(empty);
-    }
-    if (confirmButton) confirmButton.disabled = true;
-  }
-
-  private async confirmBattlePlanLoader(): Promise<void> {
-    if (!this.selectedBattlePlan) return;
-    if (this.isPickingBattlePlanWithFleet()) {
-      if (
-        this.requiresBattlePlanFleetSelection(this.selectedBattlePlan)
-        && this.selectedBattlePlanFleetIndex === null
-      ) {
-        return;
-      }
-      this.finishBattlePlanSelection({
-        plan: this.selectedBattlePlan,
-        ...(this.selectedBattlePlanFleetIndex === null
-          ? {}
-          : { fleetPresetIndex: this.selectedBattlePlanFleetIndex }),
-      });
-      this.closeBattlePlanLoader();
-      return;
-    }
-    const { file, source } = this.selectedBattlePlan;
-    const loaded = await this.openManagedPlan(file, source);
-    if (loaded) this.closeBattlePlanLoader();
-  }
-
-  private isPickingBattlePlanWithFleet(): boolean {
-    return (
-      this.battlePlanLoaderPurpose === 'queue'
-      || this.battlePlanLoaderPurpose === 'task-list'
-      || this.battlePlanLoaderPurpose === 'automation'
-    );
-  }
-
-  private requiresBattlePlanFleetSelection(plan: ManagedBattlePlan): boolean {
-    if (plan.kind === 'preset') return false;
-    return (
-      this.battlePlanLoaderPurpose === 'automation'
-      || (
-        this.isPickingBattlePlanWithFleet()
-        && plan.fleets.length > 0
-      )
-    );
-  }
-
-  private sameBattlePlan(
-    left: ManagedBattlePlan | null,
-    right: ManagedBattlePlan | null,
-  ): boolean {
-    return Boolean(
-      left
-      && right
-      && left.file === right.file
-      && left.source === right.source,
-    );
-  }
-
-  private battlePlanMapLabel(plan: ManagedBattlePlan): string {
-    if (plan.kind === 'preset') return this.taskPresetTypeLabel(plan);
-    const chapter = String(plan.chapter).trim();
-    const map = String(plan.map);
-    if (chapter === '?' || map === '?') return '重启后显示';
-    const normalizedChapter = chapter.toLocaleUpperCase('en-US');
-    const normalizedMap = map.toLocaleUpperCase('en-US');
-    if (normalizedChapter === 'E' || normalizedChapter === 'H') {
-      return `${normalizedChapter}${normalizedMap}`;
-    }
-    if (normalizedChapter === 'EX') return `EX-${normalizedMap}`;
-    return `${chapter}-${map}`;
-  }
-
-  private taskPresetTypeLabel(plan: ManagedBattlePlan): string {
-    const labels: Record<string, string> = {
-      normal_fight: '普通出击',
-      event_fight: '活动出击',
-      campaign: '战役',
-      exercise: '演习',
-      decisive: '决战',
-    };
-    return labels[plan.taskType ?? ''] ?? plan.taskType ?? '任务预设';
-  }
-
-  private taskPresetParameterLabel(plan: ManagedBattlePlan): string {
-    if (plan.taskType === 'campaign') {
-      return plan.campaignName || '未指定战役';
-    }
-    if (plan.taskType === 'exercise') {
-      return `第 ${plan.fleetId} 舰队`;
-    }
-    if (plan.taskType === 'decisive') {
-      return `第 ${plan.chapter} 章`;
-    }
-    return '引用受管出征计划';
+    await this.battlePlanLoader.openForEditor();
   }
 
   private async confirmDiscardUnsaved(
@@ -1113,7 +337,7 @@ export class PlanController {
 
   private planDraftSnapshot(): string {
     if (!this.currentPlan) return '';
-    return JSON.stringify({
+    return jsonCodec.stringify({
       name: this.planPresetName,
       yaml: this.currentPlan.toYaml(),
     });

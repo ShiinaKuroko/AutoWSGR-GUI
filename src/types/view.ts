@@ -1,132 +1,7 @@
-/**
- * ViewObject 接口定义 —— Controller 传递给 View 的唯一数据结构。
- * View 层只认识这些接口，不依赖任何 Model 或后端类型。
- */
+/** 定义 Controller 交给各页面渲染的 ViewObject、表单值和展示状态。 */
 
-// ════════════════════════════════════════
-// 主页面 ViewObject
-// ════════════════════════════════════════
-
-/** 当前运行状态 */
-export type AppStatus = 'idle' | 'running' | 'stopping' | 'error' | 'not_connected';
-
-/** 当前任务中的一艘舰船及其图鉴检索名。 */
-export interface CurrentFleetShipVO {
-  name: string;
-  searchName?: string;
-}
-
-/** 主页面 VO */
-export interface MainViewObject {
-  status: AppStatus;
-  statusText: string;
-  currentTask: TaskViewObject | null;
-  /** 当前运行任务明确携带的编队；无法确定时为空。 */
-  currentFleet: CurrentFleetShipVO[];
-  expeditionTimer: string;       // 如 "12:34" 下次远征检查倒计时
-  taskQueue: TaskQueueItemVO[];
-  wsConnected: boolean;
-  /** 当前正在运行的任务 ID（与 taskQueue 中的 id 对应） */
-  runningTaskId: string | null;
-}
-
-/** 正在执行的任务 */
-export interface TaskViewObject {
-  name: string;
-  type: 'normal_fight' | 'event_fight' | 'campaign' | 'exercise' | 'expedition' | 'decisive';
-  progress: string;              // 如 "2/5"
-  startedAt: string;
-}
-
-/** 队列中排队的任务 */
-export interface TaskQueueItemVO {
-  id: string;
-  name: string;
-  priorityLabel: string;         // "远征" | "用户" | "日常"
-  remaining: number;
-  totalTimes: number;
-  /** 次数留空时为 true，界面显示“无限”。 */
-  unlimited?: boolean;
-  /** 进度文本，如 "2/5"，仅当前运行的任务有值 */
-  progress?: string;
-  /** 进度百分比 0~1，用于进度条 */
-  progressPercent?: number;
-  /** 实时资源文本（后端出征面板 OCR 结果），如 "装备 3/200 | 舰船 253/500" */
-  acquisitionText?: string;
-}
-
-/** 日志条目 */
-export interface LogEntryVO {
-  time: string;       // HH:MM:SS
-  level: string;      // debug/info/warning/error
-  channel: string;
-  message: string;
-}
-
-// ════════════════════════════════════════
-// Plan 预览页 ViewObject
-// ════════════════════════════════════════
-
-/** 地图节点类型 */
-export type MapNodeType = 'Start' | 'Normal' | 'Boss' | 'Resource' | 'Penalty' | 'Suppress' | 'Aerial' | 'Hard';
-
-/** 节点信息 */
-export interface NodeViewObject {
-  id: string;                     // 节点名，如 "A", "B", "M"
-  formation: string;              // 阵型中文名
-  night: boolean;
-  proceed: boolean;
-  hasCustomRules: boolean;        // 是否有自定义 enemy_rules
-  note: string;                   // 简要备注
-  nodeType: MapNodeType;          // 地图数据中的节点类型
-  detour: boolean;                // 是否为迂回点
-  mapNight: boolean;              // 地图数据中标记为夜战点
-  position?: [number, number];    // 地图上的坐标 (已缩放)
-}
-
-/** 地图边 (连线) */
-export interface MapEdgeVO {
-  from: [number, number];
-  to: [number, number];
-  fromId: string;
-  toId: string;
-}
-
-/** Plan 预览 VO */
-export interface PlanPreviewViewObject {
-  fileName: string;
-  chapter: number | string;
-  map: number | string;
-  mapName: string;                // "7-4" 格式
-  repairModeValue: number;        // 1 或 2
-  fightConditionValue: number;    // 1-5
-  fleetId: number;                // 1-4
-  selectedNodes: NodeViewObject[];
-  comment: string;                // yaml 文件顶部注释
-  /** 所有地图节点（含未选中的），用于地图可视化 */
-  allNodes?: NodeViewObject[];
-  /** 地图连线 */
-  edges?: MapEdgeVO[];
-  /** 地图原始坐标范围的宽高比 */
-  mapAspectRatio?: number;
-  /** 编队预设列表 */
-  fleetPresets?: FleetPresetVO[];
-  /** 任务配置 */
-  times?: number;
-  gap?: number;
-  lootCountGe?: number;
-  shipCountGe?: number;
-}
-
-/** 编队预设 VO */
-export interface FleetPresetVO {
-  name: string;
-  ships: import('./model.js').ShipSlot[];
-}
-
-// ════════════════════════════════════════
-// 配置页 ViewObject
-// ════════════════════════════════════════
+import type { PlanPresetSource, ShipLibraryShip } from './ipc.js';
+import type { NormalFightTaskConfig, ShipSlot } from './model.js';
 
 export interface ConfigViewObject {
   emulatorType: string;
@@ -142,7 +17,7 @@ export interface ConfigViewObject {
   exerciseFleetId: number;
   battleTimes: number;
   autoNormalFight: boolean;
-  normalFightTasks: import('./model.js').NormalFightTaskConfig[];
+  normalFightTasks: NormalFightTaskConfig[];
   autoLoot: boolean;
   lootPlanIndex: number;
   lootStopCount: number;
@@ -158,8 +33,8 @@ export interface ConfigViewObject {
   ocrGpu: boolean;
   ocrMirror: 'origin' | 'github' | 'tencent' | 'modelscope';
   ocrConfidence: number;
-  shipNameAliases: Record<string, string>;
-  shipNameCorrections: Record<string, string>;
+  shipNameAliasesText: string;
+  shipNameCorrectionsText: string;
   cudaPath: string;
   saveBackendScreenshots: boolean;
   pythonPath: string;
@@ -177,78 +52,140 @@ export interface ConfigViewObject {
   planRoot: string;
 }
 
-// ════════════════════════════════════════
-// 模板库 ViewObject
-// ════════════════════════════════════════
+export type AppStatus =
+  | 'idle'
+  | 'running'
+  | 'stopping'
+  | 'error'
+  | 'not_connected';
 
-export interface TemplateLibraryItemVO {
+export interface CurrentFleetShipVO {
+  name: string;
+  searchName?: string;
+}
+
+export interface MainViewObject {
+  status: AppStatus;
+  statusText: string;
+  currentTask: TaskViewObject | null;
+  currentFleet: CurrentFleetShipVO[];
+  expeditionTimer: string;
+  taskQueue: TaskQueueItemVO[];
+  wsConnected: boolean;
+  runningTaskId: string | null;
+}
+
+export interface TaskViewObject {
+  name: string;
+  type:
+    | 'normal_fight'
+    | 'event_fight'
+    | 'campaign'
+    | 'exercise'
+    | 'expedition'
+    | 'decisive';
+  progress: string;
+  startedAt: string;
+}
+
+export interface TaskQueueItemVO {
   id: string;
   name: string;
-  type: string;
-  typeLabel: string;
-  planCount: number;
-  defaultTimes: number;
-  description?: string;
-  isBuiltin: boolean;
+  priorityLabel: string;
+  remaining: number;
+  totalTimes: number;
+  unlimited?: boolean;
+  progress?: string;
+  progressPercent?: number;
+  acquisitionText?: string;
 }
 
-// ════════════════════════════════════════
-// 模板向导 ViewObject
-// ════════════════════════════════════════
+export interface LogEntryVO {
+  time: string;
+  level: string;
+  channel: string;
+  message: string;
+}
 
-/** 向导 collectForm() 返回的表单数据 */
-export interface WizardFormData {
-  type: string;
+export interface FleetRuleDraftViewObject {
+  shipTypes: string[];
+  levelEnabled: boolean;
+  minLevel: number | null;
+  maxLevel: number | null;
+}
+
+export interface FleetCandidateDraftViewObject
+  extends FleetRuleDraftViewObject {
+  ship: ShipLibraryShip | null;
+}
+
+export interface FleetSlotDraftViewObject
+  extends FleetRuleDraftViewObject {
+  primary: ShipLibraryShip | null;
+  candidates: FleetCandidateDraftViewObject[];
+}
+
+export interface FleetDraftViewObject {
   name: string;
-  defaultTimes: number;
-  stopLoot: number;
-  stopShip: number;
-  /** 普通出击 */
-  planPath?: string;
-  fleetId?: number;
-  fleetNf?: string[];
-  /** 演习 */
-  exerciseFleetId?: number;
-  fleetEx?: string[];
-  /** 战役 */
-  campaignName?: string;
-  fleetCp?: string[];
-  /** 决战 */
-  chapter?: number;
-  level1?: string[];
-  level2?: string[];
-  flagshipPriority?: string[];
-  useQuickRepair?: boolean;
+  file: string | null;
+  source: PlanPresetSource;
+  slots: FleetSlotDraftViewObject[];
 }
 
-/** 向导预填数据 (editTemplate / importTemplate 时传入) */
-export interface WizardPrefillData {
-  type?: string;
-  name?: string;
-  defaultTimes?: number;
-  planPaths?: string[];
-  planPath?: string;
-  fleet_id?: number;
-  fleet?: string[];
-  campaign_name?: string;
-  chapter?: number;
-  level1?: string[];
-  level2?: string[];
-  flagship_priority?: string[];
-  use_quick_repair?: boolean;
-  defaultStopCondition?: { loot_count_ge?: number; ship_count_ge?: number };
+export type MapNodeType =
+  | 'Start'
+  | 'Normal'
+  | 'Boss'
+  | 'Resource'
+  | 'Penalty'
+  | 'Suppress'
+  | 'Aerial'
+  | 'Hard';
+
+export interface NodeViewObject {
+  id: string;
+  formation: string;
+  night: boolean;
+  proceed: boolean;
+  hasCustomRules: boolean;
+  note: string;
+  nodeType: MapNodeType;
+  detour: boolean;
+  mapNight: boolean;
+  position?: [number, number];
 }
 
-/** 选择器弹窗选项 */
-export interface SelectorOption {
-  icon: string;
-  label: string;
-  sublabel?: string;
+export interface MapEdgeVO {
+  from: [number, number];
+  to: [number, number];
+  fromId: string;
+  toId: string;
 }
 
-// ════════════════════════════════════════
-// 首次运行引导 ViewObject
-// ════════════════════════════════════════
+export interface PlanPreviewViewObject {
+  fileName: string;
+  chapter: number | string;
+  map: number | string;
+  mapName: string;
+  repairModeValue: number;
+  fightConditionValue: number;
+  fleetId: number;
+  selectedNodes: NodeViewObject[];
+  comment: string;
+  allNodes?: NodeViewObject[];
+  edges?: MapEdgeVO[];
+  mapAspectRatio?: number;
+  fleetPresets?: FleetPresetVO[];
+  times?: number;
+  gap?: number;
+  lootCountGe?: number;
+  shipCountGe?: number;
+}
+
+export interface FleetPresetVO {
+  name: string;
+  ships: ShipSlot[];
+}
 
 export interface SetupWizardVO {
   emuType: string;
@@ -256,11 +193,6 @@ export interface SetupWizardVO {
   pythonPath: string;
 }
 
-// ════════════════════════════════════════
-// 任务预设 ViewObject
-// ════════════════════════════════════════
-
-/** 预设详情面板数据 */
 export interface PresetDetailVO {
   name: string;
   typeLabel: string;
@@ -277,7 +209,6 @@ export interface PresetDetailVO {
   times?: number;
 }
 
-/** 预设表单收集值 */
 export interface PresetFormValues {
   times: number;
   exerciseFleetId?: number;
@@ -289,4 +220,87 @@ export interface PresetFormValues {
   useQuickRepair?: boolean;
   planId?: string;
   fightFleetId?: number;
+}
+
+export interface TaskGroupItemViewObject {
+  path?: string;
+  managedSource?: PlanPresetSource;
+  managedFile?: string;
+  templateId?: string;
+  kind: 'plan' | 'preset' | 'template';
+  times: number;
+  label: string;
+}
+
+export interface TaskGroupItemMeta {
+  mapName?: string;
+  fleetId?: number;
+  repairMode?: string;
+  typeLabel?: string;
+  fleet?: string[];
+  fleetPresetName?: string;
+}
+
+export interface TaskGroupViewObject {
+  groups: ReadonlyArray<{ name: string; itemCount: number }>;
+  activeGroupName: string;
+  items: ReadonlyArray<TaskGroupItemViewObject>;
+  itemMetas?: ReadonlyArray<TaskGroupItemMeta | null>;
+}
+
+export interface TemplateLibraryItemVO {
+  id: string;
+  name: string;
+  type: string;
+  typeLabel: string;
+  planCount: number;
+  defaultTimes: number;
+  description?: string;
+  isBuiltin: boolean;
+}
+
+export interface WizardFormData {
+  type: string;
+  name: string;
+  defaultTimes: number;
+  stopLoot: number;
+  stopShip: number;
+  planPath?: string;
+  fleetId?: number;
+  fleetNf?: string[];
+  exerciseFleetId?: number;
+  fleetEx?: string[];
+  campaignName?: string;
+  fleetCp?: string[];
+  chapter?: number;
+  level1?: string[];
+  level2?: string[];
+  flagshipPriority?: string[];
+  useQuickRepair?: boolean;
+}
+
+export interface WizardPrefillData {
+  type?: string;
+  name?: string;
+  defaultTimes?: number;
+  planPaths?: string[];
+  planPath?: string;
+  fleet_id?: number;
+  fleet?: string[];
+  campaign_name?: string;
+  chapter?: number;
+  level1?: string[];
+  level2?: string[];
+  flagship_priority?: string[];
+  use_quick_repair?: boolean;
+  defaultStopCondition?: {
+    loot_count_ge?: number;
+    ship_count_ge?: number;
+  };
+}
+
+export interface SelectorOption {
+  icon: string;
+  label: string;
+  sublabel?: string;
 }

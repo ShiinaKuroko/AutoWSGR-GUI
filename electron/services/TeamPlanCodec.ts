@@ -3,7 +3,7 @@
  */
 import * as yaml from 'js-yaml';
 
-import { FLEET_SHIP_TYPE_CODES } from '../../src/shared/fleetShipTypes';
+import { normalizeFleetShipTypeCode } from '../../src/shared/fleetShipTypes';
 
 export type PlanPresetSource = 'system' | 'user';
 
@@ -41,8 +41,6 @@ export interface UserTeamPlan {
 
 /** 受管编队文件必须使用的既有命名规则。 */
 export const TEAM_FILE_PATTERN = /^team[-_][^\\/]+\.ya?ml$/i;
-
-const ALLOWED_FLEET_SHIP_TYPES = new Set(FLEET_SHIP_TYPE_CODES);
 
 /** 负责独立编队计划的归一化、序列化和文件名生成。 */
 export class TeamPlanCodec {
@@ -367,9 +365,10 @@ export class TeamPlanCodec {
       if (typeof value !== 'string' || !value.trim()) {
         throw new Error(`${field} 必须是非空字符串列表`);
       }
-      const shipType = value.trim().toLowerCase();
-      if (!ALLOWED_FLEET_SHIP_TYPES.has(shipType)) {
-        throw new Error(`${field} 不符合后端接口: ${shipType}`);
+      const input = value.trim().toLowerCase();
+      const shipType = normalizeFleetShipTypeCode(input);
+      if (!shipType) {
+        throw new Error(`${field} 不符合后端接口: ${input}`);
       }
       return shipType;
     });

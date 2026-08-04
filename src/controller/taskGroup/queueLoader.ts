@@ -1,3 +1,4 @@
+/** 把任务组条目解析为 Scheduler 可执行任务并加入队列。 */
 /**
  * queueLoader —— 将任务组条目加载到调度队列的独立函数。
  */
@@ -5,14 +6,17 @@ import type { TaskGroupModel, TaskGroupItem } from '../../model/TaskGroupModel';
 import type { TemplateModel } from '../../model/TemplateModel';
 import { PlanModel } from '../../model/PlanModel';
 import { TaskPriority, type Scheduler } from '../../model/scheduler';
-import type { EventFightReq, NormalFightReq, TaskRequest } from '../../types/api';
-import type { ManagedBattlePlanSelection } from '../../types/electronBridge';
-import type { TaskPreset } from '../../types/model';
-import { resolveFleetPreset, resolveFleetPresetRules, toBackendName } from '../../data/shipData';
+import type { EventFightReq, NormalFightReq, TaskRequest } from '../../types/api.js';
+import type { ManagedBattlePlanSelection } from '../../types/ipc.js';
+import type { TaskPreset } from '../../types/model.js';
+import { resolveFleetPreset } from '../../model/fleet/ShipMatcher';
+import { resolveFleetPresetRules } from '../../model/fleet/FleetRuleMapper';
+import { toBackendName } from '../../model/fleet/ShipNameNormalizer';
 import { Logger } from '../../utils/Logger';
 import { normalizeSelectedNodesForBackend } from '../plan/selectedNodes';
 import type { TaskGroupHost } from './TaskGroupController';
 import { readTaskGroupItemFile } from './managedPlanReader';
+import { yamlCodec } from '../../adapter';
 
 export function buildPlanQueueRequest(
   item: TaskGroupItem,
@@ -168,10 +172,7 @@ export async function loadManagedPlanToQueue(
     fleetPresetIndex: selection.fleetPresetIndex,
   };
   const { content, path } = await readTaskGroupItemFile(item);
-  const parsed = (await import('js-yaml')).load(content) as Record<
-    string,
-    unknown
-  >;
+  const parsed = yamlCodec.parse<Record<string, unknown>>(content);
   if (
     item.kind === 'preset'
     || ('task_type' in parsed && !('map' in parsed))
@@ -209,7 +210,7 @@ export async function loadGroupToQueue(
       }
 
       const { content, path } = await readTaskGroupItemFile(item);
-      const parsed = (await import('js-yaml')).load(content) as Record<string, unknown>;
+      const parsed = yamlCodec.parse<Record<string, unknown>>(content);
       if (!parsed || typeof parsed !== 'object') continue;
 
       if (item.kind === 'preset' || ('task_type' in parsed && !('map' in parsed))) {
@@ -301,7 +302,7 @@ export async function loadSingleItemToQueue(
 
   try {
     const { content, path } = await readTaskGroupItemFile(item);
-    const parsed = (await import('js-yaml')).load(content) as Record<string, unknown>;
+    const parsed = yamlCodec.parse<Record<string, unknown>>(content);
     if (!parsed || typeof parsed !== 'object') return;
 
     if (item.kind === 'preset' || ('task_type' in parsed && !('map' in parsed))) {

@@ -2,6 +2,7 @@
  * 互斥运行舰船资料库更新并解析进度。
  */
 import * as fs from 'fs';
+import * as path from 'path';
 import { spawn } from 'child_process';
 import { ShipLibraryService } from './ShipLibraryService';
 
@@ -71,9 +72,19 @@ export class ShipLibraryUpdater {
 
     return new Promise((resolve) => {
       const spawnProcess = this.dependencies.spawnProcess ?? spawn;
+      // 便携版 Python 的 ._pth 隔离模式不会自动加入脚本目录。
+      const bootstrap = [
+        'import runpy, sys',
+        `sys.path.insert(0, ${JSON.stringify(path.dirname(updaterPath))})`,
+        'script = sys.argv[1]',
+        'sys.argv = sys.argv[1:]',
+        'runpy.run_path(script, run_name="__main__")',
+      ].join('; ');
       const child = spawnProcess(
         pythonCmd,
         [
+          '-c',
+          bootstrap,
           updaterPath,
           '--output',
           this.library.directory(),

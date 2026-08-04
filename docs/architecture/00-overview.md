@@ -16,7 +16,7 @@ AutoWSGR-GUI 是一个基于 **Electron** 的桌面应用，为 [AutoWSGR](https
 graph TB
   subgraph Renderer["渲染进程 (src/)"]
     View["View 层<br/>MainView(Facade) · PlanPreviewView(Facade)<br/>ConfigView · TaskGroupView<br/>TemplateLibraryView · SetupWizardView"]
-    Controller["Controller 层<br/>AppController · StartupController<br/>PlanController · TaskGroupController<br/>TemplateController · SchedulerBinder<br/>── ControllerHost 接口解耦 ──"]
+    Controller["Controller 层<br/>AppController · StartupController<br/>PlanController · FleetPlannerController<br/>TaskGroupController · TemplateController<br/>── 各功能最小 Host 接口 ──"]
     Model["Model 层<br/>Scheduler · CronScheduler · TaskQueue<br/>ApiClient · ConfigModel · PlanModel<br/>TemplateModel · TaskGroupModel<br/>RepairManager · StopConditionChecker"]
   end
 
@@ -52,9 +52,10 @@ graph TB
 | 层 | 位置 | 职责 |
 |----|------|------|
 | **View** | `src/view/` | 纯 UI 渲染，接收 ViewObject 显示；不含业务逻辑。大型视图采用 Facade 模式内部拆分 |
-| **Controller** | `src/controller/` | 从 Model 提取数据 → 拼装 ViewObject → 调用 View 渲染；处理用户事件 → 调用 Model / IPC。通过 ControllerHost 接口解耦 |
-| **Model** | `src/model/` | 业务实体 + 领域服务：调度、配置、方案解析、后端通信 |
-| **Types** | `src/types/` | 跨层共享的 TypeScript 类型定义，按领域拆分为 5 个文件 |
+| **Controller** | `src/controller/` | 从 Model 提取数据 → 拼装 ViewObject → 调用 View 渲染；处理用户事件 → 调用 Model / Adapter。各功能声明自己的最小 Host |
+| **Model** | `src/model/` | 业务实体 + 领域服务：调度、配置、方案、Fleet 规则、后端通信 |
+| **Adapter** | `src/adapter/` | YAML/JSON、IPC、HTTP/WS 和浏览器存储边界 |
+| **Types** | `src/types/` | API、IPC、Model、View 和 Scheduler 五个领域类型文件 |
 | **主进程** | `electron/` | `main.ts` 负责装配；`ipc/` 保持通道契约；`services/` 承担窗口、配置、计划、环境和后端用例 |
 | **Python 后端** | 外部 | 游戏自动化核心逻辑：模拟器连接、战斗执行、OCR 识别 |
 
@@ -103,13 +104,15 @@ AutoWSGR-GUI/
 │       └── index.ts            # 聚合导出
 ├── src/                        # 渲染进程 (MVC)
 │   ├── controller/             # 控制器（6 个子目录）
-│   │   ├── app/                # 主控制器：AppController · ConfigController · SchedulerBinder · rendering · theme · constants
+│   │   ├── app/                # 应用控制器：AppController · ConfigController · SettingsController · SchedulerBinder
 │   │   ├── startup/            # 启动流程：StartupController · connection · envAndUpdates
-│   │   ├── plan/               # 方案控制器：PlanController · nodeEditor · presetFlow · rendering
-│   │   ├── taskGroup/          # 任务组：TaskGroupController · addItems · contextMenu · importExport · metaLoader · queueLoader
+│   │   ├── plan/               # 方案控制器：PlanController · BattlePlanLoaderController · FleetPlannerController · DecisivePlanController
+│   │   ├── taskGroup/          # 任务组：TaskGroupController · addItems · contextMenu · metaLoader · queueLoader
 │   │   ├── template/           # 模板：TemplateController · crud · selectors · useTemplate · wizard
-│   │   └── shared/             # 共享基接口：ControllerHost · DialogHelper
+│   │   └── shared/             # 共享 UI 边界：DialogHelper
+│   ├── adapter/                # YAML/JSON · IPC · HTTP/WS · Storage
 │   ├── model/                  # 数据模型 + 业务服务
+│   │   ├── fleet/              # FleetDraft · DecisiveFleetDraft · ShipMatcher · FleetRuleMapper
 │   │   ├── scheduler/          # 调度子模块：Scheduler · CronScheduler · TaskQueue · ExpeditionTimer · StopConditionChecker · RepairManager
 │   │   ├── ApiClient.ts        # HTTP/WebSocket 后端通信
 │   │   ├── ConfigModel.ts      # 配置数据模型
@@ -119,20 +122,20 @@ AutoWSGR-GUI/
 │   │   └── MapDataLoader.ts    # 地图数据加载与缓存
 │   ├── view/                   # UI 视图（8 个子目录）
 │   │   ├── main/               # 主页面 Facade：MainView · LogView · TaskQueueView · StatusBar
-│   │   ├── plan/               # 方案预览 Facade：PlanPreviewView · MapView · NodeEditorView · FleetPresetView · FleetEditDialog
+│   │   ├── plan/               # 方案与舰队：PlanPreviewView · FleetPlannerView · FleetEditorView · FleetGalleryView · PlanManagementView
 │   │   ├── config/             # 配置页：ConfigView
 │   │   ├── taskGroup/          # 任务组：TaskGroupView
 │   │   ├── template/           # 模板：TemplateLibraryView · TemplateWizardView · SelectorDialog
 │   │   ├── setup/              # 初始化向导：SetupWizardView
 │   │   ├── shared/             # 共享组件：ShipAutocomplete
 │   │   └── styles/             # SCSS 样式（base/ · components/ · pages/）
-│   ├── types/                  # TypeScript 类型定义
-│   │   ├── api.ts              # API / WebSocket 通信类型
-│   │   ├── electronBridge.ts   # IPC 桥接口
-│   │   ├── model.ts            # 业务实体类型（PlanData 等）
-│   │   ├── scheduler.ts        # 调度器公共类型
-│   │   └── view.ts             # ViewObject 接口
-│   ├── data/                   # 静态数据（舰船数据库）
+│   ├── types/                  # 5 个按完整领域合并的类型文件
+│   │   ├── api.ts              # API / WebSocket DTO
+│   │   ├── ipc.ts              # IPC DTO、ElectronBridge 和 Window 声明
+│   │   ├── model.ts            # Plan、Config、Template、Repair 领域类型
+│   │   ├── view.ts             # 页面 ViewObject 和表单值
+│   │   └── scheduler.ts        # 调度器公共类型
+│   ├── data/                   # 舰船静态 JSON；运行时规则位于 model/fleet
 │   └── utils/                  # 工具类（Logger）
 ├── resource/                   # 只读资源
 │   ├── system_battle_plans/    # 系统作战计划 (.yaml)
@@ -229,12 +232,12 @@ sequenceDiagram
 
 ## 关键架构模式
 
-### ControllerHost 依赖注入
+### 最小 Host 依赖注入
 
-子控制器（PlanController / TaskGroupController 等）不直接依赖 AppController，而是通过 `ControllerHost` 接口访问共享能力：
+子控制器不直接依赖 `AppController`，而是在所属功能模块中声明最小 Host，例如：
 
 ```typescript
-interface ControllerHost {
+interface PlanHost {
   readonly scheduler: Scheduler;
   plansDir: string;
   renderMain(): void;
@@ -242,11 +245,14 @@ interface ControllerHost {
 }
 ```
 
-各子控制器还定义自己的扩展 Host 接口（如 `StartupHost`、`TaskGroupHost`），由 AppController 实现。详见 [Controller 层](01-controller-layer.md)。
+`PlanHost`、`StartupHost`、`TaskGroupHost` 等接口彼此独立，不再存在通用
+`ControllerHost` 基接口。详见 [Controller 层](01-controller-layer.md)。
 
 ### ViewObject 单向数据传递
 
-Controller 从 Model 提取数据，拼装为 **ViewObject**（定义在 `src/types/view.ts`），单向传递给 View 渲染。View 不直接访问 Model，保证视图层的纯净。
+Controller 从 Model 提取数据，拼装为 **ViewObject**（定义在
+`src/types/view.ts`），单向传递给 View 渲染。View 不访问有状态 Model；类型、
+不可变目录和无状态领域函数可以直接复用，但不能成为第二个状态所有者。
 
 ```
 Model → Controller.extractViewObject() → ViewObject → View.render(vo)
@@ -254,7 +260,11 @@ Model → Controller.extractViewObject() → ViewObject → View.render(vo)
 
 ### View Facade 模式
 
-大型视图组件采用 Facade 模式：`MainView` 持有 `LogView` / `TaskQueueView` / `StatusBar`，`PlanPreviewView` 持有 `MapView` / `NodeEditorView` / `FleetPresetView`。Controller 只与 Facade 交互，无需感知内部拆分。
+大型视图组件采用 Facade 模式：`MainView` 组合日志、队列和状态栏；
+`PlanPreviewView` 组合地图和节点编辑；`FleetPlannerView` 组合舰队编辑、规则、
+图鉴、计划管理和方案选择。普通舰队草稿只由 `FleetPlannerController` 的单个
+`FleetDraft` 持有，决战草稿由 `DecisivePlanController` 的
+`DecisiveFleetDraft` 独立持有。
 
 ### 优先级任务队列
 
@@ -281,13 +291,13 @@ Model → Controller.extractViewObject() → ViewObject → View.render(vo)
 
 类型定义从各模块提取为独立的 `src/types/` 层，按领域划分：
 
-| 文件 | 内容 | 被谁引用 |
+| 路径 | 内容 | 被谁引用 |
 |------|------|----------|
 | `api.ts` | API 响应、TaskRequest、WebSocket 消息类型 | ApiClient、Controller |
-| `electronBridge.ts` | IPC 桥接口 `ElectronBridge` | Controller、StartupController |
-| `model.ts` | 业务实体：PlanData、NodeArgs、FleetPreset、StopCondition | Model、Controller |
+| `ipc.ts` | IPC DTO、`ElectronBridge` 与全局 Window 声明 | Adapter、Controller |
+| `model.ts` | Plan、Config、Template、Repair 领域类型 | Model、Controller |
 | `scheduler.ts` | 调度器：TaskPriority、SchedulerTask、SchedulerCallbacks | Scheduler、SchedulerBinder |
-| `view.ts` | ViewObject：MainViewObject、PlanPreviewViewObject 等 | Controller → View |
+| `view.ts` | Main、Plan、Config、Template、TaskGroup ViewObject | Controller → View |
 
 ---
 
@@ -295,7 +305,7 @@ Model → Controller.extractViewObject() → ViewObject → View.render(vo)
 
 | 文档 | 功能域 |
 |------|--------|
-| [Controller 层](01-controller-layer.md) | ControllerHost/DI 模式 · 6 个子目录结构 · StartupController 启动编排 |
+| [Controller 层](01-controller-layer.md) | 最小 Host 接口 · 6 个子目录结构 · StartupController 启动编排 |
 | [任务调度系统](02-task-scheduling.md) | Scheduler · TaskQueue · CronScheduler · ExpeditionTimer · StopCondition · RepairManager |
 | [配置系统](03-configuration.md) | ConfigModel · ConfigView · usersettings.yaml · gui_settings.json |
 | [出击计划系统](04-battle-plan.md) | PlanModel · PlanController · PlanPreviewView(Facade) · MapDataLoader |
@@ -303,3 +313,4 @@ Model → Controller.extractViewObject() → ViewObject → View.render(vo)
 | [后端通信](06-backend-communication.md) | IPC Bridge · ApiClient · REST API · WebSocket 事件 |
 | [环境管理](07-environment-management.md) | Python 发现/安装 (pythonEnv/) · 模拟器检测 · 后端生命周期 |
 | [开发环境搭建](08-dev-setup.md) | 依赖安装 · 开发/构建/打包命令 · SCSS 架构 · 调试技巧 |
+| [`src` TypeScript 模块目录](09-src-typescript-catalog.md) | 当前 97 个 TS 文件和逐文件职责 |

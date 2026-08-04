@@ -1,3 +1,4 @@
+/** 保存和恢复可滚动容器的界面位置。 */
 export interface ElementScrollPosition {
   top: number;
   left: number;

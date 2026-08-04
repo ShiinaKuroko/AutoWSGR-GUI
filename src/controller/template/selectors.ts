@@ -1,13 +1,19 @@
+/** 提供方案、舰队和任务参数的模板选择流程。 */
 /**
  * selectors —— 模板使用时的选择弹窗逻辑。
  */
 import type { TemplateWizardView } from '../../view/template/TemplateWizardView';
 import type { TaskGroupModel } from '../../model/TaskGroupModel';
-import type { TaskTemplate } from '../../types/model';
-import type { SelectorOption } from '../../types/view';
-import { shipSlotLabel } from '../../data/shipData';
+import type {
+  FleetPreset,
+  PlanData,
+  TaskTemplate,
+} from '../../types/model.js';
+import type { SelectorOption } from '../../types/view.js';
+import { shipSlotLabel } from '../../model/fleet/ShipMatcher';
 import { Logger } from '../../utils/Logger';
 import { addPlanToTaskList } from './useTemplate';
+import { yamlCodec } from '../../adapter';
 
 const CAMPAIGN_OPTIONS: string[] = [
   '困难潜艇', '困难航母', '困难驱逐', '困难巡洋', '困难战列',
@@ -65,14 +71,16 @@ export async function showPlanSelector(
   const planPath = paths[idx];
   const planName = planPath.split(/[\\/]/).pop()?.replace(/\.ya?ml$/i, '') ?? planPath;
 
-  let parsedPlan: Record<string, unknown> | undefined;
+  let parsedPlan: Partial<PlanData> | undefined;
 
   const bridge = window.electronBridge;
   if (bridge) {
     try {
       const content = await bridge.readFile(planPath);
-      parsedPlan = (await import('js-yaml')).load(content) as Record<string, unknown>;
-      const rawPresets = Array.isArray(parsedPlan?.fleet_presets) ? parsedPlan.fleet_presets as any[] : [];
+      parsedPlan = yamlCodec.parse<Partial<PlanData>>(content);
+      const rawPresets = Array.isArray(parsedPlan?.fleet_presets)
+        ? parsedPlan.fleet_presets
+        : [];
       if (rawPresets.length > 0) {
         let defaultFleetId = tpl.fleet_id ?? 1;
         const rawFleetId = Number(parsedPlan?.fleet_id);
@@ -115,7 +123,7 @@ export async function showPlanSelector(
 export async function showFleetPresetPicker(
   tpl: TaskTemplate,
   planPath: string,
-  rawPresets: any[],
+  rawPresets: FleetPreset[],
   groupName: string,
   wizardView: TemplateWizardView,
   taskGroupModel: TaskGroupModel,
@@ -123,10 +131,10 @@ export async function showFleetPresetPicker(
   selectedFleetId: number,
 ): Promise<void> {
   const planName = planPath.split(/[\\/]/).pop()?.replace(/\.ya?ml$/i, '') ?? '';
-  const options: SelectorOption[] = rawPresets.map((p: any, i: number) => {
+  const options: SelectorOption[] = rawPresets.map((p, i) => {
     const pName = p.name ?? `预设${i + 1}`;
     const ships = Array.isArray(p.ships) ? p.ships : [];
-    const shipsHtml = ships.map((s: any) => {
+    const shipsHtml = ships.map((s) => {
       if (typeof s === 'string') return `<span class="ship-tag">${s}</span>`;
       const label = shipSlotLabel(s);
       return `<span class="ship-tag ship-tag-filter">${label}</span>`;

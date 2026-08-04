@@ -1,37 +1,17 @@
+/** 渲染任务组和任务条目，并发出选择、排序和菜单意图。 */
 /**
  * TaskGroupView —— 任务组面板渲染。
  * 纯视图组件：渲染组列表、条目列表，暴露操作回调。
  */
-import type { TaskGroupItem } from '../../model/TaskGroupModel';
+import type {
+  TaskGroupItemMeta,
+  TaskGroupItemViewObject,
+  TaskGroupViewObject,
+} from '../../types/view.js';
 import {
   captureScrollPosition,
   restoreScrollPosition,
 } from '../shared/scrollPosition';
-
-/** 任务条目的元数据（从 YAML 异步解析） */
-export interface TaskGroupItemMeta {
-  /** 地图标识，如 "9-2" 或 "Ex-3" */
-  mapName?: string;
-  /** 编队号 */
-  fleetId?: number;
-  /** 维修模式文本 */
-  repairMode?: string;
-  /** 任务类型标签 (预设) */
-  typeLabel?: string;
-  /** 编队舰船列表 */
-  fleet?: string[];
-  /** 当前任务选择的编队预设名称 */
-  fleetPresetName?: string;
-}
-
-/** 渲染所需的 VO */
-export interface TaskGroupViewObject {
-  groups: ReadonlyArray<{ name: string; itemCount: number }>;
-  activeGroupName: string;
-  items: ReadonlyArray<TaskGroupItem>;
-  /** 各条目的元数据（按 index 对应） */
-  itemMetas?: ReadonlyArray<TaskGroupItemMeta | null>;
-}
 
 export class TaskGroupView {
   private nameInput: HTMLInputElement;
@@ -107,7 +87,11 @@ export class TaskGroupView {
     return this.nameInput.value.trim();
   }
 
-  private createItemRow(item: TaskGroupItem, index: number, meta: TaskGroupItemMeta | null): HTMLElement {
+  private createItemRow(
+    item: TaskGroupItemViewObject,
+    index: number,
+    meta: TaskGroupItemMeta | null,
+  ): HTMLElement {
     const row = document.createElement('div');
     row.className = 'tg-item';
     row.draggable = true;
@@ -242,14 +226,14 @@ export class TaskGroupView {
     return row;
   }
 
-  private sourceClass(item: TaskGroupItem): string {
+  private sourceClass(item: TaskGroupItemViewObject): string {
     if (item.managedSource === 'system') return 'system';
     if (item.managedSource === 'user') return 'user';
     if (item.kind === 'template') return 'template';
     return 'local';
   }
 
-  private sourceLabel(item: TaskGroupItem): string {
+  private sourceLabel(item: TaskGroupItemViewObject): string {
     if (item.managedSource === 'system') return '系统预设';
     if (item.managedSource === 'user') return '用户预设';
     if (item.kind === 'template') return '任务模板';

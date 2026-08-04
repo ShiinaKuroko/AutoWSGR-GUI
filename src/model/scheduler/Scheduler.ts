@@ -1,3 +1,4 @@
+/** 持有当前任务和运行状态，驱动任务消费、重试与后续任务。 */
 /**
  * Scheduler —— 前端任务调度器 (Model 层)。
  *
@@ -16,20 +17,22 @@ import type {
   TaskRequest,
   TaskResult,
   RoundResult,
-} from '../../types/api';
+} from '../../types/api.js';
 import type {
   StopCondition,
   BathRepairConfig,
   FleetPreset,
   BattleResultGrade,
-} from '../../types/model';
+} from '../../types/model.js';
 import { Logger } from '../../utils/Logger';
+import { jsonCodec } from '../../adapter/index.js';
 import { RepairManager } from './RepairManager';
 import { StopConditionChecker } from './StopConditionChecker';
 import { ExpeditionTimer } from './ExpeditionTimer';
 import { TaskQueue, generateTaskId, parseUiCount } from './TaskQueue';
 import { TaskPriority, type SchedulerTaskType, type SchedulerTask, type SchedulerStatus, type SchedulerCallbacks } from '../../types/scheduler';
-import { toBackendName } from '../../data/shipData';
+import { toBackendName } from '../fleet/index.js';
+import { buildFollowUpTask, createSchedulerTask } from './SchedulerTaskPolicy.js';
 
 const RESULT_GRADE_ORDER: BattleResultGrade[] = ['D', 'C', 'B', 'A', 'S', 'SS'];
 
@@ -346,7 +349,7 @@ export class Scheduler {
     this.setStatus('running');
     this.notifyQueueChange();
 
-    Logger.debug(`consumeNext: 「${task.name}」 type=${task.type} remaining=${task.remainingTimes}/${task.totalTimes} req=${JSON.stringify(task.request)}`, 'scheduler');
+    Logger.debug(`consumeNext: 「${task.name}」 type=${task.type} remaining=${task.remainingTimes}/${task.totalTimes} req=${jsonCodec.stringify(task.request)}`, 'scheduler');
 
     // 远征任务: 直接调用远征 API，不走 taskStart 流程
     if (task.type === 'expedition') {

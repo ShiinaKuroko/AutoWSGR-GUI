@@ -9,7 +9,7 @@
 | # | 文档 | 说明 |
 |---|------|------|
 | 0 | [总架构文档](00-overview.md) | 项目简介、主进程组合根/IPC/Service 分层、渲染进程架构、启动流程 |
-| 1 | [Controller 层](01-controller-layer.md) | ControllerHost/DI 模式、6 个子目录结构、StartupController 启动编排 |
+| 1 | [Controller 层](01-controller-layer.md) | 最小 Host 接口、6 个子目录结构、StartupController 启动编排 |
 | 2 | [任务调度系统](02-task-scheduling.md) | Scheduler、TaskQueue、CronScheduler、远征轮询、停止条件、修理轮换 |
 | 3 | [配置系统](03-configuration.md) | ConfigModel、ConfigController、ConfigView、usersettings.yaml、gui_settings.json |
 | 4 | [出击计划系统](04-battle-plan.md) | PlanModel、PlanController(拆分)、PlanPreviewView(Facade)、MapDataLoader |
@@ -17,6 +17,7 @@
 | 6 | [后端通信](06-backend-communication.md) | IPC Bridge、ApiClient、REST API、WebSocket 事件 |
 | 7 | [环境管理](07-environment-management.md) | pythonEnv/ 子模块(9 文件)、Python/CUDA/ADB 服务、后端进程生命周期 |
 | 8 | [开发环境搭建](08-dev-setup.md) | 依赖安装、开发/构建/打包命令、SCSS 架构、调试技巧 |
+| 9 | [`src` TypeScript 模块目录](09-src-typescript-catalog.md) | 当前 97 个 TS 文件及其职责索引 |
 
 ## 阅读建议
 

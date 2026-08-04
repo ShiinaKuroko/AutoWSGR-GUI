@@ -1,8 +1,9 @@
+/** 渲染模板库卡片并发出使用、编辑和删除意图。 */
 /**
  * TemplateLibraryView —— 模板库纯渲染组件。
  * 接收 TemplateLibraryItemVO[] 并渲染模板卡片列表；不包含业务逻辑。
  */
-import type { TemplateLibraryItemVO } from '../../types/view';
+import type { TemplateLibraryItemVO } from '../../types/view.js';
 
 export class TemplateLibraryView {
   private container: HTMLElement | null;

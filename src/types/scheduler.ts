@@ -1,14 +1,11 @@
-/**
- * Scheduler 公共类型定义。
- * 从 Scheduler.ts 提取，供 Controller / View 层直接引用。
- */
-import type { TaskRequest, TaskResult, WsLogMessage } from './api';
+/** 定义任务队列、调度状态及 Scheduler 对外回调契约。 */
+import type { TaskRequest, TaskResult, WsLogMessage } from './api.js';
 import type {
   StopCondition,
   BathRepairConfig,
   FleetPreset,
   BattleResultGrade,
-} from './model';
+} from './model.js';
 
 // ════════════════════════════════════════
 // 任务队列项

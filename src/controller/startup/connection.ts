@@ -1,3 +1,4 @@
+/** 检测后端可用性并管理启动阶段的连接等待。 */
 /**
  * connection —— 后端连接与系统启动逻辑。
  */
@@ -28,8 +29,8 @@ export function waitForBackendAndConnect(host: StartupHost, retries = 30): void 
 
 /** 向后端发送 system/start (连接模拟器+启动游戏) */
 export function startSystem(host: StartupHost): void {
-  const configPath = host.appRoot
-    ? `${host.appRoot.replace(/\\/g, '/')}/usersettings.yaml`
+  const configPath = host.configDir
+    ? `${host.configDir.replace(/\\/g, '/')}/usersettings.yaml`
     : undefined;
 
   const automation = host.configModel.current.daily_automation;

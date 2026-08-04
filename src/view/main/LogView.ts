@@ -1,4 +1,5 @@
-import type { LogEntryVO } from '../../types/view';
+/** 追加、筛选并滚动展示运行日志。 */
+import type { LogEntryVO } from '../../types/view.js';
 
 /** 每种日志级别对应的 SVG 图标 (16x16) */
 const LOG_ICONS: Record<string, string> = {

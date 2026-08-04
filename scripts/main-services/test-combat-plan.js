@@ -405,6 +405,108 @@ function testCombatPlanServices() {
     '系统舰',
   );
 
+  const legacyEventPlans = [
+    {
+      file: 'E1炸鱼.yaml',
+      content: [
+        '# 20260730 激斗漩涡 E-1 alpha 入口示例',
+        'event: "20260730"',
+        'chapter: E',
+        'map: 1a',
+        'selected_nodes: [B]',
+        'node_defaults:',
+        '  proceed: False',
+        '  formation: 5',
+        '',
+      ].join('\n'),
+      expected: ['E', '1a', ['B']],
+    },
+    {
+      file: 'E5夜战.yaml',
+      content: [
+        '# 20260730 激斗漩涡 E-5 alpha 入口示例',
+        'event: "20260730"',
+        'chapter: E',
+        'map: 5a',
+        'selected_nodes: [A, B, C, D, F]',
+        'node_defaults:',
+        '  night: True',
+        '  proceed: True',
+        '  formation: 4',
+        'node_args:',
+        '  C:',
+        '    proceed: False',
+        '  D:',
+        '    proceed: False',
+        '  F:',
+        '    proceed: False',
+        '',
+      ].join('\n'),
+      expected: ['E', '5a', ['A', 'B', 'C', 'D', 'F']],
+    },
+    {
+      file: 'H1炸鱼.yaml',
+      content: [
+        '# 20260730 激斗漩涡 H-1 alpha 入口示例',
+        'event: "20260730"',
+        'chapter: H',
+        'map: 1a',
+        'selected_nodes: [B]',
+        'node_defaults:',
+        '  proceed: False',
+        '  formation: 5',
+        '',
+      ].join('\n'),
+      expected: ['H', '1a', ['B']],
+    },
+    {
+      file: 'H5夜战.yaml',
+      content: [
+        '# 20260730 激斗漩涡 H-5 alpha 入口示例',
+        'event: "20260730"',
+        'chapter: H',
+        'map: 5a',
+        'selected_nodes: [A, B, C, D, F]',
+        'node_defaults:',
+        '  night: True',
+        '  proceed: True',
+        '  formation: 4',
+        'node_args:',
+        '  C:',
+        '    proceed: False',
+        '  D:',
+        '    proceed: False',
+        '  F:',
+        '    proceed: False',
+        '',
+      ].join('\n'),
+      expected: ['H', '5a', ['A', 'B', 'C', 'D', 'F']],
+    },
+  ];
+  legacyEventPlans.forEach((fixture) => {
+    const importedEvent = management.saveManaged(
+      fixture.file,
+      fixture.content,
+      false,
+      undefined,
+      'system',
+    );
+    assert.equal(importedEvent.success, true);
+    assert.equal(importedEvent.file, `bettle-${fixture.file}`);
+    const preparedEvent = management.readManaged(
+      'system',
+      importedEvent.file,
+    );
+    assert.equal(preparedEvent.success, true);
+    assert.equal(fs.existsSync(preparedEvent.runtimePath), true);
+    const eventPlan = yaml.load(preparedEvent.content);
+    assert.equal(eventPlan.event, '20260730');
+    assert.deepEqual(
+      [eventPlan.chapter, eventPlan.map, eventPlan.selected_nodes],
+      fixture.expected,
+    );
+  });
+
   assert.deepEqual(
     management.deleteUserCombat('bettle-重命名计划.yaml'),
     { success: true },

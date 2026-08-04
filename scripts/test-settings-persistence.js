@@ -64,6 +64,12 @@ async function runRendererTest(root, tempDirectory) {
     'dist/src/controller/app/ConfigController.js',
   ));
 
+  const shipNameAliases = {
+    测试别名: 'U-47',
+  };
+  const shipNameCorrections = {
+    测试错字: 'U-81',
+  };
   const sample = {
     emulatorType: '蓝叠',
     emulatorPath: 'C:\\SettingsTest\\Emulator.exe',
@@ -101,12 +107,8 @@ async function runRendererTest(root, tempDirectory) {
     ocrGpu: true,
     ocrMirror: 'github',
     ocrConfidence: 0.73,
-    shipNameAliases: {
-      测试别名: 'U-47',
-    },
-    shipNameCorrections: {
-      测试错字: 'U-81',
-    },
+    shipNameAliasesText: '测试别名: U-47',
+    shipNameCorrectionsText: '测试错字: U-81',
     cudaPath: 'C:\\SettingsTest\\CUDA',
     saveBackendScreenshots: true,
     pythonPath: 'C:\\SettingsTest\\python.exe',
@@ -147,9 +149,43 @@ async function runRendererTest(root, tempDirectory) {
 
   const model = new ConfigModel();
   model.loadFromYaml([
+    'emulator:',
+    '  type: 雷电',
+    '  backend_options:',
+    '    transport:',
+    '      retry: 7',
+    'account:',
+    '  game_app: 官服',
+    '  backend_identity:',
+    '    region:',
+    '      code: cn',
+    'ocr:',
+    '  ship_name_corrections:',
+    '    stale_correction: stale',
+    '    backend_metadata:',
+    '      source: backend',
+    '  ship_name_aliases:',
+    '    stale_alias: stale',
+    '    backend_metadata:',
+    '      source: backend',
+    '  backend_options:',
+    '    detector:',
+    '      timeout: 30',
+    'log:',
+    '  channels:',
+    '    stale.channel: DEBUG',
+    '    backend_metadata:',
+    '      sink:',
+    '        name: audit',
+    '  backend_options:',
+    '    rotation:',
+    '      compress: true',
     'daily_automation:',
     '  auto_gain_bonus: true',
     '  auto_bath_repair: true',
+    '  backend_options:',
+    '    scheduler:',
+    '      jitter: 3',
     'custom_unknown:',
     '  keep: true',
     '',
@@ -269,9 +305,19 @@ async function runRendererTest(root, tempDirectory) {
     type: sample.emulatorType,
     path: sample.emulatorPath,
     serial: sample.emulatorSerial,
+    backend_options: {
+      transport: {
+        retry: 7,
+      },
+    },
   });
   rendererAssert.deepStrictEqual(savedYaml.account, {
     game_app: sample.gameApp,
+    backend_identity: {
+      region: {
+        code: 'cn',
+      },
+    },
   });
   rendererAssert.deepStrictEqual(savedYaml.daily_automation, {
     auto_expedition: sample.autoExpedition,
@@ -287,17 +333,50 @@ async function runRendererTest(root, tempDirectory) {
     normal_fight_tasks: sample.normalFightTasks,
     stop_max_ship: false,
     stop_max_loot: false,
+    backend_options: {
+      scheduler: {
+        jitter: 3,
+      },
+    },
   });
   rendererAssert.deepStrictEqual(savedYaml.ocr, {
     gpu: sample.ocrGpu,
     mirror: sample.ocrMirror,
     ship_name_match_confidence: sample.ocrConfidence,
-    ship_name_corrections: sample.shipNameCorrections,
-    ship_name_aliases: sample.shipNameAliases,
+    ship_name_corrections: {
+      ...shipNameCorrections,
+      backend_metadata: {
+        source: 'backend',
+      },
+    },
+    ship_name_aliases: {
+      ...shipNameAliases,
+      backend_metadata: {
+        source: 'backend',
+      },
+    },
+    backend_options: {
+      detector: {
+        timeout: 30,
+      },
+    },
   });
   rendererAssert.deepStrictEqual(savedYaml.log, {
     level: sample.logLevel,
     root: sample.logRoot,
+    channels: {
+      'stale.channel': 'DEBUG',
+      backend_metadata: {
+        sink: {
+          name: 'audit',
+        },
+      },
+    },
+    backend_options: {
+      rotation: {
+        compress: true,
+      },
+    },
   });
   rendererAssert.equal(
     savedYaml.operation_delay_min,

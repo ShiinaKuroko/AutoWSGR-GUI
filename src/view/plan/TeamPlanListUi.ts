@@ -1,7 +1,8 @@
+/** 渲染编队方案卡片并实现搜索、筛选和排序。 */
 import type {
   PlanPresetSource,
   UserTeamPlan,
-} from '../../types/electronBridge';
+} from '../../types/ipc.js';
 
 export type TeamPlanSortField = 'name' | 'modifiedAt';
 export type TeamPlanCardSource = PlanPresetSource | 'deleted';
