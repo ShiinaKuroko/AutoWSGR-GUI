@@ -34,12 +34,12 @@ jobs:
             $channel = 'beta'
             $stage = 'prerelease'
             $prerelease = 'true'
-          } elseif ($ver -match '^\d+\.\d+\.\d+-dev\.\d+$') {
+          } elseif ($ver -match '^\d+\.\d+\.\d+-dev(?:\.\d+)?$') {
             $channel = 'dev'
             $stage = 'development'
             $prerelease = 'true'
           } else {
-            throw "版本 $ver 不符合 X.Y.Z、X.Y.Z-beta.N 或 X.Y.Z-dev.N"
+            throw "版本 $ver 不符合 X.Y.Z、X.Y.Z-beta.N、X.Y.Z-dev 或 X.Y.Z-dev.N"
           }
           echo "VERSION=$ver" >> $env:GITHUB_OUTPUT
           echo "CHANNEL=$channel" >> $env:GITHUB_OUTPUT

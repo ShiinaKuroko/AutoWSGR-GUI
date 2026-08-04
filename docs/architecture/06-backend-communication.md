@@ -163,8 +163,9 @@ type GuiUpdateCheckResult =
 ```
 
 `GuiUpdatePolicy` 根据当前应用版本选择并校验频道：稳定版 `X.Y.Z` 使用
-`latest`，预发布版 `X.Y.Z-beta.N` 使用 `beta`，开发版 `X.Y.Z-dev.N` 使用
-`dev`。候选版本不属于当前频道时检查失败，不允许回退读取其他频道清单。
+`latest`，预发布版 `X.Y.Z-beta.N` 使用 `beta`，开发版 `X.Y.Z-dev` 或
+`X.Y.Z-dev.N` 使用 `dev`。候选版本不属于当前频道时检查失败，不允许回退
+读取其他频道清单。
 
 安装更新前，`UpdaterIpc` 必须等待共享的 `stopBackend()` 完成。关闭流程依次
 调用后端 `/api/system/stop`、终止服务进程树、等待 `close`；超时后才强制

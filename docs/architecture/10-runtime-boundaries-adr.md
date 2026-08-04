@@ -99,9 +99,9 @@ View 只看到 ViewObject 和不透明计划 ID。`DecisivePlanController` 以�
 
 ### 7. 发布和安装使用严格生命周期
 
-版本只允许 `X.Y.Z`、`X.Y.Z-beta.N`、`X.Y.Z-dev.N`，分别对应
-`latest`、`beta`、`dev`。发布工作流和客户端使用同一解析规则，产物不得混入
-其他频道清单。
+版本只允许 `X.Y.Z`、`X.Y.Z-beta.N`、`X.Y.Z-dev` 或 `X.Y.Z-dev.N`，
+分别对应 `latest`、`beta`、`dev`。发布工作流和客户端使用同一解析规则，
+产物不得混入其他频道清单。
 
 更新检查必须返回有更新、已是最新或失败三态。安装前调用
 `BackendShutdownService`：后端正式停止接口、进程树终止、等待 `close`、超时

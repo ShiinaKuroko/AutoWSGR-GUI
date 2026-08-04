@@ -68,15 +68,15 @@ function testGuiUpdatePolicy() {
     stage: 'prerelease',
     allowPrerelease: true,
   });
-  const development = resolveGuiReleasePolicy('2.0.3-dev.0');
+  const development = resolveGuiReleasePolicy('2.0.3-dev');
   assert.deepEqual(development, {
     channel: 'dev',
     stage: 'development',
     allowPrerelease: true,
   });
-  assert.throws(
-    () => resolveGuiReleasePolicy('2.0.3-dev'),
-    /不符合规范/,
+  assert.deepEqual(
+    resolveGuiReleasePolicy('2.0.3-dev.0'),
+    development,
   );
   assert.throws(
     () => resolveGuiReleasePolicy('2.0.3-rc.1'),

@@ -3,7 +3,7 @@
  *
  * 稳定版使用 X.Y.Z 和 latest 频道。
  * 预发布版使用 X.Y.Z-beta.N 和 beta 频道。
- * 开发版使用 X.Y.Z-dev.N 和 dev 频道。
+ * 开发版使用 X.Y.Z-dev 或 X.Y.Z-dev.N 和 dev 频道。
  *
  * 发布端和客户端必须使用同一规则。客户端还会验证服务端返回的候选
  * 版本，防止 electron-updater 在频道清单缺失时回退到其他频道。
@@ -32,7 +32,7 @@ export interface UpdaterCheckResultLike {
 
 const STABLE_VERSION = /^\d+\.\d+\.\d+$/;
 const BETA_VERSION = /^\d+\.\d+\.\d+-beta\.\d+$/;
-const DEVELOPMENT_VERSION = /^\d+\.\d+\.\d+-dev\.\d+$/;
+const DEVELOPMENT_VERSION = /^\d+\.\d+\.\d+-dev(?:\.\d+)?$/;
 
 /** 严格解析 GUI 版本，拒绝没有明确频道的版本后缀。 */
 export function resolveGuiReleasePolicy(version: string): GuiReleasePolicy {
@@ -60,7 +60,7 @@ export function resolveGuiReleasePolicy(version: string): GuiReleasePolicy {
   }
   throw new Error(
     `GUI 版本 ${version} 不符合规范；只允许 X.Y.Z、`
-    + 'X.Y.Z-beta.N 或 X.Y.Z-dev.N',
+    + 'X.Y.Z-beta.N、X.Y.Z-dev 或 X.Y.Z-dev.N',
   );
 }
 
