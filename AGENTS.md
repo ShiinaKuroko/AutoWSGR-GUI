@@ -342,3 +342,50 @@ Agent 必须报告或在工作记录中明确：
 - GUI 2.0 合并后，我再基于你的最终 Scheduler 和配置架构完成 GUI 任务接线，避免双方同时修改同一套状态机。
 
 总体原则是：你负责让 GUI 2.0 已有功能安全、兼容、可合并；我负责自动强化及合并后的公共调度集成。编队轮换核心继续以你的 GUI 2.0 实现为准，我不会另写一套。
+
+## 8. Windows 打包失败记录
+
+### 8.1 `winCodeSign` 符号链接权限
+
+在未启用 Windows 开发者模式、且终端没有创建符号链接权限时，
+Electron Builder 解压旧版 `winCodeSign-2.6.0.7z` 会失败。典型日志为：
+
+```text
+ERROR: Cannot create symbolic link : 客户端没有所需的特权。
+darwin\10.12\lib\libcrypto.dylib
+darwin\10.12\lib\libssl.dylib
+```
+
+这两个文件属于 macOS 工具，但 7-Zip 使用 `-snld` 解压整个工具包，因此
+Windows 打包仍会被阻断。开始打包前必须先检查开发者模式或当前终端的符号链接
+权限，不得在确认缺少权限后反复执行相同命令和重复下载。
+
+正式解决方式是启用 Windows 开发者模式，或使用具备创建符号链接权限的终端执行
+`npm run dist`。不要把本地工具路径覆盖当成正式解决方式。
+
+### 8.2 已失败的规避方式
+
+- 不得使用 `--config.win.signAndEditExecutable=false` 生成正式交付包。该参数会
+  跳过 EXE 资源、版本信息和 ASAR 完整性写入，只能用于诊断，不能作为成功打包。
+- 只设置 `ELECTRON_BUILDER_RCEDIT_PATH` 不足以完成打包。EXE 资源编辑会通过，
+  但处理附带的 ADB、Python 等 EXE 时仍会查找签名工具并下载旧版
+  `winCodeSign`。
+- 同时设置 `ELECTRON_BUILDER_RCEDIT_PATH` 和 `SIGNTOOL_PATH` 仍不足以完成
+  NSIS 打包。应用 EXE 资源编辑及附带 EXE 处理会通过，但进入 NSIS 阶段前仍会
+  强制获取旧版 `winCodeSign`。不要重复尝试该双路径方案。
+- 打包失败后不得继续使用外围重试、延时或运行时文件写入 fallback 掩盖问题；
+  必须先区分打包工具权限错误和应用自身持久化错误。
+
+### 8.3 单 EXE 交付检查
+
+用户要求“只有 EXE”时，目标是 NSIS 安装程序，不是 `--dir` 目录包：
+
+1. 关闭所有从 `release/win-unpacked` 启动的 GUI 进程。
+2. 确认 `package.json` 与 `package-lock.json` 版本一致。
+3. 使用具备完整 `winCodeSign` 权限的环境执行 `npm run dist`。
+4. 从 `release/` 中单独取出
+   `AutoWSGR-GUI-Setup-<version>.exe`，交付目录不得混入
+   `win-unpacked`、更新清单或 blockmap。
+5. 检查安装程序版本、文件哈希和签名状态，并实际启动安装后的 GUI。
+
+生成的安装包、`release/` 和本地 Electron Builder 缓存不得提交到 Git。
