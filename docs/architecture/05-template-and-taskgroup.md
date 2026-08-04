@@ -94,8 +94,9 @@ flowchart LR
 ### 数据结构
 
 ```typescript
-// task_groups.json 结构
+// task_groups.json v2 结构
 {
+  version: 2,
   activeGroup: string;      // 当前激活的组名
   groups: TaskGroup[];
 }
@@ -117,7 +118,14 @@ interface TaskGroupItem {
 
 ### 持久化
 
-`TaskGroupModel` 通过 IPC 读写 `task_groups.json`：
+`TaskGroupModel` 通过 IPC 读写 `task_groups.json`。加载 v1 或无版本旧数据时，
+会把旧 `path` 推断为 `managedSource + managedFile`，保留原始 `path` 和未知
+条目字段，保存时写出 v2。迁移只在内存完成，文件写入仍由唯一 Model 所有者
+控制，失败时不会删除旧文件。
+
+启动时还会把当前安装目录根部的旧 `task_groups.json` 合并到 `userData`。
+目标文件已存在时不会覆盖：新组直接追加，同名但内容不同的组以“（旧版）”
+重命名保留。完成记录包含旧文件来源和内容摘要，重复启动不会重复导入。
 
 | 方法 | 说明 |
 |------|------|

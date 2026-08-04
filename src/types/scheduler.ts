@@ -31,6 +31,8 @@ export type SchedulerTaskType =
 
 export interface SchedulerTask {
   id: string;
+  /** Stable identity for all single-round follow-up tasks. */
+  logicalId: string;
   name: string;
   type: SchedulerTaskType;
   priority: TaskPriority;
@@ -86,6 +88,8 @@ export interface SchedulerCallbacks {
   onProgressUpdate?: (taskId: string, progress: { current: number; total: number; node: string | null }) => void;
   /** 任务完成 (单轮) */
   onTaskCompleted?: (taskId: string, success: boolean, result?: TaskResult | null, error?: string | null) => void;
+  /** Emitted only when the logical task has no follow-up round. */
+  onLogicalTaskCompleted?: (logicalId: string, success: boolean, error?: string | null) => void;
   /** 新日志消息 */
   onLog?: (msg: WsLogMessage) => void;
   /** 队列变化 */

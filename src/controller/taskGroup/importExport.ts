@@ -40,7 +40,7 @@ export async function importTaskGroupFlow(
   ]);
   if (!result) return;
 
-  let data: { name?: string; items?: unknown[] };
+  let data: { name?: string; items?: unknown[]; [key: string]: unknown };
   try {
     data = JSON.parse(result.content);
   } catch {
@@ -118,6 +118,7 @@ export async function importTaskGroupFlow(
         ?.replace(/\.ya?ml$/i, '') ?? '';
 
     taskGroupModel.addItem(groupName, {
+      ...item,
       path,
       managedSource,
       managedFile,

@@ -87,7 +87,11 @@ export class StartupController {
     } else {
       Logger.info('正在启动后端服务…');
     }
-    await bridge.startBackend();
+    const backendResult = await bridge.startBackend();
+    if (!backendResult.success) {
+      Logger.error(`后端启动失败: ${backendResult.message}`);
+      return;
+    }
     waitForBackendAndConnect(this.host);
   }
 

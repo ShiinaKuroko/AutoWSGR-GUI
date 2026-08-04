@@ -27,17 +27,21 @@ async function showNormalFightFleetSelector(
   planName: string,
   defaultFleetId: number,
   wizardView: TemplateWizardView,
-): Promise<number | null> {
-  const options: SelectorOption[] = NORMAL_FLEET_IDS.map((fleetId) => ({
-    icon: '⚓',
-    label: fleetId === defaultFleetId
-      ? `第 ${fleetId} 分队（默认）`
-      : `第 ${fleetId} 分队`,
-  }));
+): Promise<number | undefined | null> {
+  const options: SelectorOption[] = [
+    { icon: '📄', label: '仅使用方案，不指定编队预设' },
+    ...NORMAL_FLEET_IDS.map((fleetId) => ({
+      icon: '⚓',
+      label: fleetId === defaultFleetId
+        ? `第 ${fleetId} 分队（默认）`
+        : `第 ${fleetId} 分队`,
+    })),
+  ];
 
   const result = await wizardView.showSelector(`「${templateName} / ${planName}」— 选择使用分队`, options);
   if (!result) return null;
-  return NORMAL_FLEET_IDS[result.index] ?? null;
+  if (result.index === 0) return undefined;
+  return NORMAL_FLEET_IDS[result.index - 1] ?? null;
 }
 
 /** 方案选择器（多方案模板） */
@@ -77,7 +81,14 @@ export async function showPlanSelector(
         }
 
         const selectedFleetId = await showNormalFightFleetSelector(tpl.name, planName, defaultFleetId, wizardView);
-        if (selectedFleetId == null) return;
+        if (selectedFleetId === null) return;
+        if (selectedFleetId === undefined) {
+          addPlanToTaskList(tpl, planPath, groupName, taskGroupModel);
+          taskGroupModel.save();
+          renderTaskGroup();
+          Logger.info(`模板「${tpl.name}」→ 已加入任务列表「${groupName}」（方案: ${planName}）`);
+          return;
+        }
 
         await showFleetPresetPicker(
           tpl,

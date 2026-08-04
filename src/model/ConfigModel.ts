@@ -244,8 +244,8 @@ export class ConfigModel {
   /** 导出当前配置为 YAML 字符串 */
   toYaml(): string {
     const output = structuredClone(this.rawRoot);
-    output.emulator = structuredClone(this.settings.emulator);
-    output.account = { game_app: this.settings.account.game_app };
+    output.emulator = this.mergeSection(this.rawRoot.emulator, this.settings.emulator);
+    output.account = this.mergeSection(this.rawRoot.account, this.settings.account);
     output.ocr = this.mergeSection(this.rawRoot.ocr, this.settings.ocr);
     output.log = this.mergeSection(this.rawRoot.log, this.settings.log);
 

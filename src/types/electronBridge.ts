@@ -1,5 +1,5 @@
 /** 通过 preload 注入的 IPC 桥 */
-import type { BattleResultGrade } from './model';
+import type { BattleResultGrade, TaskPreset } from './model';
 
 export interface ShipLibraryStatus {
   exists: boolean;
@@ -160,6 +160,7 @@ export interface ManagedBattlePlanFleet {
 }
 
 export interface ManagedBattlePlan {
+  kind: 'battle' | 'preset';
   file: string;
   name: string;
   source: PlanPresetSource;
@@ -176,12 +177,14 @@ export interface ManagedBattlePlan {
   fleetCount: number;
   nodeCount: number;
   fleets: ManagedBattlePlanFleet[];
+  taskType?: TaskPreset['task_type'];
+  campaignName?: string;
 }
 
-/** 从作战计划加载浮窗中选择的计划及其唯一使用编队。 */
+/** 从作战计划加载浮窗中选择的计划及可选编队。 */
 export interface ManagedBattlePlanSelection {
   plan: ManagedBattlePlan;
-  fleetPresetIndex: number;
+  fleetPresetIndex?: number;
 }
 
 export interface PlanFileReadError {
@@ -199,8 +202,23 @@ export interface PlanManagementResult {
   ignoredUnlinkedPlans: string[];
 }
 
+export interface UserPlanExportSelection {
+  kind: 'battle' | 'team';
+  file: string;
+}
+
+export interface UserPlanExportResult {
+  success: boolean;
+  canceled?: boolean;
+  path?: string;
+  count?: number;
+  error?: string;
+}
+
 export interface PlanFileOperationResult {
   success: boolean;
+  kind?: 'battle' | 'preset';
+  canceled?: boolean;
   exists?: boolean;
   file?: string;
   path?: string;
@@ -211,12 +229,6 @@ export interface PlanFileOperationResult {
   teamFiles?: string[];
   conflicts?: string[];
   error?: string;
-}
-
-export interface LegacyPlanConversionResult
-  extends PlanFileOperationResult {
-  canceled?: boolean;
-  inputPath?: string;
 }
 
 export interface AdbOperationResult {
@@ -267,7 +279,11 @@ export interface ElectronBridge {
   startBackend: () => Promise<{ success: boolean; message: string }>;
   runSetup: () => Promise<{ success: boolean; output: string }>;
   installPortablePython: () => Promise<{ success: boolean }>;
-  checkGuiUpdates: () => Promise<{ version: string } | null>;
+  checkGuiUpdates: () => Promise<
+    | { status: 'available'; version: string }
+    | { status: 'up-to-date' }
+    | { status: 'error'; message: string }
+  >;
   downloadGuiUpdate: () => Promise<{ success: boolean; message?: string }>;
   installGuiUpdate: () => void;
   onUpdateStatus: (callback: (status: any) => void) => void;
@@ -315,6 +331,10 @@ export interface ElectronBridge {
   pickUserTeamPlan: () => Promise<UserTeamPlanResult>;
   listTeamPlans: () => Promise<UserTeamPlanListResult>;
   getPlanManagement: () => Promise<PlanManagementResult>;
+  exportUserPlans: (
+    selections: UserPlanExportSelection[],
+  ) => Promise<UserPlanExportResult>;
+  importLocalCombatPlan: () => Promise<PlanFileOperationResult>;
   setPlanUnlinkedIgnored: (
     kind: 'battle' | 'team',
     source: PlanPresetSource,
@@ -332,10 +352,6 @@ export interface ElectronBridge {
     content: string,
     hint: string,
   ) => Promise<PlanFileOperationResult>;
-  convertLegacyCombatPlan: (
-    overwrite?: boolean,
-    inputPath?: string,
-  ) => Promise<LegacyPlanConversionResult>;
   saveManagedCombatPlan: (
     name: string,
     content: string,

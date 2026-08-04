@@ -14,6 +14,7 @@ import type {
   UserTeamPlan,
   UserTeamPlanSlot,
   UserTeamShipRule,
+  UserPlanExportSelection,
 } from '../../types/electronBridge';
 import {
   showAlert,
@@ -265,6 +266,8 @@ export class FleetPlannerView {
   private readonly managementKindButtons: HTMLButtonElement[];
   private readonly managementSearch: HTMLInputElement | null;
   private readonly managementAttentionOnly: HTMLInputElement | null;
+  private readonly managementSelectAll: HTMLInputElement | null;
+  private readonly managementExportButton: HTMLButtonElement | null;
   private readonly galleryResizeObserver: ResizeObserver;
 
   private manifest: ShipLibraryManifest | null = null;
@@ -291,6 +294,9 @@ export class FleetPlannerView {
   private ignoredUnlinkedPlans = new Set<string>();
   private managementBindings: PlanTeamBinding[] = [];
   private managedTeamPlans: ManagedTeamPlan[] = [];
+  private managementSelections = new Map<string, UserPlanExportSelection>();
+  private managementVisibleSelections: UserPlanExportSelection[] = [];
+  private managementExporting = false;
 
   private groupFilter: string | null = 'all';
   private typeFilters = new Set<string>();
@@ -413,6 +419,12 @@ export class FleetPlannerView {
     this.managementAttentionOnly = document.getElementById(
       'plan-management-attention-only',
     ) as HTMLInputElement | null;
+    this.managementSelectAll = document.getElementById(
+      'plan-management-select-all',
+    ) as HTMLInputElement | null;
+    this.managementExportButton = document.getElementById(
+      'btn-export-user-plans',
+    ) as HTMLButtonElement | null;
     this.bindActions();
     this.renderSlots();
     this.renderBackupSlots();
@@ -978,6 +990,21 @@ export class FleetPlannerView {
     document.getElementById('btn-refresh-plan-management')?.addEventListener('click', () => {
       void this.loadManagement();
     });
+    this.managementExportButton?.addEventListener('click', () => {
+      void this.exportSelectedPlans();
+    });
+    this.managementSelectAll?.addEventListener('change', () => {
+      const selected = this.managementSelectAll?.checked === true;
+      this.managementVisibleSelections.forEach(selection => {
+        const key = this.managementSelectionKey(selection);
+        if (selected) {
+          this.managementSelections.set(key, selection);
+        } else {
+          this.managementSelections.delete(key);
+        }
+      });
+      this.renderManagement();
+    });
     this.managementTabs.forEach(tab => {
       tab.addEventListener('click', () => {
         const source = tab.dataset['planManagementSource'];
@@ -1002,6 +1029,23 @@ export class FleetPlannerView {
     });
     this.managementAttentionOnly?.addEventListener('change', () => {
       this.renderManagement();
+    });
+    this.managementBody?.addEventListener('change', (event) => {
+      const checkbox = (event.target as HTMLElement).closest<HTMLInputElement>(
+        '[data-plan-selection]',
+      );
+      if (!checkbox) return;
+      const kind = checkbox.dataset['planKind'];
+      const file = checkbox.dataset['planFile'];
+      if ((kind !== 'battle' && kind !== 'team') || !file) return;
+      const selection: UserPlanExportSelection = { kind, file };
+      const key = this.managementSelectionKey(selection);
+      if (checkbox.checked) {
+        this.managementSelections.set(key, selection);
+      } else {
+        this.managementSelections.delete(key);
+      }
+      this.updateManagementSelectionControls();
     });
     this.managementBody?.addEventListener('click', (event) => {
       const button = (event.target as HTMLElement).closest<HTMLButtonElement>(
@@ -2705,7 +2749,7 @@ export class FleetPlannerView {
   async loadManagement(): Promise<void> {
     const bridge = window.electronBridge;
     if (!this.managementBody || !bridge?.getPlanManagement) return;
-    this.managementBody.innerHTML = '<tr><td colspan="6">正在读取计划…</td></tr>';
+    this.managementBody.innerHTML = '<tr><td colspan="7">正在读取计划…</td></tr>';
     try {
       const result = await bridge.getPlanManagement();
       this.managementBindings = result.bindings;
@@ -2717,7 +2761,7 @@ export class FleetPlannerView {
       this.managementBody.innerHTML = '';
       const row = this.managementBody.insertRow();
       const cell = row.insertCell();
-      cell.colSpan = 6;
+      cell.colSpan = 7;
       cell.className = 'plan-management-empty';
       cell.textContent = error instanceof Error ? error.message : String(error);
     }
@@ -2967,11 +3011,29 @@ export class FleetPlannerView {
       return left.name.localeCompare(right.name, 'zh-CN');
     });
 
+    const availableSelectionKeys = new Set(
+      rows
+        .filter(row => row.source === 'user')
+        .map(row => this.managementSelectionKey({
+          kind: row.kind,
+          file: row.file,
+        })),
+    );
+    this.managementSelections.forEach((_selection, key) => {
+      if (!availableSelectionKeys.has(key)) {
+        this.managementSelections.delete(key);
+      }
+    });
+    this.managementVisibleSelections = visibleRows
+      .filter(row => row.source === 'user')
+      .map(row => ({ kind: row.kind, file: row.file }));
+    this.updateManagementSelectionControls();
+
     this.managementBody.replaceChildren();
     if (visibleRows.length === 0) {
       const row = document.createElement('tr');
       const cell = document.createElement('td');
-      cell.colSpan = 6;
+      cell.colSpan = 7;
       cell.className = 'plan-management-empty';
       cell.textContent = sourceRows.length > 0
         ? '没有符合当前筛选条件的 YAML'
@@ -2986,6 +3048,28 @@ export class FleetPlannerView {
     visibleRows.forEach(item => {
       const row = document.createElement('tr');
       row.classList.toggle('needs-attention', item.attention);
+
+      const selectionCell = document.createElement('td');
+      selectionCell.className = 'plan-management-selection-cell';
+      if (item.source === 'user') {
+        const selection: UserPlanExportSelection = {
+          kind: item.kind,
+          file: item.file,
+        };
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.dataset['planSelection'] = 'true';
+        checkbox.dataset['planKind'] = item.kind;
+        checkbox.dataset['planFile'] = item.file;
+        checkbox.checked = this.managementSelections.has(
+          this.managementSelectionKey(selection),
+        );
+        checkbox.disabled = this.managementExporting;
+        checkbox.setAttribute('aria-label', `选择用户配置 ${item.name}`);
+        selectionCell.append(checkbox);
+      } else {
+        selectionCell.title = '系统预设不支持导出';
+      }
 
       const planCell = document.createElement('td');
       const kind = document.createElement('span');
@@ -3150,6 +3234,7 @@ export class FleetPlannerView {
         actionCell.textContent = '只读';
       }
       row.append(
+        selectionCell,
         planCell,
         sourceCell,
         relationCell,
@@ -3161,6 +3246,83 @@ export class FleetPlannerView {
     });
     this.managementBody.append(fragment);
     restoreScrollPosition(scroll, scrollPosition);
+  }
+
+  /** 使用计划类型和文件名构造稳定的勾选键。 */
+  private managementSelectionKey(
+    selection: UserPlanExportSelection,
+  ): string {
+    return `${selection.kind}:${selection.file.toLocaleLowerCase('en-US')}`;
+  }
+
+  /** 同步表头全选状态、行复选框和批量导出按钮。 */
+  private updateManagementSelectionControls(): void {
+    const visibleSelectedCount = this.managementVisibleSelections.filter(
+      selection => this.managementSelections.has(
+        this.managementSelectionKey(selection),
+      ),
+    ).length;
+    if (this.managementSelectAll) {
+      this.managementSelectAll.checked = (
+        this.managementVisibleSelections.length > 0
+        && visibleSelectedCount === this.managementVisibleSelections.length
+      );
+      this.managementSelectAll.indeterminate = (
+        visibleSelectedCount > 0
+        && visibleSelectedCount < this.managementVisibleSelections.length
+      );
+      this.managementSelectAll.disabled = (
+        this.managementExporting
+        || this.managementVisibleSelections.length === 0
+      );
+    }
+    if (this.managementExportButton) {
+      this.managementExportButton.disabled = (
+        this.managementExporting
+        || this.managementSelections.size === 0
+      );
+      this.managementExportButton.title = this.managementSelections.size > 0
+        ? `导出已选择的 ${this.managementSelections.size} 个用户配置`
+        : '请先选择用户配置';
+    }
+    this.managementBody
+      ?.querySelectorAll<HTMLInputElement>('[data-plan-selection]')
+      .forEach(checkbox => {
+        checkbox.disabled = this.managementExporting;
+      });
+  }
+
+  /** 调用主进程，把所有勾选的用户配置写入一个 ZIP。 */
+  private async exportSelectedPlans(): Promise<void> {
+    if (this.managementExporting || this.managementSelections.size === 0) {
+      return;
+    }
+    const bridge = window.electronBridge;
+    if (!bridge?.exportUserPlans) {
+      await showAlert('导出失败', '请完整重启 GUI 后再操作');
+      return;
+    }
+
+    const selections = [...this.managementSelections.values()];
+    this.managementExporting = true;
+    this.updateManagementSelectionControls();
+    try {
+      const result = await bridge.exportUserPlans(selections);
+      if (result.canceled) return;
+      if (!result.success) {
+        await showAlert('导出失败', result.error || '未知错误');
+        return;
+      }
+      showSaveSuccess(`已导出 ${result.count ?? selections.length} 个用户配置`);
+    } catch (error) {
+      await showAlert(
+        '导出失败',
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      this.managementExporting = false;
+      this.updateManagementSelectionControls();
+    }
   }
 
   private managementButton(

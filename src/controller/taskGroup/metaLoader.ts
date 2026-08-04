@@ -64,7 +64,7 @@ export async function loadItemMetas(
         else if (Array.isArray(rm)) meta.repairMode = REPAIR[rm[0]] ?? `修理${rm[0]}`;
       }
 
-      if ('task_type' in parsed && !('chapter' in parsed)) {
+      if ('task_type' in parsed && !('map' in parsed)) {
         meta.typeLabel = TYPE_LABELS[String(parsed.task_type)] ?? String(parsed.task_type);
       }
 

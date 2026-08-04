@@ -1,6 +1,6 @@
 # 配置系统
 
-> 涉及文件：`src/model/ConfigModel.ts` · `src/view/config/ConfigView.ts` · `src/controller/app/ConfigController.ts` · `src/controller/app/theme.ts` · `src/types/model.ts` · `usersettings.yaml` · `gui_settings.json`
+> 涉及文件：`src/model/ConfigModel.ts` · `src/view/config/ConfigView.ts` · `src/controller/app/ConfigController.ts` · `src/controller/app/theme.ts` · `src/types/model.ts` · `electron/services/GuiSettingsStore.ts` · `electron/services/GuiConfigurationService.ts` · `electron/ipc/ConfigurationIpc.ts`
 
 ## 概述
 
@@ -8,8 +8,8 @@
 
 | 层级 | 文件 | 内容 | 读写方式 |
 |------|------|------|----------|
-| **GUI 级** | `gui_settings.json` | 后端端口、Python 路径 | Electron 主进程直接读写 |
-| **用户级** | `usersettings.yaml` | 模拟器、账号、日常自动化 | 渲染进程通过 IPC 读写 |
+| **GUI 级** | `userData/gui_settings.json` | 后端、Python、CUDA、窗口和 GUI 自动化设置 | Electron 配置服务读写 |
+| **用户级** | `userData/usersettings.yaml` | 模拟器、账号、日常自动化 | 渲染进程通过 IPC 读写 |
 
 另外，主题/调试模式等纯 UI 偏好存储在浏览器 `localStorage` 中。
 
@@ -84,8 +84,8 @@ interface UserSettings {
 ```mermaid
 flowchart LR
   subgraph Storage["持久化存储"]
-    YAML["usersettings.yaml"]
-    GUI["gui_settings.json"]
+    YAML["userData/usersettings.yaml"]
+    GUI["userData/gui_settings.json"]
     LS["localStorage"]
   end
 
@@ -177,19 +177,35 @@ flowchart LR
 
 ## gui_settings.json
 
-由 Electron 主进程直接管理的配置：
+由 Electron 主进程直接管理的配置，位于 Electron `userData`：
 
 ```json
 {
   "backend_port": 8438,
-  "python_path": null
+  "python_path": "",
+  "update_mode": "auto",
+  "backend_startup_mode": "managed",
+  "backend_repo_path": "",
+  "ocr_gpu_mode": "auto",
+  "cuda_path": "",
+  "save_backend_screenshots": false
 }
 ```
 
 - `backend_port`：Python 后端 HTTP 服务端口
-- `python_path`：用户手动指定的 Python 路径（`null` = 自动检测）
+- `python_path`：用户手动指定的 Python 路径（空字符串 = 自动检测）
+- `backend_startup_mode`：`managed` 使用 GUI 管理的环境，`external` 使用指定仓库
+- `ocr_gpu_mode` / `cuda_path`：OCR GPU 模式与 CUDA 路径
+- `automation` / `decisive_plan`：GUI 自动化和决战计划设置
+- `window`：窗口位置与尺寸偏好
 
-读写在主进程 `main.ts` 中通过 `readGuiSettings()` / `writeGuiSettings()` 完成，渲染进程通过 IPC (`get-backend-port-sync`, `set-backend-port`, `get-python-path`, `set-python-path`) 间接访问。
+`GuiSettingsStore` 是唯一 JSON 存储入口，每次写入执行顶层浅合并，因此未参与
+本次更新的未知顶层字段不会丢失。`GuiConfigurationService` 负责默认值、边界、
+旧决战字段迁移和 Python 缓存清理；`ConfigurationIpc` 只保持通道契约。
+
+渲染进程通过 `get-backend-port-sync`、`get-python-path-sync` 等同步 getter
+读取启动配置，通过 `set-backend-port`、`set-python-path` 等异步 setter 写入。
+同步 getter 必须继续使用 `ipcMain.on` / `sendSync`，不能改成 Promise。
 
 ---
 

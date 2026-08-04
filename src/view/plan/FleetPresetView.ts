@@ -25,6 +25,7 @@ import {
   restoreScrollPosition,
 } from '../shared/scrollPosition';
 import { createShipArtwork } from './ShipArtwork';
+import { shipFilterLabel } from '../../data/shipData';
 
 interface ShipPreviewRule {
   name: string;
@@ -246,9 +247,8 @@ export class FleetPresetView {
     } else if (
       this.activePreviewTeamIndex >= 0
       && !activePreviewVisible
-      && firstVisibleIndex !== undefined
     ) {
-      this.activePreviewTeamIndex = firstVisibleIndex;
+      this.activePreviewTeamIndex = firstVisibleIndex ?? -1;
     }
 
     this.fleetPresetListEl.replaceChildren();
@@ -603,6 +603,15 @@ export class FleetPresetView {
     if (typeof slot === 'string') {
       return { primary: { name: slot }, backups: [] };
     }
+    const hasAnonymousFilter = (
+      (slot.candidates?.length ?? 0) === 0
+      && (
+        Boolean(slot.nation)
+        || (slot.ship_type?.length ?? 0) > 0
+        || slot.min_level !== undefined
+        || slot.max_level !== undefined
+      )
+    );
     return {
       primary: slot.name || slot.search_name
         ? {
@@ -610,7 +619,17 @@ export class FleetPresetView {
             minLevel: slot.min_level,
             maxLevel: slot.max_level,
           }
-        : null,
+        : hasAnonymousFilter
+          ? {
+              name: shipFilterLabel({
+                ...slot,
+                min_level: undefined,
+                max_level: undefined,
+              }),
+              minLevel: slot.min_level,
+              maxLevel: slot.max_level,
+            }
+          : null,
       backups: (slot.candidates ?? []).map(candidate => ({
         name: candidate.name,
         minLevel: candidate.min_level,

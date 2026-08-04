@@ -1,6 +1,5 @@
 /**
- * autowsgr 自动更新逻辑。
- * 使用依赖注入，不直接依赖 context 模块。
+ * 通过依赖注入检查并更新 autowsgr。
  */
 import * as path from 'path';
 import * as fs from 'fs';
@@ -21,12 +20,12 @@ export interface AutoUpdateDeps {
   ensurePip: (pythonCmd: string) => Promise<boolean>;
 }
 
-/** 检查 autowsgr 是否有 PyPI 更新，有则自动升级；返回最终的已安装版本 */
+/** 检查 PyPI 更新并返回最终安装版本。 */
 export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps): Promise<string | null> {
   try {
     deps.sendProgress('正在检查 autowsgr 更新…');
 
-    // 单次 Python 调用: 获取本地版本 + PyPI 最新版本
+    // 单次 Python 调用同时获取本地和 PyPI 版本。
     const spFwd = deps.localSitePackages().replace(/\\/g, '\\\\');
     const checkScript = [
       'import json, sys',
@@ -56,7 +55,7 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
       `"${pythonCmd}" "${scriptPath}"`,
       { windowsHide: true, timeout: 20000, env: deps.pipEnv() },
     );
-    try { fs.unlinkSync(scriptPath); } catch { /* ignore */ }
+    try { fs.unlinkSync(scriptPath); } catch { /* 忽略清理失败。 */ }
 
     const info = JSON.parse(stdout.trim());
     const localVer: string | null = info.local;
@@ -73,8 +72,7 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
       return localVer;
     }
 
-    // 有版本更新，或当前 PyPI 版本缺少最新活动热修复。
-    // 仅当 PyPI 已无更高版本时使用固定提交；未来正式版本发布后优先回到 PyPI。
+    // PyPI 无更高版本时才使用活动热修复提交。
     const needsEventHotfix = !supportsLatestEvent && localVer === latestVer;
     if (!supportsLatestEvent) {
       deps.sendProgress('当前 autowsgr 缺少 20260730 活动支持，正在安装上游活动热修复…');
@@ -85,7 +83,7 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
     const targetDir = deps.localSitePackages();
     if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
 
-    // 确保 pip 可用
+    // 确保 pip 可用。
     if (!(await deps.ensurePip(pythonCmd))) {
       deps.sendProgress('WARNING pip 不可用，autowsgr 升级跳过');
       return localVer;
@@ -141,7 +139,7 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
       return localVer;
     }
 
-    // 升级后：单次 Python 调用验证版本 + 关键依赖
+    // 升级后一次性验证版本和关键依赖。
     const postScript = path.join(deps.getTempDir(), 'autowsgr_post_upgrade.py');
     fs.writeFileSync(postScript, [
       'import json, sys, site',
@@ -166,7 +164,7 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
         `"${pythonCmd}" "${postScript}"`,
         { windowsHide: true, timeout: 15000, env: deps.pipEnv() },
       );
-      try { fs.unlinkSync(postScript); } catch { /* ignore */ }
+      try { fs.unlinkSync(postScript); } catch { /* 忽略清理失败。 */ }
       const postResult = JSON.parse(postOut.trim());
       const actualVer: string = postResult.version;
       const missing: string[] = postResult.missing;
@@ -233,7 +231,7 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
         return actualVer;
       }
     } catch {
-      try { fs.unlinkSync(postScript); } catch { /* ignore */ }
+      try { fs.unlinkSync(postScript); } catch { /* 忽略清理失败。 */ }
     }
 
     if (needsEventHotfix) {

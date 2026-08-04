@@ -1,6 +1,6 @@
 # 后端通信
 
-> 涉及文件：`electron/preload.ts` · `electron/main.ts`（IPC handlers）· `src/model/ApiClient.ts` · `src/types/api.ts` · `src/types/electronBridge.ts`
+> 涉及文件：`electron/preload.ts` · `electron/main.ts`（组合根）· `electron/ipc/` · `electron/services/` · `src/model/ApiClient.ts` · `src/types/api.ts` · `src/types/electronBridge.ts`
 
 ## 概述
 
@@ -14,7 +14,8 @@ graph LR
   end
 
   subgraph Main["Electron 主进程"]
-    IPC["IPC Handlers"]
+    IPC["IPC Adapter<br/>electron/ipc/"]
+    Service["Service<br/>electron/services/"]
   end
 
   subgraph Py["Python 后端"]
@@ -23,7 +24,8 @@ graph LR
   end
 
   View -->|"contextBridge"| IPC
-  IPC -->|"fs / spawn / exec"| Main
+  IPC --> Service
+  Service -->|"fs / spawn / exec"| Main
   Api -->|"HTTP fetch"| REST
   Api -->|"WebSocket"| WS
 ```
@@ -37,9 +39,25 @@ graph LR
 
 ## IPC 通信层
 
+external 后端模式使用用户指定的本地 AutoWSGR 仓库。路径不存在、仓库结构
+无效或缺少 `autowsgr/server/main.py` 时启动明确失败，不会静默回退到 managed
+后端；检测和实际启动使用同一解释器与环境变量。
+
 ### 暴露机制
 
 `preload.ts` 通过 Electron 的 `contextBridge.exposeInMainWorld()` 安全地将 IPC 方法暴露到 `window.electronBridge` 对象上。渲染进程只能通过预定义的方法调用主进程，无法直接访问 Node.js API。
+
+### Adapter 组织
+
+`main.ts` 只创建 Service 并调用注册函数。通道按领域位于
+`electron/ipc/`：`FileIpc`、`DeviceIpc`、`ConfigurationIpc`、
+`TeamPlanIpc`、`CombatPlanIpc`、`ShipLibraryIpc`、`EnvironmentIpc`、
+`BackendIpc` 和 `UpdaterIpc`。
+
+Adapter 允许处理 Electron 对话框、同步 `event.returnValue` 和边界异常转换，
+但不得实现配置默认值、YAML 解析、路径规则或进程状态。同步 getter 使用
+`ipcMain.on`，其余调用使用 `ipcMain.handle`；通道名、参数顺序和返回结构属于
+兼容性契约，由 `scripts/test-main-ipc.js` 自动与 `preload.ts` 对照。
 
 ### API 分类
 
@@ -47,12 +65,33 @@ graph LR
 
 | 方法 | 参数 | 返回 | 说明 |
 |------|------|------|------|
-| `readFile(path)` | 文件路径 | `string` | 读取文件内容 |
-| `saveFile(path, content)` | 路径 + 内容 | `void` | 写入文件 |
-| `appendFile(path, content)` | 路径 + 内容 | `void` | 追加内容 |
+| `readFile(path)` | 受控路径 | `string` | 只读取 `userData` 或打包后的 `resource/` |
+| `saveFile(path, content)` | 受控路径 + 内容 | `void` | 只写入 `userData` |
+| `appendFile(path, content)` | 受控路径 + 内容 | `void` | 只追加到 `userData` |
 | `openFileDialog(filters, defaultDir?)` | 文件过滤器 | `{path, content} \| null` | 打开文件选择对话框 |
 | `saveFileDialog(name, content, filters)` | 默认名 + 内容 | `string \| null` | 保存文件对话框 |
 | `openDirectoryDialog(title?)` | 对话框标题 | `string \| null` | 文件夹选择 |
+
+通用文件 IPC 先拒绝 `..`、UNC、盘符相对路径和 NTFS ADS，再使用
+`path.resolve` 与 `realpath` 展开现有祖先中的目录链接，最后验证 canonical
+目标仍位于对应允许根目录。安装资源目录只读；renderer 不能通过
+`saveFile` 或 `appendFile` 修改它。文件选择和保存对话框属于用户在当前操作
+中明确确认的外部文件能力，不复用通用文件 IPC 的路径参数。
+
+#### 作战计划管理
+
+| 方法 | 返回 | 说明 |
+|------|------|------|
+| `getPlanManagement()` | `PlanManagementResult` | 汇总系统和用户计划清单 |
+| `exportUserPlans(selections)` | `UserPlanExportResult` | 将勾选的用户计划按类型打包为 ZIP |
+| `importLocalCombatPlan()` | `PlanFileOperationResult` | 选择本地 YAML，升级后写入用户受管目录 |
+| `readManagedCombatPlan(source, file)` | `PlanFileOperationResult` | 读取受管计划并生成运行时展开文件 |
+| `saveManagedCombatPlan(...)` | `PlanFileOperationResult` | 保存计划并拆分内嵌舰队 |
+
+`importLocalCombatPlan()` 的文件路径仅在主进程对话框和计划服务之间传递。
+渲染进程不能提交外部绝对路径；冲突覆盖也由主进程在同一次用户操作中确认。
+`exportUserPlans()` 只接收计划类型和文件名，主进程从用户受管目录重新定位并
+校验文件；系统预设不能导出，ZIP 输出路径由保存对话框授权。
 
 #### 路径查询
 
@@ -62,7 +101,8 @@ graph LR
 | `getPlansDir()` | `string` | 方案文件目录 |
 | `getConfigDir()` | `string` | 配置文件目录 |
 | `listPlanFiles()` | `{name, file}[]` | 列出方案文件 |
-| `openFolder(path)` | `void` | 在资源管理器中打开 |
+| `resolveAppPath(path)` | `string` | 仅解析 `userData` 或只读 `resource/` 内的路径 |
+| `openFolder(path)` | `void` | 仅打开 `userData` 内经过 canonical 校验的目录 |
 
 #### 环境管理
 
@@ -71,8 +111,8 @@ graph LR
 | `checkEnvironment()` | `{pythonCmd, pythonVersion, missingPackages, allReady}` | 检查 Python 环境 |
 | `installDeps()` | `{success, output}` | 安装 Python 依赖 |
 | `installPortablePython()` | `{success}` | 安装便携版 Python |
-| `checkUpdates()` | `{gitAvailable, hasUpdates, ...}` | 检测 autowsgr 库更新 |
-| `pullUpdates()` | `{success, output}` | 拉取更新 |
+| `checkUpdates()` | - | preload 兼容入口，主进程 handler 当前停用 |
+| `pullUpdates()` | - | preload 兼容入口，主进程 handler 当前停用 |
 
 #### Python 路径配置
 

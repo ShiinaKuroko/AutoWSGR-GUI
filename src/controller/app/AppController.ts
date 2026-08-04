@@ -19,6 +19,7 @@ import { Logger } from '../../utils/Logger';
 import { showConfirm, showAlert } from '../shared/DialogHelper';
 import { TemplateController } from '../template/TemplateController';
 import { TaskGroupController } from '../taskGroup/TaskGroupController';
+import { loadManagedPlanToQueue } from '../taskGroup/queueLoader';
 import { PlanController } from '../plan/PlanController';
 import { StartupController } from '../startup/StartupController';
 
@@ -354,7 +355,7 @@ export class AppController {
     });
 
     document.getElementById('btn-save-config')?.addEventListener('click', () => this.configCtrl.saveConfig());
-    document.getElementById('btn-open-config-dir')?.addEventListener('click', () => this.openFolder(this.appRoot));
+    document.getElementById('btn-open-config-dir')?.addEventListener('click', () => this.openFolder(this.configDir));
 
     document.getElementById('btn-browse-emu')?.addEventListener('click', async () => {
       const bridge = window.electronBridge;
@@ -405,13 +406,17 @@ export class AppController {
         if (!result?.success || !result.path) {
           throw new Error(result?.error || '无法读取所选出征计划');
         }
-        const fleetName = selected.plan.fleets[selected.fleetPresetIndex]?.name;
+        const fleetPresetIndex = selected.fleetPresetIndex;
+        if (fleetPresetIndex === undefined) {
+          throw new Error('自动出征计划必须选择使用舰队');
+        }
+        const fleetName = selected.plan.fleets[fleetPresetIndex]?.name;
         if (!fleetName) {
           throw new Error('所选使用舰队不存在');
         }
         this.configView.setNormalFightPlan(
           result.path,
-          selected.fleetPresetIndex,
+          fleetPresetIndex,
           fleetName,
         );
       } catch (error) {
@@ -546,6 +551,21 @@ export class AppController {
     });
     document.getElementById('btn-clear-queue')?.addEventListener('click', () => {
       this.scheduler.clearQueue(); this.renderMain();
+    });
+    document.getElementById('btn-import-plan')?.addEventListener('click', async () => {
+      const selected = await this.planCtrl.pickManagedBattlePlanForQueue();
+      if (!selected) return;
+      try {
+        await loadManagedPlanToQueue(selected, {
+          scheduler: this.scheduler,
+          renderMain: () => this.renderMain(),
+        });
+      } catch (error) {
+        await showAlert(
+          '无法加载出征计划',
+          error instanceof Error ? error.message : String(error),
+        );
+      }
     });
     document.getElementById('btn-start-queue')?.addEventListener('click', () => {
       this.scheduler.startConsuming(); this.renderMain();
@@ -819,15 +839,19 @@ export class AppController {
 
       try {
         const guiUpdate = await bridge.checkGuiUpdates?.();
+        if (guiUpdate?.status === 'error') {
+          Logger.warn(`GUI 更新检查失败: ${guiUpdate.message}`);
+          return;
+        }
         if (updateMode === 'auto') {
-          if (guiUpdate?.version) {
+          if (guiUpdate?.status === 'available') {
             Logger.info(`检测到 GUI 新版本 v${guiUpdate.version}，自动模式下将自动下载`);
           } else {
             Logger.info('GUI 已是最新版本');
           }
           return;
         }
-        if (guiUpdate?.version) {
+        if (guiUpdate?.status === 'available') {
           const confirmed = await showConfirm(
             'GUI 更新',
             `发现 GUI 新版本 v${guiUpdate.version}，是否立即下载？`,

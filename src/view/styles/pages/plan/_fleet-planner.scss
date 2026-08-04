@@ -202,6 +202,12 @@
   }
 }
 
+.plan-management-export {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
 .plan-management-filters {
   display: flex;
   min-width: 0;
@@ -304,26 +310,30 @@
   }
 
   th:nth-child(1) {
-    width: 23%;
+    width: 38px;
   }
 
   th:nth-child(2) {
-    width: 70px;
+    width: 23%;
   }
 
   th:nth-child(3) {
-    width: 22%;
+    width: 70px;
   }
 
   th:nth-child(4) {
-    width: 18%;
+    width: 22%;
   }
 
   th:nth-child(5) {
+    width: 18%;
+  }
+
+  th:nth-child(6) {
     width: 118px;
   }
 
-  th:nth-child(6),
+  th:nth-child(7),
   td:last-child {
     width: 204px;
     white-space: nowrap;
@@ -339,6 +349,22 @@
 
   tbody tr.needs-attention {
     background: color-mix(in srgb, var(--warning-bg) 55%, transparent);
+  }
+}
+
+.plan-management-selection-column,
+.plan-management-selection-cell {
+  padding-right: 5px !important;
+  padding-left: 5px !important;
+  text-align: center !important;
+
+  input {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+    vertical-align: middle;
   }
 }
 

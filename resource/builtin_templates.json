@@ -1,5 +1,20 @@
 [
   {
+    "id": "builtin_event_20260730",
+    "name": "活动 20260730 激斗漩涡",
+    "type": "event_fight",
+    "builtin": true,
+    "createdAt": "2026-08-04T00:00:00.000Z",
+    "description": "20260730 活动 E/H 难度计划",
+    "planPaths": [
+      "resource/system_battle_plans/E1炸鱼.yaml",
+      "resource/system_battle_plans/E5夜战.yaml",
+      "resource/system_battle_plans/H1炸鱼.yaml",
+      "resource/system_battle_plans/H5夜战.yaml"
+    ],
+    "defaultTimes": 1
+  },
+  {
     "id": "builtin_farm_loot",
     "name": "刷胖次",
     "type": "normal_fight",

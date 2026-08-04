@@ -1,0 +1,88 @@
+/**
+ * 解析 CUDA 配置并构造 Python 子进程环境。
+ */
+import * as fs from 'fs';
+import * as path from 'path';
+
+function normalizeCudaRoot(candidate: string): string {
+  const resolved = path.resolve(candidate.trim());
+  if (isCudaRuntimeDirectory(resolved)) return resolved;
+  return path.basename(resolved).toLowerCase() === 'bin'
+    ? path.dirname(resolved)
+    : resolved;
+}
+
+function isCudaRuntimeDirectory(candidate: string): boolean {
+  try {
+    const names = fs.readdirSync(candidate);
+    return names.some(name => /^cudart64.*\.dll$/i.test(name))
+      && names.some(name => /^cublas64.*\.dll$/i.test(name));
+  } catch {
+    return false;
+  }
+}
+
+/** 校验用户配置并返回 CUDA Toolkit 根目录或运行库目录。 */
+export function resolveConfiguredCudaRoot(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const cudaRoot = normalizeCudaRoot(value);
+  const binDir = path.join(cudaRoot, 'bin');
+  const runtimeDir = isCudaRuntimeDirectory(cudaRoot)
+    ? cudaRoot
+    : isCudaRuntimeDirectory(binDir)
+      ? binDir
+      : null;
+  if (!fs.existsSync(path.join(binDir, 'nvcc.exe')) && !runtimeDir) {
+    return null;
+  }
+  return fs.existsSync(path.join(binDir, 'nvcc.exe'))
+    ? cudaRoot
+    : runtimeDir;
+}
+
+/** 在同一个 Python 基础环境上叠加 CUDA 运行变量。 */
+export function buildCudaEnvironment(
+  baseEnv: NodeJS.ProcessEnv,
+  configuredCudaRoot: string | null,
+): NodeJS.ProcessEnv {
+  if (!configuredCudaRoot) return { ...baseEnv };
+
+  const cudaRoot = normalizeCudaRoot(configuredCudaRoot);
+  const isToolkit = fs.existsSync(path.join(cudaRoot, 'bin', 'nvcc.exe'));
+  const cudaBin = isToolkit ? path.join(cudaRoot, 'bin') : cudaRoot;
+  const existingPath = baseEnv.PATH || baseEnv.Path || '';
+  const pathEntries = existingPath.split(path.delimiter).filter(Boolean);
+  const withoutDuplicate = pathEntries.filter(
+    entry => path.resolve(entry).toLowerCase()
+      !== path.resolve(cudaBin).toLowerCase(),
+  );
+  const env: NodeJS.ProcessEnv = { ...baseEnv };
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase() === 'path') delete env[key];
+  }
+  if (isToolkit) {
+    env.CUDA_PATH = cudaRoot;
+    env.CUDA_HOME = cudaRoot;
+  }
+  env.PATH = [cudaBin, ...withoutDuplicate].join(path.delimiter);
+
+  let version: string | null = null;
+  try {
+    const versionJson = path.join(cudaRoot, 'version.json');
+    if (fs.existsSync(versionJson)) {
+      const raw = JSON.parse(
+        fs.readFileSync(versionJson, 'utf-8').replace(/^\uFEFF/, ''),
+      ) as Record<string, any>;
+      version = raw.cuda?.version ?? raw.cuda_cudart?.version ?? null;
+    }
+  } catch {
+    // 版本文件无效时继续使用目录名。
+  }
+  version ??= path.basename(cudaRoot).match(/v(\d+(?:\.\d+)?)/i)?.[1]
+    ?? null;
+  const versionMatch = version?.match(/^(\d+)\.(\d+)/);
+  if (isToolkit && versionMatch) {
+    env[`CUDA_PATH_V${versionMatch[1]}_${versionMatch[2]}`] = cudaRoot;
+  }
+  return env;
+}

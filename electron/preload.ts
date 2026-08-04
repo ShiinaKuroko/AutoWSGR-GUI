@@ -1,5 +1,5 @@
 /**
- * Preload 脚本 —— 通过 contextBridge 安全暴露 IPC 方法给渲染进程。
+ * 通过 contextBridge 向渲染进程安全暴露 IPC 方法。
  */
 import { contextBridge, ipcRenderer } from 'electron';
 
@@ -154,6 +154,19 @@ contextBridge.exposeInMainWorld('electronBridge', {
     return ipcRenderer.invoke('get-plan-management');
   },
 
+  exportUserPlans: (
+    selections: Array<{
+      kind: 'battle' | 'team';
+      file: string;
+    }>,
+  ) => {
+    return ipcRenderer.invoke('export-user-plans', selections);
+  },
+
+  importLocalCombatPlan: () => {
+    return ipcRenderer.invoke('import-local-combat-plan');
+  },
+
   setPlanUnlinkedIgnored: (
     kind: 'battle' | 'team',
     source: 'system' | 'user',
@@ -188,17 +201,6 @@ contextBridge.exposeInMainWorld('electronBridge', {
       'prepare-combat-plan-execution',
       content,
       hint,
-    );
-  },
-
-  convertLegacyCombatPlan: (
-    overwrite = false,
-    inputPath?: string,
-  ) => {
-    return ipcRenderer.invoke(
-      'convert-legacy-combat-plan',
-      overwrite,
-      inputPath,
     );
   },
 
@@ -299,23 +301,9 @@ contextBridge.exposeInMainWorld('electronBridge', {
     return ipcRenderer.invoke('check-environment');
   },
 
-  /*
-   * 测试期接口（后端源码更新）已停用，逻辑保留便于回滚恢复。
-  checkUpdates: () => {
-    return ipcRenderer.invoke('check-updates');
-  },
-  */
-
   installDeps: () => {
     return ipcRenderer.invoke('install-deps');
   },
-
-  /*
-   * 测试期接口（后端源码更新）已停用，逻辑保留便于回滚恢复。
-  pullUpdates: () => {
-    return ipcRenderer.invoke('pull-updates');
-  },
-  */
 
   startBackend: () => {
     return ipcRenderer.invoke('start-backend');
@@ -329,7 +317,7 @@ contextBridge.exposeInMainWorld('electronBridge', {
     return ipcRenderer.invoke('install-portable-python');
   },
 
-  // ── Python 路径配置 ──
+  // Python 路径配置
   getPythonPath: () => {
     return ipcRenderer.sendSync('get-python-path-sync') as string | null;
   },
@@ -342,7 +330,7 @@ contextBridge.exposeInMainWorld('electronBridge', {
     return ipcRenderer.invoke('validate-python', pythonPath);
   },
 
-  // ── GUI 自动更新 ──
+  // GUI 自动更新
   checkGuiUpdates: () => {
     return ipcRenderer.invoke('check-gui-updates');
   },

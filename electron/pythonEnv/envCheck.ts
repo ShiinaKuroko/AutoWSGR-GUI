@@ -1,6 +1,5 @@
 /**
- * 环境校验主流程。
- * 包括 VC++ 检查、env marker 管理、依赖包验证。
+ * 检查 VC++、Python、依赖包和环境就绪标记。
  */
 import * as path from 'path';
 import * as fs from 'fs';
@@ -15,20 +14,22 @@ import {
   pipEnv,
   ensurePip,
   ensureSslCertForPython,
-  isLocalPython,
 } from './utils';
 import { autoUpdateAutowsgr, type AutoUpdateDeps } from './updater';
+import {
+  buildPythonProcessEnv,
+  type PythonEnvironment,
+  resolvePythonEnvironment,
+} from './environment';
 
 const execAsync = promisify(exec);
 
-// ════════════════════════════════════════
 // VC++ Redistributable
-// ════════════════════════════════════════
 
-/** 检查并安装 VC++ Redistributable（c10.dll 等依赖需要） */
+/** 检查并安装 VC++ Redistributable。 */
 async function ensureVCRedist(): Promise<void> {
   const ctx = getCtx();
-  // vcruntime140.dll 存在于 system32 说明已安装
+  // system32 中存在 vcruntime140.dll 即视为已安装。
   const systemRoot = process.env.SystemRoot
     || process.env.SYSTEMROOT
     || process.env.WINDIR;
@@ -55,42 +56,66 @@ async function ensureVCRedist(): Promise<void> {
   }
 }
 
-// ════════════════════════════════════════
 // 环境就绪标记 (.env_ready)
-// ════════════════════════════════════════
 
-/** 环境就绪标记文件路径 */
+/** 返回环境就绪标记路径。 */
 export const ENV_READY_MARKER = () => path.join(getCtx().appRoot(), '.env_ready');
 
-/** 读取标记文件中保存的 autowsgr 版本；标记不存在或无效时返回 null */
-function readEnvMarker(): { pythonCmd: string; pythonVersion: string; autowsgrVersion: string } | null {
+interface EnvironmentMarker {
+  pythonCmd: string;
+  pythonVersion: string;
+  autowsgrVersion: string;
+  environmentIdentity: string;
+  environment: PythonEnvironment;
+}
+
+/** 读取环境标记；当前模式、解释器或仓库变化时返回 null。 */
+function readEnvMarker(): EnvironmentMarker | null {
   const ctx = getCtx();
   try {
     const data = JSON.parse(fs.readFileSync(ENV_READY_MARKER(), 'utf-8'));
-    if (data && data.pythonCmd && data.autowsgrVersion) {
-      // 确保记录的 python 路径仍然存在
+    if (
+      data
+      && data.pythonCmd
+      && data.autowsgrVersion
+      && data.environmentIdentity
+    ) {
+      // 标记中的 Python 路径必须仍然存在。
       if (!fs.existsSync(data.pythonCmd)) return null;
-      // 若用户切换了 Python 路径，旧标记自动失效
+      // Python 路径变化后旧标记失效。
       const configured = ctx.getConfiguredPythonPath();
       if (configured && configured !== data.pythonCmd) return null;
-      return data;
+      const environment = resolvePythonEnvironment(data.pythonCmd);
+      if (environment.identity !== data.environmentIdentity) return null;
+      return { ...data, environment };
     }
-  } catch { /* ignore */ }
+  } catch { /* 标记缺失或损坏时重新检查。 */ }
   return null;
 }
 
-/** 写入环境就绪标记 */
-function writeEnvMarker(pythonCmd: string, pythonVersion: string, autowsgrVersion: string): void {
+/** 写入环境就绪标记。 */
+function writeEnvMarker(
+  environment: PythonEnvironment,
+  pythonVersion: string,
+  autowsgrVersion: string,
+): void {
   try {
-    fs.writeFileSync(ENV_READY_MARKER(), JSON.stringify({ pythonCmd, pythonVersion, autowsgrVersion }), 'utf-8');
-  } catch { /* ignore */ }
+    fs.writeFileSync(
+      ENV_READY_MARKER(),
+      JSON.stringify({
+        pythonCmd: environment.pythonCmd,
+        pythonVersion,
+        autowsgrVersion,
+        environmentIdentity: environment.identity,
+      }),
+      'utf-8',
+    );
+  } catch { /* 标记写入失败不阻断启动。 */ }
 }
 
-// ════════════════════════════════════════
 // autowsgr 更新桥接
-// ════════════════════════════════════════
 
-/** 构建 autoUpdateAutowsgr 所需的依赖对象 */
+/** 构造 autoUpdateAutowsgr 的依赖对象。 */
 function buildAutoUpdateDeps(): AutoUpdateDeps {
   const ctx = getCtx();
   return {
@@ -103,37 +128,14 @@ function buildAutoUpdateDeps(): AutoUpdateDeps {
   };
 }
 
-/** 返回调试模式下有效的本地后端仓库根目录。 */
-export function externalBackendRoot(): string | null {
+function shouldAutoUpdate(environment: PythonEnvironment): boolean {
   const ctx = getCtx();
-  if (ctx.getBackendStartupMode() !== 'external') return null;
-
-  const configured = process.env.AUTOWSGR_BACKEND_REPO?.trim()
-    || ctx.getBackendRepoPath().trim();
-  if (!configured) return null;
-
-  let root = path.resolve(configured);
-  if (
-    path.basename(root).toLowerCase() === 'autowsgr'
-    && fs.existsSync(path.join(root, '__init__.py'))
-    && fs.existsSync(path.join(root, 'server', 'main.py'))
-  ) {
-    root = path.dirname(root);
-  }
-
-  return fs.existsSync(path.join(root, 'autowsgr', 'server', 'main.py'))
-    ? root
-    : null;
-}
-
-function shouldAutoUpdate(): boolean {
-  const ctx = getCtx();
-  return externalBackendRoot() === null
+  return environment.startupMode === 'managed'
     && ctx.getUpdateMode() !== 'manual';
 }
 
-function autoUpdateSkipMessage(): string {
-  return externalBackendRoot()
+function autoUpdateSkipMessage(environment: PythonEnvironment): string {
+  return environment.startupMode === 'external'
     ? '本地后端调试模式：跳过 autowsgr 自动更新检查'
     : '手动更新模式：跳过 autowsgr 自动更新检查';
 }
@@ -145,15 +147,13 @@ type CoreDepProbeResult = {
   autowsgr: string | null;
 };
 
-/**
- * 检查核心依赖可导入性。
- * 这里额外检查 scipy._lib，避免仅校验入口包导致“检查通过但运行时报错”。
- */
-async function probeCoreDependencies(pythonCmd: string): Promise<CoreDepProbeResult | null> {
+/** 检查核心依赖及 scipy._lib 是否可导入。 */
+async function probeCoreDependencies(
+  environment: PythonEnvironment,
+): Promise<CoreDepProbeResult | null> {
   const ctx = getCtx();
-  const backendRoot = externalBackendRoot();
-  const expectedRoot = backendRoot || localSitePackages();
-  const useLocalSite = !backendRoot || isLocalPython(pythonCmd);
+  const { backendRoot, pythonCmd, useLocalSite } = environment;
+  const expectedRoot = backendRoot || environment.localSite;
   const pythonPath = (value: string): string => value
     .replace(/\\/g, '/')
     .replace(/'/g, "\\'");
@@ -194,7 +194,11 @@ async function probeCoreDependencies(pythonCmd: string): Promise<CoreDepProbeRes
   try {
     const { stdout: depOut } = await execAsync(
       `"${pythonCmd}" "${checkScript}"`,
-      { windowsHide: true, timeout: 30000 },
+      {
+        windowsHide: true,
+        timeout: 30000,
+        env: buildPythonProcessEnv(environment),
+      },
     );
     const depResult = JSON.parse(depOut.trim());
     const autowsgrPath = typeof depResult.autowsgr_path === 'string'
@@ -223,21 +227,19 @@ async function probeCoreDependencies(pythonCmd: string): Promise<CoreDepProbeRes
   } catch {
     return null;
   } finally {
-    try { fs.unlinkSync(checkScript); } catch { /* ignore */ }
+    try { fs.unlinkSync(checkScript); } catch { /* 忽略清理失败。 */ }
   }
 }
 
-// ════════════════════════════════════════
 // 环境检查主流程
-// ════════════════════════════════════════
 
-/** 检查 Python 环境和所需包 */
+/** 检查 Python 环境和所需包。 */
 export async function checkEnvironment(): Promise<EnvCheckResult> {
   const ctx = getCtx();
   ctx.sendProgress('正在检查运行环境…');
   await ensureVCRedist();
 
-  // ── 快速路径: 如果标记文件存在且有效，跳过重量级依赖检查 ──
+  // 有效标记可跳过重量级依赖检查。
   const marker = readEnvMarker();
   if (marker) {
     setCachedPythonCmd(marker.pythonCmd);
@@ -245,7 +247,7 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
     if (certFile) ctx.sendProgress(`TLS 证书已就绪: ${certFile}`);
     else ctx.sendProgress('WARNING 未检测到 TLS 根证书，后续联网操作可能失败');
 
-    const markerProbe = await probeCoreDependencies(marker.pythonCmd);
+    const markerProbe = await probeCoreDependencies(marker.environment);
     const markerBrokenDeps: string[] = [];
     if (!markerProbe) {
       markerBrokenDeps.push('dep-check');
@@ -257,17 +259,21 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
     }
 
     if (markerBrokenDeps.length === 0) {
-      // 每次启动检查并自动更新 autowsgr（可由更新模式关闭）
+      // 自动模式下每次启动检查 autowsgr 更新。
       const markerAutowsgrVersion = markerProbe?.autowsgr ?? marker.autowsgrVersion;
       let finalVer = markerAutowsgrVersion;
-      if (shouldAutoUpdate()) {
+      if (shouldAutoUpdate(marker.environment)) {
         const updatedVer = await autoUpdateAutowsgr(marker.pythonCmd, buildAutoUpdateDeps());
         finalVer = updatedVer ?? markerAutowsgrVersion;
         if (updatedVer && updatedVer !== markerAutowsgrVersion) {
-          writeEnvMarker(marker.pythonCmd, marker.pythonVersion, finalVer);
+          writeEnvMarker(
+            marker.environment,
+            marker.pythonVersion,
+            finalVer,
+          );
         }
       } else {
-        ctx.sendProgress(autoUpdateSkipMessage());
+        ctx.sendProgress(autoUpdateSkipMessage(marker.environment));
       }
       ctx.sendProgress(`环境就绪 (${marker.pythonVersion}, autowsgr ${finalVer}) ✓`);
       return {
@@ -279,17 +285,32 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
     }
 
     ctx.sendProgress(`检测到依赖异常 (${markerBrokenDeps.join(', ')})，重新执行完整检查…`);
-    try { fs.unlinkSync(ENV_READY_MARKER()); } catch { /* ignore */ }
+    try { fs.unlinkSync(ENV_READY_MARKER()); } catch { /* 忽略清理失败。 */ }
   }
 
-  // ── 完整检查路径 ──
+  // 标记无效时执行完整检查。
   ctx.sendProgress('正在检查 Python 环境…');
-  ensurePthFile();
   const pythonCmd = await findPython();
   if (!pythonCmd) {
     ctx.sendProgress('WARNING 未找到兼容的 Python（需要 3.12 或 3.13）');
     return { pythonCmd: null, pythonVersion: null, missingPackages: [], allReady: false };
   }
+
+  let environment: PythonEnvironment;
+  try {
+    environment = resolvePythonEnvironment(pythonCmd);
+  } catch (error) {
+    ctx.sendProgress(
+      `ERROR ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return {
+      pythonCmd,
+      pythonVersion: null,
+      missingPackages: ['autowsgr'],
+      allReady: false,
+    };
+  }
+  if (environment.useLocalSite) ensurePthFile();
 
   const certFile = await ensureSslCertForPython(pythonCmd);
   if (certFile) ctx.sendProgress(`TLS 证书已就绪: ${certFile}`);
@@ -300,14 +321,14 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
     const { stdout } = await execAsync(`"${pythonCmd}" --version`, { windowsHide: true });
     pythonVersion = stdout.trim();
     ctx.sendProgress(`${pythonVersion} ✓`);
-  } catch { /* ignore */ }
+  } catch { /* 版本读取失败时保留空值。 */ }
 
   ctx.sendProgress('正在检查依赖包…');
   const missingPackages: string[] = [];
 
   let autowsgrVersion = '';
   try {
-    const depResult = await probeCoreDependencies(pythonCmd);
+    const depResult = await probeCoreDependencies(environment);
     if (!depResult) {
       throw new Error('依赖探测失败');
     }
@@ -338,7 +359,7 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
   if (allReady) {
     ctx.sendProgress('依赖检查通过 ✓');
 
-    // 检查 ADB 可用性
+    // 检查 ADB 可用性。
     const adbDir = path.join(ctx.appRoot(), 'adb');
     const builtinAdb = path.join(adbDir, 'adb.exe');
     if (fs.existsSync(builtinAdb)) {
@@ -347,15 +368,15 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
       ctx.sendProgress('ADB (内置) ✗  将使用模拟器自带 ADB');
     }
 
-    // 检查并自动更新 autowsgr（可由更新模式关闭）
+    // 自动模式下检查并更新 autowsgr。
     let finalVer = autowsgrVersion;
-    if (shouldAutoUpdate()) {
+    if (shouldAutoUpdate(environment)) {
       const updatedVer = await autoUpdateAutowsgr(pythonCmd, buildAutoUpdateDeps());
       finalVer = updatedVer || autowsgrVersion;
     } else {
-      ctx.sendProgress(autoUpdateSkipMessage());
+      ctx.sendProgress(autoUpdateSkipMessage(environment));
     }
-    writeEnvMarker(pythonCmd, pythonVersion || '', finalVer);
+    writeEnvMarker(environment, pythonVersion || '', finalVer);
   }
 
   return {

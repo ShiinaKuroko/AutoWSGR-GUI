@@ -28,14 +28,14 @@ function ensureActiveGroup(taskGroupModel: TaskGroupModel) {
 export function addManagedPlanToGroup(
   taskGroupModel: TaskGroupModel,
   plan: ManagedBattlePlan,
-  fleetPresetIndex: number,
+  fleetPresetIndex: number | undefined,
   render: () => void,
 ): void {
   const group = ensureActiveGroup(taskGroupModel);
   taskGroupModel.addItem(group.name, {
     managedSource: plan.source,
     managedFile: plan.file,
-    kind: 'plan',
+    kind: plan.kind === 'preset' ? 'preset' : 'plan',
     times: Math.max(1, plan.times || 1),
     label: plan.name,
     fleetPresetIndex,
@@ -93,7 +93,12 @@ export async function addFileToGroup(
 
   const parsed = (await import('js-yaml')).load(result.content) as Record<string, unknown>;
   let itemKind: 'plan' | 'preset' = 'plan';
-  if (parsed && typeof parsed === 'object' && 'task_type' in parsed && !('chapter' in parsed)) {
+  if (
+    parsed
+    && typeof parsed === 'object'
+    && 'task_type' in parsed
+    && !('map' in parsed)
+  ) {
     itemKind = 'preset';
   }
 

@@ -21,9 +21,11 @@ graph TB
   end
 
   subgraph Main["Electron 主进程 (electron/)"]
-    IPC["IPC Handlers<br/>main.ts · preload.ts"]
-    PyEnv["Python 环境管理<br/>pythonEnv/ (7 个模块)"]
-    Backend["后端进程管理<br/>backend.ts"]
+    Root["组合根<br/>main.ts"]
+    IPC["IPC Adapter<br/>ipc/*.ts · preload.ts"]
+    Service["用例与领域服务<br/>services/*.ts"]
+    PyEnv["Python 环境管理<br/>pythonEnv/ (9 个模块)"]
+    Backend["后端进程管理<br/>services/BackendService.ts"]
     Emulator["模拟器检测<br/>emulatorDetect.ts"]
   end
 
@@ -36,8 +38,11 @@ graph TB
   Controller -->|"调用 / 订阅"| Model
   Model -->|"HTTP / WebSocket"| ASGI
   Controller -->|"contextBridge (preload.ts)"| IPC
-  IPC --> PyEnv
-  IPC --> Backend
+  Root --> IPC
+  Root --> Service
+  IPC --> Service
+  Service --> PyEnv
+  Service --> Backend
   IPC --> Emulator
   Backend -->|"spawn 子进程"| ASGI
 ```
@@ -50,7 +55,7 @@ graph TB
 | **Controller** | `src/controller/` | 从 Model 提取数据 → 拼装 ViewObject → 调用 View 渲染；处理用户事件 → 调用 Model / IPC。通过 ControllerHost 接口解耦 |
 | **Model** | `src/model/` | 业务实体 + 领域服务：调度、配置、方案解析、后端通信 |
 | **Types** | `src/types/` | 跨层共享的 TypeScript 类型定义，按领域拆分为 5 个文件 |
-| **主进程** | `electron/` | 窗口管理、IPC handler、Python 环境发现/安装、后端子进程生命周期、模拟器检测 |
+| **主进程** | `electron/` | `main.ts` 负责装配；`ipc/` 保持通道契约；`services/` 承担窗口、配置、计划、环境和后端用例 |
 | **Python 后端** | 外部 | 游戏自动化核心逻辑：模拟器连接、战斗执行、OCR 识别 |
 
 ---
@@ -60,13 +65,37 @@ graph TB
 ```
 AutoWSGR-GUI/
 ├── electron/                   # Electron 主进程
-│   ├── main.ts                 # 入口：窗口创建、IPC handler 注册
+│   ├── main.ts                 # 组合根：依赖装配、IPC 注册、迁移与生命周期
 │   ├── preload.ts              # contextBridge 安全 API 暴露
-│   ├── backend.ts              # Python 后端启动/停止
 │   ├── emulatorDetect.ts       # 模拟器注册表检测
+│   ├── ipc/                    # IPC Adapter，不实现领域规则
+│   │   ├── FileIpc.ts          # 文件、路径和系统对话框
+│   │   ├── DeviceIpc.ts        # 模拟器与 ADB
+│   │   ├── ConfigurationIpc.ts # 同步 getter 与配置 setter
+│   │   ├── TeamPlanIpc.ts      # 编队计划
+│   │   ├── CombatPlanIpc.ts    # 作战计划
+│   │   ├── ShipLibraryIpc.ts   # 舰船资料库
+│   │   ├── EnvironmentIpc.ts   # Python 环境
+│   │   ├── BackendIpc.ts       # 后端进程
+│   │   ├── UpdaterIpc.ts       # GUI 自动更新
+│   │   └── IpcRegistrar.ts     # 最小注册接口
+│   ├── services/               # 用例、领域和基础设施服务
+│   │   ├── AppPaths.ts · SafePathService.ts · SecureFileService.ts
+│   │   ├── AtomicFileStore.ts · GuiSettingsStore.ts
+│   │   ├── WindowService.ts · UserDataMigrationService.ts
+│   │   ├── TeamPlanCodec.ts · TeamPlanRepository.ts · TeamPlanService.ts
+│   │   ├── CombatPlanCodec.ts · CombatPlanRepository.ts
+│   │   ├── RuntimePlanService.ts · PlanManagementService.ts
+│   │   ├── ShipLibraryService.ts · ShipLibraryUpdater.ts
+│   │   ├── AdbService.ts · CudaEnvironmentService.ts
+│   │   ├── GuiConfigurationService.ts · PythonEnvironmentService.ts
+│   │   ├── LegacyPlanMigration.ts
+│   │   └── BackendService.ts   # Python 后端启动/停止
 │   └── pythonEnv/              # Python 环境管理子模块
 │       ├── context.ts          # 共享上下文与缓存状态
 │       ├── finder.ts           # Python 可执行文件发现
+│       ├── environment.ts      # 统一安装、检查和启动环境
+│       ├── cuda.ts             # CUDA 路径与环境变量
 │       ├── envCheck.ts         # 环境验证主流程
 │       ├── installer.ts        # Python 安装与依赖管理
 │       ├── updater.ts          # autowsgr 自动更新
@@ -76,7 +105,7 @@ AutoWSGR-GUI/
 │   ├── controller/             # 控制器（6 个子目录）
 │   │   ├── app/                # 主控制器：AppController · ConfigController · SchedulerBinder · rendering · theme · constants
 │   │   ├── startup/            # 启动流程：StartupController · connection · envAndUpdates
-│   │   ├── plan/               # 方案控制器：PlanController · importExport · nodeEditor · presetFlow · rendering
+│   │   ├── plan/               # 方案控制器：PlanController · nodeEditor · presetFlow · rendering
 │   │   ├── taskGroup/          # 任务组：TaskGroupController · addItems · contextMenu · importExport · metaLoader · queueLoader
 │   │   ├── template/           # 模板：TemplateController · crud · selectors · useTemplate · wizard
 │   │   └── shared/             # 共享基接口：ControllerHost · DialogHelper
@@ -108,12 +137,12 @@ AutoWSGR-GUI/
 ├── resource/                   # 只读资源
 │   ├── system_battle_plans/    # 系统作战计划 (.yaml)
 │   ├── system_team_plans/      # 系统编队计划 (.yaml)
-│   ├── user_battle_plans/      # 用户作战计划 (.yaml)
-│   ├── user_team_plans/        # 用户编队计划 (.yaml)
+│   ├── user_battle_plans/      # 兼容旧目录，运行时不写入
+│   ├── user_team_plans/        # 兼容旧目录，运行时不写入
 │   ├── builtin_templates.json  # 内置模板
 │   ├── maps/                   # 地图 JSON（节点坐标、连线）
 │   └── images/                 # 图片资源
-├── templates/                  # 用户自定义模板
+├── templates/                  # 用户自定义模板（历史兼容来源）
 ├── scripts/                    # 构建脚本
 ├── build/                      # electron-builder 配置
 ├── usersettings.yaml           # 用户配置文件
@@ -121,6 +150,33 @@ AutoWSGR-GUI/
 ├── task_groups.json            # 任务组持久化
 └── package.json                # 项目配置
 ```
+
+用户可变计划、舰队、设置和迁移状态写入 Electron `userData`：
+`user_battle_plans/`、`user_team_plans/`、`gui_settings.json` 和
+`.migration-state.json`。安装目录和 `resource/` 只读；v5 迁移会合并当前
+安装目录的旧设置、任务组和模板，递归识别有效计划 YAML，并按新规范重命名
+后纳入 GUI 管理。不同内容的同名配置保存为“（旧版）”副本，源文件始终保留。
+本次存在实际迁移项时，主窗口创建后会显示成功、失败数量和失败文件说明。
+
+### 主进程依赖方向
+
+```text
+main.ts
+  ↓
+ipc/*Ipc.ts
+  ↓
+Service
+  ↓
+Codec / Repository
+  ↓
+AppPaths / SafePathService / AtomicFileStore
+```
+
+`main.ts` 不包含 IPC 业务分支，只创建一次实例并保持原启动顺序。可变状态有
+唯一所有者：后端子进程在 `BackendService`，资料库更新互斥在
+`ShipLibraryUpdater`，运行时计划序号在 `RuntimePlanService`，Python 发现缓存
+在 `pythonEnv/context.ts`。配置服务每次读取唯一的 `gui_settings.json`，不建立
+第二份内存配置。
 
 ---
 

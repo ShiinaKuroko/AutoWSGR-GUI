@@ -8,8 +8,15 @@
     "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true});console.log('dist cleaned')\"",
     "clean:release": "node -e \"fs.rmSync('release',{recursive:true,force:true});console.log('release cleaned')\"",
     "build": "npm run clean && npm run build:css && tsc && node scripts/bundle.js",
-    "test:legacy-plan": "npm run build && electron scripts/test-legacy-plan-conversion.js",
+    "test:legacy-config-upgrade": "npm run build && node scripts/test-legacy-config-upgrade.js",
+    "test:legacy-plan": "npm run build && node scripts/test-legacy-plan-migration.js",
+    "test:task-group-migration": "npm run build && node scripts/test-task-group-migration.js",
+    "test:api-contract": "npm run build && node scripts/test-api-contract.js",
+    "test:event-resources": "node scripts/test-event-20260730-resources.js",
     "test:settings": "npm run build && electron scripts/test-settings-persistence.js",
+    "test:main-services": "npm run build && node scripts/test-main-services.js",
+    "test:main-ipc": "npm run build && node scripts/test-main-ipc.js",
+    "test:python-environment": "npm run build && node scripts/test-python-environment.js",
     "start": "chcp 65001 >nul && npm run build && electron .",
     "dev": "chcp 65001 >nul && npm run clean && npm run build:css && tsc && node scripts/bundle.js && electron .",
     "prepare-python": "node scripts/prepare-python.js",
@@ -28,7 +35,8 @@
   },
   "dependencies": {
     "electron-updater": "^6.8.3",
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.1.0",
+    "jszip": "^3.10.1"
   },
   "build": {
     "appId": "com.autowsgr.gui",

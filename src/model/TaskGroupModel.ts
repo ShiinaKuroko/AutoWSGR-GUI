@@ -11,6 +11,7 @@ import type { PlanPresetSource } from '../types/electronBridge';
 
 /** 任务组中的单个条目 */
 export interface TaskGroupItem {
+  [key: string]: unknown;
   /** 文件路径 (战斗方案/预设 YAML) — plan/preset 类型必填 */
   path?: string;
   /** 计划管理目录来源；与 managedFile 一起使用，避免持久化绝对路径 */
@@ -41,6 +42,7 @@ export interface TaskGroupItem {
 
 /** 一个任务组 */
 export interface TaskGroup {
+  [key: string]: unknown;
   /** 唯一名称 */
   name: string;
   /** 有序的任务条目 */
@@ -49,6 +51,8 @@ export interface TaskGroup {
 
 /** 持久化格式 */
 interface TaskGroupsData {
+  [key: string]: unknown;
+  version: number;
   /** 当前选中的组名 */
   activeGroup: string;
   /** 所有组 */
@@ -60,9 +64,10 @@ interface TaskGroupsData {
 // ════════════════════════════════════════
 
 const STORAGE_FILE = 'task_groups.json';
+const TASK_GROUPS_VERSION = 2;
 
 export class TaskGroupModel {
-  private data: TaskGroupsData = { activeGroup: '', groups: [] };
+  private data: TaskGroupsData = { version: TASK_GROUPS_VERSION, activeGroup: '', groups: [] };
 
   get groups(): ReadonlyArray<TaskGroup> {
     return this.data.groups;
@@ -165,14 +170,85 @@ export class TaskGroupModel {
       const bridge = (window as any).electronBridge;
       if (!bridge?.readFile) return;
       const content = await bridge.readFile(STORAGE_FILE);
-      const parsed = JSON.parse(content) as TaskGroupsData;
+      const parsed = JSON.parse(content) as Partial<TaskGroupsData> & { groups?: unknown };
       if (parsed && Array.isArray(parsed.groups)) {
-        this.data = parsed;
-        Logger.debug(`任务组已加载: ${parsed.groups.length} 个组`);
+        const needsMigration = parsed.version !== TASK_GROUPS_VERSION;
+        this.data = this.migrate({ ...parsed, groups: parsed.groups });
+        if (needsMigration) await this.save();
+        Logger.debug(`任务组已加载: ${this.data.groups.length} 个组 (v${this.data.version})`);
       }
     } catch {
       // 文件不存在是正常的
     }
+  }
+
+  private migrate(raw: Partial<TaskGroupsData> & { groups: unknown[] }): TaskGroupsData {
+    const groups = raw.groups.flatMap((group): TaskGroup[] => {
+      if (!group || typeof group !== 'object' || Array.isArray(group)) return [];
+      const source = group as unknown as Record<string, unknown>;
+      const name = typeof source.name === 'string' && source.name.trim()
+        ? source.name
+        : '默认';
+      const items = Array.isArray(source.items)
+        ? source.items.flatMap(item => this.migrateItem(item))
+        : [];
+      return [{ ...source, name, items } as TaskGroup];
+    });
+    const activeGroup = typeof raw.activeGroup === 'string'
+      && groups.some(group => group.name === raw.activeGroup)
+      ? raw.activeGroup
+      : groups[0]?.name ?? '';
+    return {
+      ...raw,
+      version: TASK_GROUPS_VERSION,
+      activeGroup,
+      groups,
+    };
+  }
+
+  private migrateItem(raw: unknown): TaskGroupItem[] {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+    const source = { ...(raw as Record<string, unknown>) };
+    const kind = source.kind === 'preset' || source.kind === 'template'
+      ? source.kind
+      : 'plan';
+    const pathValue = typeof source.path === 'string' && source.path.trim()
+      ? source.path
+      : undefined;
+    const managedFile = typeof source.managedFile === 'string' && source.managedFile.trim()
+      ? source.managedFile
+      : undefined;
+    const managedSource = source.managedSource === 'system' || source.managedSource === 'user'
+      ? source.managedSource
+      : this.inferManagedSource(pathValue);
+    const inferredFile = managedFile ?? this.inferManagedFile(pathValue);
+    const label = typeof source.label === 'string' && source.label.trim()
+      ? source.label
+      : (inferredFile ?? pathValue ?? '任务').split(/[\\/]/).pop()?.replace(/\.ya?ml$/i, '') ?? '任务';
+    return [{
+      ...source,
+      kind,
+      path: pathValue,
+      managedSource,
+      managedFile: inferredFile,
+      times: typeof source.times === 'number' && source.times > 0 ? source.times : 1,
+      label,
+    } as TaskGroupItem];
+  }
+
+  private inferManagedSource(value: string | undefined): PlanPresetSource | undefined {
+    if (!value) return undefined;
+    if (/system_battle_plans|builtin_plans|system[\\/]/i.test(value)) return 'system';
+    if (/user_battle_plans|plans[\\/]|user[\\/]/i.test(value)) return 'user';
+    return undefined;
+  }
+
+  private inferManagedFile(value: string | undefined): string | undefined {
+    if (!value || !/\.ya?ml$/i.test(value)) return undefined;
+    const source = this.inferManagedSource(value);
+    if (!source) return undefined;
+    const file = value.split(/[\\/]/).pop();
+    return file && file.trim() ? file : undefined;
   }
 
   /** 保存到文件 */

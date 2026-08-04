@@ -20,6 +20,7 @@ import type {
   ShipLibraryManifest,
   ShipLibraryShip,
 } from '../../types/electronBridge';
+import { TYPE_LABELS } from '../../shared/fleetShipTypes';
 import {
   showAlert,
   showConfirm,
@@ -60,31 +61,6 @@ const EMPTY_LABELS: ShipLibraryLabels = {
   role_classes: {},
   countries: {},
   variants: {},
-};
-const SHIP_TYPE_SHORT_NAMES: Record<string, string> = {
-  ap: '补给',
-  av: '装母',
-  bb: '战列',
-  bbg: '导战',
-  bbv: '航战',
-  bc: '战巡',
-  bm: '重炮',
-  ca: '重巡',
-  cav: '航巡',
-  cbg: '大巡',
-  cf: '旗舰',
-  cg: '导巡',
-  cgaa: '防巡',
-  cl: '轻巡',
-  clt: '雷巡',
-  cv: '航母',
-  cvl: '轻母',
-  dd: '驱逐',
-  ddg: '导驱',
-  ddgaa: '防驱',
-  sc: '炮潜',
-  ss: '潜艇',
-  ssg: '导潜',
 };
 const SHIP_TYPE_FILTER_ORDER = [
   'ap',
@@ -906,7 +882,7 @@ export class DecisivePlanView {
         .map(code => this.createFilterOption(
           'type',
           code,
-          SHIP_TYPE_SHORT_NAMES[code] ?? this.labels.ship_types[code]!,
+          TYPE_LABELS[code] ?? this.labels.ship_types[code]!,
         )),
     );
     this.countryOptions.replaceChildren(
@@ -1207,7 +1183,7 @@ export class DecisivePlanView {
   }
 
   private shipTypeDisplay(ship: ShipLibraryShip): string {
-    const typeName = SHIP_TYPE_SHORT_NAMES[ship.ship_type]
+    const typeName = TYPE_LABELS[ship.ship_type]
       ?? this.labels.ship_types[ship.ship_type]
       ?? ship.ship_type;
     return `${typeName}-${ship.ship_type.toUpperCase()}`;

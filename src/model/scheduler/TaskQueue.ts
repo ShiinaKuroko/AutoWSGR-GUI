@@ -118,6 +118,7 @@ export class TaskQueue {
     const normalizedTimes = unlimited ? 1 : Math.max(1, Math.trunc(times));
     const task: SchedulerTask = {
       id,
+      logicalId: id,
       name,
       type,
       priority,
@@ -280,7 +281,7 @@ export class TaskQueue {
         req.plan.fleet_rules = fleetRules;
         req.plan.fleet_id = task.fleetId;
       } else {
-        (req as any).plan = { fleet, fleet_rules: fleetRules, fleet_id: task.fleetId };
+        req.plan = { fleet, fleet_rules: fleetRules, fleet_id: task.fleetId };
       }
       if (req.type === 'event_fight') req.fleet_id = task.fleetId;
     }

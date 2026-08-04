@@ -128,12 +128,11 @@ flowchart TD
 
 ### controller/plan/ — 方案控制器
 
-管理方案的导入/导出/编辑和预览渲染。
+管理受管方案的新建、加载、编辑、保存和预览渲染。
 
 | 文件 | 职责 |
 |------|------|
 | `PlanController.ts` | 方案子控制器类：持有当前方案状态，协调下属模块 |
-| `importExport.ts` | 方案文件的导入/导出/新建流程 |
 | `presetFlow.ts` | 任务预设的导入/查看/关闭/执行流程 |
 | `nodeEditor.ts` | 节点编辑器：从 UI 收集节点阵型/夜战/索敌规则并写回 PlanData |
 | `rendering.ts` | 构建 `PlanPreviewViewObject`，协调地图数据和方案数据的合并 |

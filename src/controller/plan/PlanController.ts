@@ -1,6 +1,5 @@
 /**
- * PlanController —— 方案 & 任务预设子控制器（瘦身版）。
- * 核心逻辑委托给 importExport / presetFlow / nodeEditor / rendering 模块。
+ * 编排受管方案、任务预设、节点编辑和计划预览。
  */
 import { PlanPreviewView } from '../../view/plan/PlanPreviewView';
 import { PlanModel } from '../../model/PlanModel';
@@ -33,7 +32,6 @@ import {
   showConfirm,
   showSaveSuccess,
 } from '../shared/DialogHelper';
-import { importPlanFlow, type PlanSetters } from './importExport';
 import { importTaskPresetFlow, closePresetDetailFlow, executePresetFlow, type PresetState } from './presetFlow';
 import { saveNodeEditorValues } from './nodeEditor';
 import { buildPlanPreviewVO } from './rendering';
@@ -61,7 +59,8 @@ export class PlanController {
   private selectedBattlePlan: ManagedBattlePlan | null = null;
   private selectedBattlePlanFleetIndex: number | null = null;
   private battlePlanLoaderSortField: 'name' | 'modifiedAt' = 'modifiedAt';
-  private battlePlanLoaderPurpose: 'editor' | 'task-list' | 'automation' = 'editor';
+  private battlePlanLoaderPurpose:
+    'editor' | 'queue' | 'task-list' | 'automation' = 'editor';
   private resolveBattlePlanSelection: (
     (selection: ManagedBattlePlanSelection | null) => void
   ) | null = null;
@@ -78,6 +77,22 @@ export class PlanController {
   pickManagedBattlePlan(): Promise<ManagedBattlePlanSelection | null> {
     this.finishBattlePlanSelection(null);
     this.battlePlanLoaderPurpose = 'task-list';
+    this.selectedBattlePlanFleetIndex = null;
+    this.updateBattlePlanLoaderCopy();
+    const searchInput = document.getElementById(
+      'battle-plan-loader-search',
+    ) as HTMLInputElement | null;
+    if (searchInput) searchInput.value = '';
+    this.openBattlePlanLoader();
+    void this.refreshBattlePlanLoader().then(() => searchInput?.focus());
+    return new Promise((resolve) => {
+      this.resolveBattlePlanSelection = resolve;
+    });
+  }
+
+  pickManagedBattlePlanForQueue(): Promise<ManagedBattlePlanSelection | null> {
+    this.finishBattlePlanSelection(null);
+    this.battlePlanLoaderPurpose = 'queue';
     this.selectedBattlePlanFleetIndex = null;
     this.updateBattlePlanLoaderCopy();
     const searchInput = document.getElementById(
@@ -139,23 +154,11 @@ export class PlanController {
     };
   }
 
-  private get planSetters(): PlanSetters {
-    return {
-      setCurrentPlan: (plan) => {
-        this.setCurrentPlan(plan, null);
-      },
-      setCurrentMapData: (mapData) => { this.currentMapData = mapData; },
-      renderPlanPreview: () => this.renderPlanPreview(),
-      importTaskPreset: (preset, fp) => this.importTaskPreset(preset, fp),
-    };
-  }
-
   // ════════════════════════════════════════
   // 事件绑定
   // ════════════════════════════════════════
 
   bindActions(): void {
-    document.getElementById('btn-import-plan')?.addEventListener('click', () => this.importPlan());
     document.getElementById('btn-new-battle-plan')?.addEventListener(
       'click',
       () => void this.newPlan(),
@@ -163,10 +166,6 @@ export class PlanController {
     document.getElementById('btn-load-battle-plan')?.addEventListener(
       'click',
       () => void this.loadPlan(),
-    );
-    document.getElementById('btn-convert-legacy-plan')?.addEventListener(
-      'click',
-      () => void this.convertLegacyPlan(),
     );
     document.getElementById('btn-save-plan')?.addEventListener(
       'click',
@@ -273,59 +272,6 @@ export class PlanController {
 
   // ── 委托方法 ──
 
-  async importPlan(): Promise<void> {
-    if (!(await this.confirmDiscardUnsaved('导入'))) return;
-    return importPlanFlow(this.host, this.planSetters);
-  }
-
-  private async convertLegacyPlan(): Promise<void> {
-    if (!(await this.confirmDiscardUnsaved('转换'))) return;
-    const bridge = window.electronBridge;
-    if (!bridge?.convertLegacyCombatPlan) {
-      await showAlert('转换失败', '请完整重启 GUI 后再操作');
-      return;
-    }
-
-    try {
-      let result = await bridge.convertLegacyCombatPlan(false);
-      if (result.canceled) return;
-      if (result.exists) {
-        const conflictDetails = result.conflicts?.length
-          ? `\n\n${result.conflicts.join('\n')}`
-          : '';
-        const overwrite = await showConfirm(
-          '覆盖用户配置',
-          `转换目标存在同名配置，是否全部覆盖？${conflictDetails}`,
-        );
-        if (!overwrite) return;
-        result = await bridge.convertLegacyCombatPlan(
-          true,
-          result.inputPath,
-        );
-      }
-      if (!result.success || !result.file) {
-        throw new Error(result.error || '旧计划转换失败');
-      }
-
-      await this.refreshBattlePlanLoader();
-      const loaded = await this.openManagedPlan(
-        result.file,
-        'user',
-        true,
-      );
-      if (loaded) {
-        showSaveSuccess(
-          `旧计划已转换为用户地图和 ${result.teamFiles?.length ?? 0} 支用户舰队`,
-        );
-      }
-    } catch (error) {
-      await showAlert(
-        '转换失败',
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-  }
-
   async openManagedPlan(
     file: string,
     source: PlanPresetSource,
@@ -347,6 +293,16 @@ export class PlanController {
       if (!result.success || !result.path || result.content === undefined) {
         await showAlert('加载失败', result.error || '无法读取出征计划');
         return false;
+      }
+      const parsed = (await import('js-yaml')).load(result.content);
+      if (
+        parsed
+        && typeof parsed === 'object'
+        && 'task_type' in parsed
+        && !('map' in parsed)
+      ) {
+        this.importTaskPreset(parsed as TaskPreset, result.path);
+        return true;
       }
       const plan = PlanModel.fromYaml(result.content, result.path);
       const { chapter, map } = plan.data;
@@ -404,11 +360,55 @@ export class PlanController {
     searchInput?.focus();
   }
 
+  private async importLocalBattlePlan(): Promise<void> {
+    const bridge = window.electronBridge;
+    if (!bridge?.importLocalCombatPlan) {
+      await showAlert('导入失败', '请完整重启 GUI 后再操作');
+      return;
+    }
+    const button = document.getElementById(
+      'btn-import-local-battle-plan',
+    ) as HTMLButtonElement | null;
+    if (button) button.disabled = true;
+    try {
+      const result = await bridge.importLocalCombatPlan();
+      if (result.canceled) return;
+      if (!result.success || !result.file) {
+        throw new Error(result.error || '本地 YAML 导入失败');
+      }
+
+      await this.refreshBattlePlanLoader();
+      const imported = this.battlePlanLoaderPlans.find(plan => (
+        plan.source === 'user' && plan.file === result.file
+      ));
+      if (imported) this.selectBattlePlan(imported);
+      Logger.info(`本地出征计划已升级并导入: ${result.file}`);
+      showSaveSuccess(
+        result.kind === 'preset'
+          ? '已添加本地任务预设'
+          : `已添加本地 YAML，并升级 ${
+            result.teamFiles?.length ?? 0
+          } 支关联编队`,
+      );
+    } catch (error) {
+      await showAlert(
+        '导入失败',
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
   private bindBattlePlanLoaderActions(): void {
     const dialog = document.getElementById('battle-plan-loader');
     document.getElementById('btn-cancel-battle-plan-loader')?.addEventListener(
       'click',
       () => this.closeBattlePlanLoader(),
+    );
+    document.getElementById('btn-import-local-battle-plan')?.addEventListener(
+      'click',
+      () => void this.importLocalBattlePlan(),
     );
     document.getElementById('btn-refresh-battle-plan-loader')?.addEventListener(
       'click',
@@ -486,6 +486,7 @@ export class PlanController {
   }
 
   private updateBattlePlanLoaderCopy(): void {
+    const pickingForQueue = this.battlePlanLoaderPurpose === 'queue';
     const pickingForTaskList = this.battlePlanLoaderPurpose === 'task-list';
     const pickingForAutomation = this.battlePlanLoaderPurpose === 'automation';
     const title = document.getElementById('battle-plan-loader-title');
@@ -496,21 +497,29 @@ export class PlanController {
       'btn-confirm-battle-plan-loader',
     );
     if (title) {
-      title.textContent = pickingForTaskList
-        ? '添加计划到任务列表'
-        : pickingForAutomation
-          ? '加载自动出征计划'
-          : '加载出征配置';
+      title.textContent = pickingForQueue
+        ? '加载计划到任务队列'
+        : pickingForTaskList
+          ? '添加计划到任务列表'
+          : pickingForAutomation
+            ? '加载自动出征计划'
+            : '加载出征配置';
     }
     if (description) {
-      description.textContent = pickingForTaskList
-        ? '选择作战方案及本次唯一使用的编队。'
-        : pickingForAutomation
-          ? '选择自动出征使用的作战计划和队伍。'
-          : '读取系统与用户作战计划目录中的合法 YAML 配置。';
+      description.textContent = pickingForQueue
+        ? '选择加入任务队列的作战计划；计划包含编队时需选择本次使用的编队。'
+        : pickingForTaskList
+          ? '选择作战计划；计划包含编队时需选择本次使用的编队。'
+          : pickingForAutomation
+            ? '选择自动出征使用的作战计划和队伍。'
+            : '读取系统与用户作战计划目录中的合法 YAML 配置。';
     }
     if (confirm) {
-      confirm.textContent = pickingForTaskList ? '添加到列表' : '加载';
+      confirm.textContent = pickingForQueue
+        ? '加入队列'
+        : pickingForTaskList
+          ? '添加到列表'
+          : '加载';
     }
   }
 
@@ -550,7 +559,7 @@ export class PlanController {
       this.resetBattlePlanFleetSelection(this.selectedBattlePlan);
       const count = document.getElementById('battle-plan-loader-count');
       if (count) {
-        count.textContent = `共读取 ${this.battlePlanLoaderPlans.length} 个作战计划`;
+        count.textContent = `共读取 ${this.battlePlanLoaderPlans.length} 个作战配置`;
       }
       const errorCount = result.errors.filter(error => error.kind === 'battle').length;
       if (status) {
@@ -601,6 +610,7 @@ export class PlanController {
         )]
         : [];
       plans.set(key, {
+        kind: 'battle',
         file: binding.planFile,
         name: binding.planName,
         source: binding.source,
@@ -651,6 +661,10 @@ export class PlanController {
     const keyword = (searchInput?.value ?? '').trim().toLocaleLowerCase('zh-CN');
     const direction = sortAsc?.checked ? 1 : -1;
     return this.battlePlanLoaderPlans
+      .filter(plan => (
+        this.battlePlanLoaderPurpose !== 'automation'
+        || plan.kind === 'battle'
+      ))
       .filter(plan => !filterSystem?.checked || plan.source !== 'system')
       .filter((plan) => {
         if (!keyword) return true;
@@ -660,6 +674,8 @@ export class PlanController {
           String(plan.chapter),
           String(plan.map),
           `${plan.chapter}-${plan.map}`,
+          plan.taskType ?? '',
+          plan.campaignName ?? '',
         ].some(value => value.toLocaleLowerCase('zh-CN').includes(keyword));
       })
       .sort((left, right) => {
@@ -689,8 +705,8 @@ export class PlanController {
       const empty = document.createElement('div');
       empty.className = 'fleet-team-loader-preview-empty';
       empty.textContent = this.battlePlanLoaderPlans.length === 0
-        ? '未读取到合法的作战计划'
-        : '没有符合当前条件的作战计划';
+        ? '未读取到合法的作战配置'
+        : '没有符合当前条件的作战配置';
       list.append(empty);
       this.clearBattlePlanSelection();
       return;
@@ -721,8 +737,10 @@ export class PlanController {
       fileName.title = plan.file;
       const meta = document.createElement('span');
       meta.className = 'battle-plan-loader-item-meta';
-      meta.textContent = plan.modifiedAt > 0
-        ? `${this.battlePlanMapLabel(plan)} · ${plan.fleetCount} 支关联编队`
+      meta.textContent = plan.kind === 'preset'
+        ? `${this.taskPresetTypeLabel(plan)} · 任务预设`
+        : plan.modifiedAt > 0
+          ? `${this.battlePlanMapLabel(plan)} · ${plan.fleetCount} 支关联编队`
         : `${plan.fleetCount} 支关联编队 · 重启后显示完整摘要`;
       button.append(heading, fileName, meta);
       list.append(button);
@@ -750,6 +768,7 @@ export class PlanController {
   private resetBattlePlanFleetSelection(plan: ManagedBattlePlan | null): void {
     this.selectedBattlePlanFleetIndex = (
       this.isPickingBattlePlanWithFleet()
+      && plan?.kind === 'battle'
       && plan?.fleets.length === 1
     ) ? 0 : null;
   }
@@ -781,29 +800,52 @@ export class PlanController {
     }
     if (body) {
       const hasDetails = plan.modifiedAt > 0;
-      body.replaceChildren(
-        this.createBattlePlanPreviewField('章节关卡', this.battlePlanMapLabel(plan)),
-        this.createBattlePlanPreviewField(
-          '执行次数',
-          hasDetails ? `${plan.times} 次` : '重启后显示',
-        ),
-        this.createBattlePlanPreviewField(
-          '维修方案',
-          hasDetails
-            ? `${this.battlePlanRepairLabel(plan.repairMode)}-${this.battlePlanRepairMethodLabel()}`
-            : '重启后显示',
-        ),
-        this.createBattlePlanPreviewField(
-          '终点战果判断',
-          hasDetails ? this.battlePlanResultLabel(plan.result) : '重启后显示',
-        ),
-        this.createBattlePlanFleetPreview(plan, hasDetails),
-        this.createBattlePlanStopPreview(plan, hasDetails),
-      );
+      if (plan.kind === 'preset') {
+        body.replaceChildren(
+          this.createBattlePlanPreviewField(
+            '任务类型',
+            this.taskPresetTypeLabel(plan),
+          ),
+          this.createBattlePlanPreviewField(
+            '执行次数',
+            `${plan.times} 次`,
+          ),
+          this.createBattlePlanPreviewField(
+            '任务参数',
+            this.taskPresetParameterLabel(plan),
+            true,
+          ),
+          this.createBattlePlanPreviewField(
+            '完整配置',
+            '加载后可在任务预设页面查看',
+            true,
+          ),
+        );
+      } else {
+        body.replaceChildren(
+          this.createBattlePlanPreviewField('章节关卡', this.battlePlanMapLabel(plan)),
+          this.createBattlePlanPreviewField(
+            '执行次数',
+            hasDetails ? `${plan.times} 次` : '重启后显示',
+          ),
+          this.createBattlePlanPreviewField(
+            '维修方案',
+            hasDetails
+              ? `${this.battlePlanRepairLabel(plan.repairMode)}-${this.battlePlanRepairMethodLabel()}`
+              : '重启后显示',
+          ),
+          this.createBattlePlanPreviewField(
+            '终点战果判断',
+            hasDetails ? this.battlePlanResultLabel(plan.result) : '重启后显示',
+          ),
+          this.createBattlePlanFleetPreview(plan, hasDetails),
+          this.createBattlePlanStopPreview(plan, hasDetails),
+        );
+      }
     }
     if (confirmButton) {
       confirmButton.disabled = (
-        this.isPickingBattlePlanWithFleet()
+        this.requiresBattlePlanFleetSelection(plan)
         && this.selectedBattlePlanFleetIndex === null
       );
     }
@@ -847,9 +889,11 @@ export class PlanController {
     if (plan.fleets.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'battle-plan-preview-empty';
-      empty.textContent = this.isPickingBattlePlanWithFleet()
-        ? '没有可选择的编队，无法使用该计划'
-        : '未配置编队预设';
+      empty.textContent = this.battlePlanLoaderPurpose === 'automation'
+        ? '没有可选择的编队，无法用于自动出征'
+        : this.isPickingBattlePlanWithFleet()
+          ? '未配置编队预设，将使用 YAML 的舰队编号和游戏当前编成'
+          : '未配置编队预设';
       list.append(empty);
     } else {
       const selectable = this.isPickingBattlePlanWithFleet();
@@ -968,10 +1012,17 @@ export class PlanController {
   private async confirmBattlePlanLoader(): Promise<void> {
     if (!this.selectedBattlePlan) return;
     if (this.isPickingBattlePlanWithFleet()) {
-      if (this.selectedBattlePlanFleetIndex === null) return;
+      if (
+        this.requiresBattlePlanFleetSelection(this.selectedBattlePlan)
+        && this.selectedBattlePlanFleetIndex === null
+      ) {
+        return;
+      }
       this.finishBattlePlanSelection({
         plan: this.selectedBattlePlan,
-        fleetPresetIndex: this.selectedBattlePlanFleetIndex,
+        ...(this.selectedBattlePlanFleetIndex === null
+          ? {}
+          : { fleetPresetIndex: this.selectedBattlePlanFleetIndex }),
       });
       this.closeBattlePlanLoader();
       return;
@@ -983,8 +1034,20 @@ export class PlanController {
 
   private isPickingBattlePlanWithFleet(): boolean {
     return (
-      this.battlePlanLoaderPurpose === 'task-list'
+      this.battlePlanLoaderPurpose === 'queue'
+      || this.battlePlanLoaderPurpose === 'task-list'
       || this.battlePlanLoaderPurpose === 'automation'
+    );
+  }
+
+  private requiresBattlePlanFleetSelection(plan: ManagedBattlePlan): boolean {
+    if (plan.kind === 'preset') return false;
+    return (
+      this.battlePlanLoaderPurpose === 'automation'
+      || (
+        this.isPickingBattlePlanWithFleet()
+        && plan.fleets.length > 0
+      )
     );
   }
 
@@ -1001,6 +1064,7 @@ export class PlanController {
   }
 
   private battlePlanMapLabel(plan: ManagedBattlePlan): string {
+    if (plan.kind === 'preset') return this.taskPresetTypeLabel(plan);
     const chapter = String(plan.chapter).trim();
     const map = String(plan.map);
     if (chapter === '?' || map === '?') return '重启后显示';
@@ -1013,8 +1077,32 @@ export class PlanController {
     return `${chapter}-${map}`;
   }
 
+  private taskPresetTypeLabel(plan: ManagedBattlePlan): string {
+    const labels: Record<string, string> = {
+      normal_fight: '普通出击',
+      event_fight: '活动出击',
+      campaign: '战役',
+      exercise: '演习',
+      decisive: '决战',
+    };
+    return labels[plan.taskType ?? ''] ?? plan.taskType ?? '任务预设';
+  }
+
+  private taskPresetParameterLabel(plan: ManagedBattlePlan): string {
+    if (plan.taskType === 'campaign') {
+      return plan.campaignName || '未指定战役';
+    }
+    if (plan.taskType === 'exercise') {
+      return `第 ${plan.fleetId} 舰队`;
+    }
+    if (plan.taskType === 'decisive') {
+      return `第 ${plan.chapter} 章`;
+    }
+    return '引用受管出征计划';
+  }
+
   private async confirmDiscardUnsaved(
-    action: '加载' | '导入' | '转换' = '加载',
+    action: '加载' = '加载',
   ): Promise<boolean> {
     if (!this.hasUnsavedPlanChanges()) return true;
     return showConfirm(
@@ -1122,6 +1210,7 @@ export class PlanController {
   }
 
   importTaskPreset(preset: TaskPreset, filePath: string): void {
+    this.mapLoadVersion++;
     importTaskPresetFlow(preset, filePath, this.planView, this.host, this.presetState);
   }
 
@@ -1142,6 +1231,7 @@ export class PlanController {
   }
 
   async ensureDefaultPlan(): Promise<void> {
+    if (this.currentPreset) return;
     if (this.currentPlan) {
       this.renderPlanPreview();
       return;
@@ -1253,7 +1343,7 @@ export class PlanController {
       );
       return null;
     }
-    return bridge.resolveAppPath(result.path);
+    return result.path;
   }
 
   private async executePlan(): Promise<void> {

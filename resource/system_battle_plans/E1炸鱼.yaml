@@ -1,0 +1,9 @@
+# 20260730 激斗漩涡 E-1 alpha 入口示例
+# map 写法: 数字+a/b, a=alpha入口 b=beta入口; chapter: E(简单)/H(困难)
+event: "20260730"
+chapter: E
+map: 1a
+selected_nodes: [B]
+node_defaults:
+  proceed: false
+  formation: 5

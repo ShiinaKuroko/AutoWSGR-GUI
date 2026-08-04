@@ -4250,6 +4250,12 @@ input[type=checkbox]:focus-visible {
   border-color: var(--accent);
 }
 
+.plan-management-export {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
 .plan-management-filters {
   display: flex;
   min-width: 0;
@@ -4346,21 +4352,24 @@ input[type=checkbox]:focus-visible {
   font-size: 11px;
 }
 .plan-team-management-table th:nth-child(1) {
-  width: 23%;
+  width: 38px;
 }
 .plan-team-management-table th:nth-child(2) {
-  width: 70px;
+  width: 23%;
 }
 .plan-team-management-table th:nth-child(3) {
-  width: 22%;
+  width: 70px;
 }
 .plan-team-management-table th:nth-child(4) {
-  width: 18%;
+  width: 22%;
 }
 .plan-team-management-table th:nth-child(5) {
+  width: 18%;
+}
+.plan-team-management-table th:nth-child(6) {
   width: 118px;
 }
-.plan-team-management-table th:nth-child(6),
+.plan-team-management-table th:nth-child(7),
 .plan-team-management-table td:last-child {
   width: 204px;
   white-space: nowrap;
@@ -4373,6 +4382,22 @@ input[type=checkbox]:focus-visible {
 }
 .plan-team-management-table tbody tr.needs-attention {
   background: color-mix(in srgb, var(--warning-bg) 55%, transparent);
+}
+
+.plan-management-selection-column,
+.plan-management-selection-cell {
+  padding-right: 5px !important;
+  padding-left: 5px !important;
+  text-align: center !important;
+}
+.plan-management-selection-column input,
+.plan-management-selection-cell input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+  vertical-align: middle;
 }
 
 .plan-kind-badge {

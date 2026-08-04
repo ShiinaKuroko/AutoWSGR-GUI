@@ -448,6 +448,7 @@ export class PlanModel {
       const obj = item as Record<string, unknown>;
       if (typeof obj.name !== 'string' || !Array.isArray(obj.ships)) continue;
       presets.push({
+        ...obj,
         name: obj.name,
         ships: (obj.ships as unknown[]).map(PlanModel.parseShipSlot),
       });
@@ -485,7 +486,10 @@ export class PlanModel {
         const candidateValues = filter.name || legacyNames.length === 0
           ? rawCandidates
           : legacyNames.slice(1);
-        if (!filter.name && legacyNames.length > 0) {
+        // Legacy string arrays encoded the first entry as the primary ship.
+        // Structured candidate-only slots intentionally have no primary name
+        // and must remain equal alternatives for the backend.
+        if (!filter.name && legacyNames.length > 0 && rawCandidates.every(value => typeof value === 'string')) {
           filter.name = legacyNames[0];
         }
 

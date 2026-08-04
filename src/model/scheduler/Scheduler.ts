@@ -374,6 +374,7 @@ export class Scheduler {
       if (preflightMet) {
         this.emitLog('info', `任务「${task.name}」启动前已满足停止条件，跳过`);
         this.callbacks.onTaskCompleted?.(task.id, true, null, null);
+        this.callbacks.onLogicalTaskCompleted?.(task.logicalId, true, null);
         this.currentTask = null;
         this.consumeNext();
         return;
@@ -440,6 +441,7 @@ export class Scheduler {
         this.currentTask = null;
         if (this.scheduleRetry(task, resp.error ?? '任务启动失败')) return;
         this.callbacks.onTaskCompleted?.(task.id, false, null, resp.error ?? '任务启动失败');
+        this.callbacks.onLogicalTaskCompleted?.(task.logicalId, false, resp.error ?? '任务启动失败');
         this.consumeNext();
       }
     } catch (e) {
@@ -447,6 +449,7 @@ export class Scheduler {
       this.currentTask = null;
       if (this.scheduleRetry(task, String(e))) return;
       this.callbacks.onTaskCompleted?.(task.id, false, null, String(e));
+      this.callbacks.onLogicalTaskCompleted?.(task.logicalId, false, String(e));
       this.consumeNext();
     }
   }
@@ -486,6 +489,7 @@ export class Scheduler {
       Logger.debug(`handleTaskFinished: _stopped flag set, skipping follow-up for 「${finished.name}」`, 'scheduler');
       this._stopped = false;
       this.callbacks.onTaskCompleted?.(finished.id, success, result, error);
+      this.callbacks.onLogicalTaskCompleted?.(finished.logicalId, false, error);
       this.currentTask = null;
       this.setStatus('idle');
       this.notifyQueueChange();
@@ -504,6 +508,8 @@ export class Scheduler {
       if (nextRemaining > 0) {
         const followUp = this.buildFollowUpTask(finished, nextRemaining);
         this._taskQueue.insertByPriority(followUp, !finished.allowPolling);
+      } else {
+        this.callbacks.onLogicalTaskCompleted?.(finished.logicalId, false, error);
       }
       this.consumeNext();
       return;
@@ -540,6 +546,7 @@ export class Scheduler {
         if (shouldStop) {
           this.emitLog('info', `任务「${finished.name}」满足停止条件，不再继续`);
           this.currentTask = null;
+          this.callbacks.onLogicalTaskCompleted?.(finished.logicalId, true, null);
           this.consumeNext();
           return;
         }
@@ -555,6 +562,8 @@ export class Scheduler {
       } else {
         this._taskQueue.insertByPriority(followUp, !finished.allowPolling);
       }
+    } else {
+      this.callbacks.onLogicalTaskCompleted?.(finished.logicalId, true, null);
     }
 
     this.currentTask = null;
@@ -564,6 +573,7 @@ export class Scheduler {
   private buildFollowUpTask(finished: SchedulerTask, remainingTimes: number): SchedulerTask {
     return {
       id: generateTaskId(),
+      logicalId: finished.logicalId,
       name: finished.name,
       type: finished.type,
       priority: finished.priority,
@@ -780,6 +790,7 @@ export class Scheduler {
     const id = generateTaskId();
     const task: SchedulerTask = {
       id,
+      logicalId: id,
       name: '远征检查',
       type: 'expedition',
       priority: TaskPriority.EXPEDITION,

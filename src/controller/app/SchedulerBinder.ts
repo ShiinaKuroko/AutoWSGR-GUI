@@ -65,7 +65,7 @@ export class SchedulerBinder {
         this.host.renderMain();
       },
 
-      onTaskCompleted: (taskId, success, _result, _error) => {
+      onTaskCompleted: (_taskId, _success, _result, _error) => {
         this.currentProgress = '';
         this.resetExerciseProgress();
         this.lastParsedLogMessage = '';
@@ -73,7 +73,11 @@ export class SchedulerBinder {
         this.lastParsedLogAt = 0;
         this.trackedLoot = '';
         this.trackedShip = '';
-        if (taskId === this.pendingExerciseTaskId) {
+        this.host.renderMain();
+      },
+
+      onLogicalTaskCompleted: (logicalId, success) => {
+        if (logicalId === this.pendingExerciseTaskId) {
           if (success) {
             this.host.cronScheduler.markExerciseCompleted();
           } else {
@@ -81,15 +85,15 @@ export class SchedulerBinder {
           }
           this.pendingExerciseTaskId = null;
         }
-        if (taskId === this.pendingBattleTaskId) {
+        if (logicalId === this.pendingBattleTaskId) {
           this.host.cronScheduler.markBattleHandled();
           this.pendingBattleTaskId = null;
         }
-        if (taskId === this.pendingLootTaskId) {
+        if (logicalId === this.pendingLootTaskId) {
           this.host.cronScheduler.markLootHandled();
           this.pendingLootTaskId = null;
         }
-        if (this.pendingNormalFightTaskIds.delete(taskId)
+        if (this.pendingNormalFightTaskIds.delete(logicalId)
           && this.pendingNormalFightTaskIds.size === 0) {
           this.host.cronScheduler.markNormalFightHandled();
         }
@@ -396,7 +400,6 @@ export class SchedulerBinder {
         const resolved = await this.resolveNormalFightPlan(task.name);
         if (!resolved) throw new Error(`找不到出征计划: ${task.name}`);
         const plan = PlanModel.fromYaml(resolved.content, resolved.path);
-        const planId = await bridge.resolveAppPath(resolved.path);
         const { req: request, selectedFleetId } = buildPlanQueueRequest(
           {
             path: resolved.path,
@@ -407,7 +410,7 @@ export class SchedulerBinder {
             fleetPresetIndex: task.fleet_preset_index,
           },
           plan,
-          planId,
+          resolved.path,
         );
         const id = this.host.scheduler.addTask(
           `自动出征·${plan.mapName}`,

@@ -102,7 +102,7 @@ export async function openItemForEdit(
     const parsed = (await import('js-yaml')).load(content) as Record<string, unknown>;
     if (!parsed || typeof parsed !== 'object') return;
 
-    if (kind === 'preset' || ('task_type' in parsed && !('chapter' in parsed))) {
+    if (kind === 'preset' || ('task_type' in parsed && !('map' in parsed))) {
       host.importTaskPreset(parsed as unknown as TaskPreset, filePath);
     } else {
       const plan = PlanModel.fromYaml(content, filePath);

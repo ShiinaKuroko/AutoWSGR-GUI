@@ -2,28 +2,18 @@
  * 舰船数据 — 从 yltx/asgrgui 项目 resource/ship_details.json 导入
  * 仅保留 name / nation / ship_type 用于自动补全
  */
+import { shipTypeLabel } from '../shared/fleetShipTypes';
+
+export {
+  FLEET_SHIP_TYPE_CODES,
+  TYPE_LABELS,
+} from '../shared/fleetShipTypes';
+export { shipTypeLabel };
 
 export interface ShipInfo {
   name: string;
   nation: string;
   ship_type: string;
-}
-
-// ship_type 代号 → 中文
-export const TYPE_LABELS: Record<string, string> = {
-  bb: '战列', bbv: '航战', bbg: '导战',
-  bc: '战巡', cbg: '大巡',
-  cv: '航母', cvl: '轻母', av: '装母',
-  ca: '重巡', cav: '航巡',
-  cl: '轻巡', clt: '雷巡', cf: '旗舰',
-  dd: '驱逐', ddg: '导驱', ddgaa: '防驱',
-  ss: '潜艇', sc: '炮潜', ssg: '导潜',
-  ss_or_ssg: '潜艇/导潜',
-  bm: '重炮', ap: '补给', cg: '导巡', cgaa: '防巡',
-};
-
-export function shipTypeLabel(code: string): string {
-  return TYPE_LABELS[code] || code;
 }
 
 import rawShips from './ship_details.json';
@@ -203,10 +193,13 @@ export function resolveFleetPresetRules(ships: ShipSlot[]): Array<string | Fleet
     const candidates = buildShipCandidates(slot, reserved);
     if (candidates.length === 0) continue;
 
-    const rule: FleetRuleReq = {
-      name: slot.name ?? candidates[0],
-    };
-    const rawSearchName = slot.search_name ?? slot.name;
+    const candidateOnly = !slot.name && (slot.candidates?.length ?? 0) > 0;
+    const resolvedPrimary = candidateOnly
+      ? undefined
+      : slot.name ?? candidates[0];
+    const rule: FleetRuleReq = {};
+    if (resolvedPrimary) rule.name = resolvedPrimary;
+    const rawSearchName = slot.search_name ?? resolvedPrimary;
     if (rawSearchName) {
       // 保留原始舰名作为搜索关键词，避免同名异型（如大淀）被归一化后无法区分。
       const searchName = String(rawSearchName).trim();

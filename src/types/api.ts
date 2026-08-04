@@ -170,7 +170,9 @@ export interface FleetShipRuleReq {
   max_level?: number;
 }
 
-export interface FleetRuleReq extends FleetShipRuleReq {
+export interface FleetRuleReq extends Omit<FleetShipRuleReq, 'name'> {
+  /** 固定主选舰名；纯候选槽位不设置 */
+  name?: string;
   /** 当前位置的备选舰船规则（按顺序尝试） */
   candidates?: FleetShipRuleReq[];
 }
