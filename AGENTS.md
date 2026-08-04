@@ -363,6 +363,12 @@ Windows 打包仍会被阻断。开始打包前必须先检查开发者模式或
 正式解决方式是启用 Windows 开发者模式，或使用具备创建符号链接权限的终端执行
 `npm run dist`。不要把本地工具路径覆盖当成正式解决方式。
 
+启用开发者模式后，应使用 Electron Builder 自带的 `7za.exe` 和
+`winCodeSign-2.6.0.7z` 执行一次带 `-snld` 的解压探针。PowerShell 5 的
+`New-Item -ItemType SymbolicLink` 即使在开发者模式已经开启时，也可能继续
+误报“需要管理员权限”，不能把它作为打包前置检查。确认 7-Zip 能创建两个
+`.dylib` 符号链接后，直接执行原始 `npm run dist`；不要再设置工具路径覆盖。
+
 ### 8.2 已失败的规避方式
 
 - 不得使用 `--config.win.signAndEditExecutable=false` 生成正式交付包。该参数会
