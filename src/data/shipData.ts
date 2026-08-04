@@ -12,18 +12,31 @@ export interface ShipInfo {
 // ship_type 代号 → 中文
 export const TYPE_LABELS: Record<string, string> = {
   bb: '战列', bbv: '航战', bbg: '导战',
-  bc: '战巡', cbg: '大巡',
+  bc: '战巡', bg: '大巡', cbg: '大巡',
   cv: '航母', cvl: '轻母', av: '装母',
   ca: '重巡', cav: '航巡',
   cl: '轻巡', clt: '雷巡', cf: '旗舰',
   dd: '驱逐', ddg: '导驱', ddgaa: '防驱',
   ss: '潜艇', sc: '炮潜', ssg: '导潜',
   ss_or_ssg: '潜艇/导潜',
-  bm: '重炮', ap: '补给', cg: '导巡', cgaa: '防巡',
+  bm: '重炮', ap: '补给', asdg: '导驱', aadg: '防驱', cg: '防巡', kp: '导巡', cgaa: '防巡',
 };
 
 export function shipTypeLabel(code: string): string {
   return TYPE_LABELS[code] || code;
+}
+
+/** 将旧版 GUI 舰种代码转换为后端 2.3.x canonical code。 */
+export function toBackendShipTypeCode(code: string): string {
+  const aliases: Record<string, string> = {
+    cf: 'cv',
+    cgaa: 'cg',
+    cbg: 'bg',
+    ddg: 'asdg',
+    ddgaa: 'aadg',
+  };
+  const normalized = code.trim().toLowerCase();
+  return aliases[normalized] ?? normalized;
 }
 
 import rawShips from './ship_details.json';
@@ -209,7 +222,7 @@ export function resolveFleetPresetRules(ships: ShipSlot[]): Array<string | Fleet
       if (searchName) rule.search_name = searchName;
     }
     if (slot.ship_type) {
-      rule.ship_type = String(slot.ship_type).trim();
+      rule.ship_type = toBackendShipTypeCode(String(slot.ship_type));
     }
     if (slot.min_level != null && Number.isFinite(slot.min_level)) {
       rule.min_level = Math.max(1, Math.floor(slot.min_level));

@@ -8,7 +8,8 @@
 // ════════════════════════════════════════
 
 /** 索敌规则条目: [条件表达式, 动作] */
-export type EnemyRule = [string, string | number];
+export type RuleAction = 'retreat' | 'detour' | 1 | 2 | 3 | 4 | 5;
+export type EnemyRule = [string, RuleAction];
 
 /** 单个节点的战斗参数 */
 export interface NodeArgs {
@@ -21,6 +22,10 @@ export interface NodeArgs {
   detour?: boolean;
   proceed_stop?: number[];         // 6 个元素
   SL_when_detour_fails?: boolean;
+  SL_when_spot_enemy_fails?: boolean;
+  SL_when_enter_fight?: boolean;
+  formation_when_spot_enemy_fails?: number | null;
+  enemy_formation_rules?: EnemyRule[];
 }
 
 /** 舰船筛选条件 (按舰名/国籍/舰种选船) */

@@ -3,12 +3,12 @@
  */
 import type { PlanPreviewView } from '../../view/plan/PlanPreviewView';
 import type { PlanModel } from '../../model/PlanModel';
-import type { EnemyRule } from '../../types/model';
+import type { EnemyRule, RuleAction } from '../../types/model';
 import { Logger } from '../../utils/Logger';
 
-function normalizeRuleAction(actionRaw: string): string | number {
+function normalizeRuleAction(actionRaw: string): RuleAction | null {
   const trimmed = actionRaw.trim();
-  if (!trimmed) return trimmed;
+  if (!trimmed) return null;
 
   const aliases: Record<string, string> = {
     detour: 'detour',
@@ -20,9 +20,10 @@ function normalizeRuleAction(actionRaw: string): string | number {
   const lower = trimmed.toLowerCase();
   const normalized = aliases[lower] ?? aliases[trimmed] ?? trimmed;
   if (/^\d+$/.test(normalized)) {
-    return Number(normalized);
+    const value = Number(normalized);
+    return value >= 1 && value <= 5 ? (value as RuleAction) : null;
   }
-  return normalized;
+  return normalized === 'retreat' || normalized === 'detour' ? normalized : null;
 }
 
 function parseRuleLine(rawLine: string): EnemyRule | null {
@@ -44,7 +45,8 @@ function parseRuleLine(rawLine: string): EnemyRule | null {
   }
 
   if (!expr || !action) return null;
-  return [expr, normalizeRuleAction(action)];
+  const normalizedAction = normalizeRuleAction(action);
+  return normalizedAction === null ? null : [expr, normalizedAction];
 }
 
 /**

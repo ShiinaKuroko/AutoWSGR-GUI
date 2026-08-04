@@ -154,8 +154,14 @@ export interface NodeDecisionReq {
   proceed_stop?: number[];
   detour?: boolean;
   SL_when_detour_fails?: boolean;
-  enemy_rules?: string[][] | null;
+  enemy_rules?: Array<[string, RuleAction]> | null;
+  enemy_formation_rules?: Array<[string, RuleAction]> | null;
+  SL_when_spot_enemy_fails?: boolean;
+  SL_when_enter_fight?: boolean;
+  formation_when_spot_enemy_fails?: number | null;
 }
+
+export type RuleAction = 'retreat' | 'detour' | 1 | 2 | 3 | 4 | 5;
 
 export interface FleetRuleReq {
   /** 候选舰船名（按优先级顺序） */
