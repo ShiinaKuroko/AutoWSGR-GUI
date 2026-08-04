@@ -11,6 +11,7 @@ import {
   LEGACY_LOOT_PLAN_IDS,
   lootPlanIdFromIndex,
   lootPlanIdFromLegacyPath,
+  parseLootPlanIndex,
   type LootPlanId,
 } from '../../src/shared/lootPlans';
 import { AppPaths } from './AppPaths';
@@ -101,7 +102,11 @@ export class UserDataMigrationService {
         ),
       );
     }
-    this.reconcilePreviouslyMigratedLootPlanSelection();
+    this.recordResult(
+      summary,
+      path.join(targetRoot, 'gui_settings.json'),
+      () => this.reconcilePreviouslyMigratedLootPlanSelection(),
+    );
     this.recordResult(
       summary,
       path.join(legacyRoot, 'task_groups.json'),
@@ -398,9 +403,19 @@ export class UserDataMigrationService {
     const daily = settings.daily_automation;
     if (!this.isPlainObject(daily)) return;
     if (typeof daily.loot_plan_id === 'string') return;
-    if (!Number.isFinite(Number(daily.loot_plan_index))) return;
+    if (
+      !Object.prototype.hasOwnProperty.call(daily, 'loot_plan_index')
+    ) {
+      return;
+    }
 
-    const index = Math.trunc(Number(daily.loot_plan_index));
+    const index = parseLootPlanIndex(daily.loot_plan_index);
+    if (index === null) {
+      daily.loot_plan_id = DEFAULT_LOOT_PLAN_ID;
+      daily.auto_loot = false;
+      delete daily.loot_plan_index;
+      return;
+    }
     const resolved = this.resolveLegacyLootPlanId(
       index,
       path.dirname(source),
@@ -414,56 +429,51 @@ export class UserDataMigrationService {
    * 纠正已由中间版本搬到 GUI JSON、但尚未解释语义的旧索引。
    * 两边索引不一致说明用户后来改过选择，此时保留 GUI JSON 的新布局语义。
    */
-  private reconcilePreviouslyMigratedLootPlanSelection(): void {
+  private reconcilePreviouslyMigratedLootPlanSelection(): boolean {
     const legacyRoot = this.appPaths.appRoot();
     const source = path.join(legacyRoot, 'usersettings.yaml');
     const target = path.join(
       this.appPaths.userDataRoot(),
       'gui_settings.json',
     );
-    if (!fs.existsSync(source) || !fs.existsSync(target)) return;
+    if (!fs.existsSync(source) || !fs.existsSync(target)) return false;
 
-    try {
-      const settings = this.parseStructuredContent(
-        fs.readFileSync(source, 'utf-8'),
-        'yaml',
-        '旧版 usersettings.yaml',
-      );
-      const daily = settings.daily_automation;
-      if (!this.isPlainObject(daily)) return;
-      if (!Number.isFinite(Number(daily.loot_plan_index))) return;
+    const settings = this.parseStructuredContent(
+      fs.readFileSync(source, 'utf-8'),
+      'yaml',
+      '旧版 usersettings.yaml',
+    );
+    const daily = settings.daily_automation;
+    if (!this.isPlainObject(daily)) return false;
+    const sourceIndex = parseLootPlanIndex(daily.loot_plan_index);
+    if (sourceIndex === null) return false;
 
-      const gui = this.parseStructuredContent(
-        fs.readFileSync(target, 'utf-8'),
-        'json',
-        '当前 gui_settings.json',
-      );
-      const automation = gui.automation;
-      if (!this.isPlainObject(automation)) return;
-      if (typeof automation.lootPlanId === 'string') return;
-      if (!Number.isFinite(Number(automation.lootPlanIndex))) return;
+    const gui = this.parseStructuredContent(
+      fs.readFileSync(target, 'utf-8'),
+      'json',
+      '当前 gui_settings.json',
+    );
+    const automation = gui.automation;
+    if (!this.isPlainObject(automation)) return false;
+    if (typeof automation.lootPlanId === 'string') return false;
+    const targetIndex = parseLootPlanIndex(automation.lootPlanIndex);
+    if (targetIndex === null || sourceIndex !== targetIndex) return false;
 
-      const sourceIndex = Math.trunc(Number(daily.loot_plan_index));
-      const targetIndex = Math.trunc(Number(automation.lootPlanIndex));
-      if (sourceIndex !== targetIndex) return;
-
-      const resolved = this.resolveLegacyLootPlanId(
-        sourceIndex,
-        legacyRoot,
-      );
-      const migrated: Record<string, unknown> = {
-        ...automation,
-        lootPlanId: resolved ?? DEFAULT_LOOT_PLAN_ID,
-      };
-      delete migrated.lootPlanIndex;
-      if (!resolved) migrated.autoLoot = false;
-      this.atomicFiles.write(
-        target,
-        JSON.stringify({ ...gui, automation: migrated }, null, 2),
-      );
-    } catch {
-      // 损坏文件沿用各自读取服务的既有回退，不覆盖原文件。
-    }
+    const resolved = this.resolveLegacyLootPlanId(
+      sourceIndex,
+      legacyRoot,
+    );
+    const migrated: Record<string, unknown> = {
+      ...automation,
+      lootPlanId: resolved ?? DEFAULT_LOOT_PLAN_ID,
+    };
+    delete migrated.lootPlanIndex;
+    if (!resolved) migrated.autoLoot = false;
+    this.atomicFiles.write(
+      target,
+      JSON.stringify({ ...gui, automation: migrated }, null, 2),
+    );
+    return true;
   }
 
   /** 按旧安装自己的模板顺序解释刷取计划索引。 */
@@ -471,13 +481,15 @@ export class UserDataMigrationService {
     index: number,
     legacyRoot: string,
   ): LootPlanId | null {
-    const legacyPath = this.legacyLootPlanPaths(legacyRoot)[index];
-    return lootPlanIdFromLegacyPath(legacyPath)
-      ?? lootPlanIdFromIndex(index, LEGACY_LOOT_PLAN_IDS);
+    const legacyPaths = this.legacyLootPlanPaths(legacyRoot);
+    if (legacyPaths) {
+      return lootPlanIdFromLegacyPath(legacyPaths[index]);
+    }
+    return lootPlanIdFromIndex(index, LEGACY_LOOT_PLAN_IDS);
   }
 
   /** 读取旧安装自己保存的刷胖次模板顺序。 */
-  private legacyLootPlanPaths(legacyRoot: string): string[] {
+  private legacyLootPlanPaths(legacyRoot: string): unknown[] | null {
     const candidates = [
       path.join(
         legacyRoot,
@@ -487,7 +499,10 @@ export class UserDataMigrationService {
       ),
       path.join(legacyRoot, 'resource', 'builtin_templates.json'),
     ];
+    let templateFileFound = false;
     for (const file of candidates) {
+      if (!fs.existsSync(file)) continue;
+      templateFileFound = true;
       try {
         const parsed = JSON.parse(fs.readFileSync(file, 'utf-8')) as unknown;
         if (!Array.isArray(parsed)) continue;
@@ -499,14 +514,12 @@ export class UserDataMigrationService {
         if (!this.isPlainObject(template) || !Array.isArray(template.planPaths)) {
           continue;
         }
-        return template.planPaths.filter(
-          (value): value is string => typeof value === 'string',
-        );
+        return [...template.planPaths];
       } catch {
-        // 旧模板缺失或损坏时使用已知四项布局。
+        // 继续检查另一种旧安装目录结构。
       }
     }
-    return [];
+    return templateFileFound ? [] : null;
   }
 
   private migrateTemplate(source: string, target: string): boolean {

@@ -244,7 +244,9 @@ export class GuiConfigurationService {
         settings.lootPlanId = DEFAULT_LOOT_PLAN_ID;
         settings.autoLoot = false;
       }
-    } else if (Object.hasOwn(value, 'lootPlanIndex')) {
+    } else if (
+      Object.prototype.hasOwnProperty.call(value, 'lootPlanIndex')
+    ) {
       const resolved = lootPlanIdFromIndex(
         value.lootPlanIndex,
         INTERIM_LOOT_PLAN_IDS,

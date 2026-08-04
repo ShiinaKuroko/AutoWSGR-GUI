@@ -441,6 +441,19 @@ function testLegacyLootPlanIndexMigration() {
       planPaths: legacyFivePlanPaths,
       expected: 'bettle-周常-7-4.yaml',
     },
+    {
+      name: 'installed-template-with-unknown-path',
+      index: 0,
+      planPaths: ['resource/builtin_plans/未知地图.yaml'],
+      expected: 'bettle-周常-9-2.yaml',
+      expectedAutoLoot: false,
+    },
+    {
+      name: 'invalid-null-index',
+      index: null,
+      expected: 'bettle-周常-9-2.yaml',
+      expectedAutoLoot: false,
+    },
   ];
 
   for (const migrationCase of cases) {
@@ -462,6 +475,7 @@ function testLegacyLootPlanIndexMigration() {
     fs.mkdirSync(projectRoot, { recursive: true });
     fs.writeFileSync(source, [
       'daily_automation:',
+      '  auto_loot: true',
       `  loot_plan_index: ${migrationCase.index}`,
       '',
     ].join('\n'), 'utf8');
@@ -493,6 +507,10 @@ function testLegacyLootPlanIndexMigration() {
     assert.equal(
       migrated.daily_automation.loot_plan_id,
       migrationCase.expected,
+    );
+    assert.equal(
+      migrated.daily_automation.auto_loot,
+      migrationCase.expectedAutoLoot ?? true,
     );
     assert.equal(
       Object.hasOwn(
@@ -571,6 +589,92 @@ function testLegacyLootPlanIndexMigration() {
       .automation.lootPlanId,
     'bettle-周常-7-4.yaml',
     '稳定标识不应在再次启动时被重复解释',
+  );
+
+  const retryRoot = path.join(
+    temporaryDirectory,
+    'loot-index-reconcile-retry',
+  );
+  const retryProjectRoot = path.join(retryRoot, 'project');
+  const retryUserData = path.join(retryRoot, 'user-data');
+  const retryAppPaths = new AppPaths({
+    moduleDirectory: path.join(retryProjectRoot, 'dist', 'electron'),
+    isPackaged: () => false,
+    getPath: name => name === 'exe'
+      ? path.join(retryProjectRoot, 'AutoWSGR.exe')
+      : retryUserData,
+    getResourcesPath: () => path.join(retryProjectRoot, 'resources'),
+  });
+  const retryGuiSettings = path.join(
+    retryUserData,
+    'gui_settings.json',
+  );
+  const retryTemplate = path.join(
+    retryProjectRoot,
+    'resources',
+    'resource',
+    'builtin_templates.json',
+  );
+  fs.mkdirSync(path.dirname(retryTemplate), { recursive: true });
+  fs.mkdirSync(retryUserData, { recursive: true });
+  fs.writeFileSync(
+    path.join(retryProjectRoot, 'usersettings.yaml'),
+    'daily_automation:\n  loot_plan_index: 2\n',
+    'utf8',
+  );
+  fs.writeFileSync(retryTemplate, JSON.stringify([{
+    id: 'builtin_farm_loot',
+    planPaths: legacyFivePlanPaths,
+  }]), 'utf8');
+  fs.writeFileSync(retryGuiSettings, JSON.stringify({
+    automation: { autoLoot: true, lootPlanIndex: 2 },
+  }), 'utf8');
+
+  const realAtomicFiles = new AtomicFileStore();
+  let failReconcileWrite = true;
+  const retryMigration = new UserDataMigrationService(
+    retryAppPaths,
+    {
+      write(file, content) {
+        if (
+          failReconcileWrite
+          && file === retryGuiSettings
+          && content.includes('"lootPlanId"')
+        ) {
+          failReconcileWrite = false;
+          throw new Error('模拟 GUI 索引纠正写入失败');
+        }
+        realAtomicFiles.write(file, content);
+      },
+    },
+  );
+  const originalConsoleError = console.error;
+  let migrationFailureLogged = false;
+  let failed;
+  console.error = (...args) => {
+    migrationFailureLogged = String(args[0]).startsWith('[Migration]');
+  };
+  try {
+    failed = retryMigration.migrateLegacyUserDataFiles();
+  } finally {
+    console.error = originalConsoleError;
+  }
+  assert.equal(failed.failed, 1);
+  assert.equal(migrationFailureLogged, true);
+  assert.equal(failed.failedFiles.includes(retryGuiSettings), true);
+  assert.equal(
+    JSON.parse(fs.readFileSync(retryGuiSettings, 'utf8'))
+      .automation.lootPlanIndex,
+    2,
+  );
+
+  const retried = retryMigration.migrateLegacyUserDataFiles();
+  assert.equal(retried.failed, 0);
+  assert.equal(
+    JSON.parse(fs.readFileSync(retryGuiSettings, 'utf8'))
+      .automation.lootPlanId,
+    'bettle-周常-7-4.yaml',
+    '纠正失败后必须在下次启动重试',
   );
 }
 

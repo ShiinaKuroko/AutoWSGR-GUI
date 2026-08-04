@@ -491,7 +491,9 @@ export class ConfigModel {
         output.lootPlanId = DEFAULT_LOOT_PLAN_ID;
         output.autoLoot = false;
       }
-    } else if (Object.hasOwn(daily, 'loot_plan_index')) {
+    } else if (
+      Object.prototype.hasOwnProperty.call(daily, 'loot_plan_index')
+    ) {
       const resolved = lootPlanIdFromIndex(
         daily.loot_plan_index,
         LEGACY_LOOT_PLAN_IDS,

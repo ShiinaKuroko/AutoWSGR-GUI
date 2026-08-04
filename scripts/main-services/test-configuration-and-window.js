@@ -294,12 +294,26 @@ function testGuiConfigurationService() {
     autoLoot: false,
     lootPlanId: 'bettle-周常-9-2.yaml',
   });
-  store.write({
-    automation: {
-      autoLoot: true,
-      lootPlanIndex: 99,
-    },
-  });
+  for (const invalidIndex of [99, null, '', false, 2.5]) {
+    store.write({
+      automation: {
+        autoLoot: true,
+        lootPlanIndex: invalidIndex,
+      },
+    });
+    assert.deepEqual(service.automation(), {
+      exists: true,
+      settings: {
+        autoLoot: false,
+        lootPlanId: 'bettle-周常-9-2.yaml',
+      },
+    });
+    assert.equal(
+      Object.hasOwn(store.read().automation, 'lootPlanIndex'),
+      false,
+    );
+  }
+  store.write({ automation: { autoLoot: true } });
   assert.deepEqual(service.automation(), {
     exists: true,
     settings: {
