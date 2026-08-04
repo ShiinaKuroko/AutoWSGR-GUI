@@ -216,6 +216,14 @@ Agent 必须报告或在工作记录中明确：
 本仓库的个人 Fork 为 `https://github.com/ShiinaKuroko/AutoWSGR-GUI.git`。后续 Agent
 必须遵守以下分支职责：
 
+### 6.1 本机仓库与 GitHub 网络路径
+
+- GUI 仓库固定为 `C:\ShiinaKuroko\01.Project\AutoWSGR-GUI`，后端仓库固定为 `C:\ShiinaKuroko\01.Project\AutoWSGR`。
+- GUI 个人远端为 `https://github.com/ShiinaKuroko/AutoWSGR-GUI.git`，后端个人远端为 `https://github.com/ShiinaKuroko/AutoWSGR.git`，发布分支均为 `ShiinaKuroko`。
+- 本机 Git CLI 不会自动继承 Windows 系统代理，直接连接 GitHub 会在 443 端口超时。执行 GitHub `fetch`、`pull` 或 `push` 前，必须读取 `HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings` 的 `ProxyServer`；当前正确代理为 `127.0.0.1:7897`。
+- GitHub 命令必须通过临时参数使用代理，例如 `git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 push origin ShiinaKuroko`。不得先尝试无代理直连，也不得为此修改全局 Git 配置。
+- 如果 `127.0.0.1:7897` 未监听，必须先报告本机代理不可用，不得把网络超时误判为认证失败、远端冲突或仓库错误。
+
 - `main` 只用于同步 `OpenWSGR/AutoWSGR-GUI:main`，禁止在该分支直接开发、提交或推送功能代码。
 - `ShiinaKuroko` 是个人 Fork 的最新开发分支，经过验证的最新 GUI 代码才允许推送到这里。
 - 本地独立分支或 worktree 只能用于编码、测试和审查，禁止直接推送到 Fork 的发布分支。
