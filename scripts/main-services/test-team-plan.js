@@ -143,6 +143,30 @@ function testTeamPlanServices() {
     '系统舰',
   );
 
+  const systemCopyFile = 'team-系统另存.yaml';
+  const systemCopyPath = path.join(
+    appPaths.systemTeamPlansDir(),
+    systemCopyFile,
+  );
+  repository.write(systemCopyPath, codec.serialize(codec.normalize({
+    name: '系统另存',
+    ships: [{ name: '系统原版' }],
+  })));
+  const systemCopy = service.save({
+    name: '系统另存',
+    ships: [{ name: '用户修改版' }],
+  }, false, systemCopyFile, 'system');
+  assert.equal(systemCopy.success, true);
+  assert.equal(systemCopy.plan.source, 'user');
+  assert.equal(repository.read(systemCopyPath).ships[0].name, '系统原版');
+  assert.equal(
+    repository.read(path.join(
+      appPaths.userTeamPlansDir(),
+      systemCopyFile,
+    )).ships[0].name,
+    '用户修改版',
+  );
+
   const firstSave = service.save({
     name: '可重命名',
     ships: [{ name: '重庆' }],

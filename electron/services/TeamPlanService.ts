@@ -25,10 +25,10 @@ export class TeamPlanService {
   ): Record<string, unknown> {
     try {
       const plan = this.codec.normalize(rawPlan);
-      const source: PlanPresetSource = rawSource === 'system'
+      const currentSource: PlanPresetSource = rawSource === 'system'
         ? 'system'
         : 'user';
-      const directory = this.repository.directory(source);
+      const directory = this.repository.directory('user');
       const file = this.codec.fileName(plan.name);
       const filePath = path.join(directory, file);
       let currentPath: string | null = null;
@@ -40,9 +40,13 @@ export class TeamPlanService {
         ) {
           throw new Error('当前编队文件名不符合规则');
         }
-        currentPath = path.join(directory, currentFile);
+        currentPath = path.join(
+          this.repository.directory(currentSource),
+          currentFile,
+        );
       }
-      const updatesCurrentFile = currentPath !== null
+      const updatesCurrentFile = currentSource === 'user'
+        && currentPath !== null
         && path.resolve(currentPath).toLowerCase()
           === path.resolve(filePath).toLowerCase();
       if (
@@ -61,6 +65,7 @@ export class TeamPlanService {
       this.repository.write(filePath, content);
       if (
         currentPath
+        && currentSource === 'user'
         && !updatesCurrentFile
         && this.repository.exists(currentPath)
       ) {
@@ -69,7 +74,7 @@ export class TeamPlanService {
       return {
         success: true,
         file,
-        plan: { ...plan, file, source },
+        plan: { ...plan, file, source: 'user' },
       };
     } catch (error) {
       return {
