@@ -148,14 +148,30 @@ function testTeamPlanServices() {
     appPaths.systemTeamPlansDir(),
     systemCopyFile,
   );
-  repository.write(systemCopyPath, codec.serialize(codec.normalize({
+  const systemCopyPlan = codec.normalize({
     name: '系统另存',
     ships: [{ name: '系统原版' }],
-  })));
+  });
+  repository.write(systemCopyPath, codec.serialize(systemCopyPlan));
+  const unchangedSystemCopy = service.save(
+    systemCopyPlan,
+    false,
+    systemCopyFile,
+    'system',
+  );
+  assert.equal(unchangedSystemCopy.success, true);
+  assert.equal(unchangedSystemCopy.plan.source, 'user');
+  assert.deepEqual(
+    repository.read(path.join(
+      appPaths.userTeamPlansDir(),
+      systemCopyFile,
+    )),
+    systemCopyPlan,
+  );
   const systemCopy = service.save({
     name: '系统另存',
     ships: [{ name: '用户修改版' }],
-  }, false, systemCopyFile, 'system');
+  }, true, systemCopyFile, 'system');
   assert.equal(systemCopy.success, true);
   assert.equal(systemCopy.plan.source, 'user');
   assert.equal(repository.read(systemCopyPath).ships[0].name, '系统原版');
