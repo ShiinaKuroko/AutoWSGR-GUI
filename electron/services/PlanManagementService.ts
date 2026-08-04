@@ -114,6 +114,7 @@ export class PlanManagementService {
           const planName = standardName || rootName || fileName;
           if (this.taskPresetCodec.isStandalone(root)) {
             const preset = this.taskPresetCodec.normalize(root);
+            if (this.isDailyTaskType(preset.task_type)) return;
             const times = Number(preset.times);
             const gap = Number(preset.gap);
             const fleetId = Number(preset.fleet_id);
@@ -349,7 +350,10 @@ export class PlanManagementService {
         '无效的方案文件',
       );
       if (this.taskPresetCodec.isStandalone(root)) {
-        this.taskPresetCodec.normalize(root);
+        const preset = this.taskPresetCodec.normalize(root);
+        if (this.isDailyTaskType(preset.task_type)) {
+          throw new Error('该配置属于日常任务，请从“加载日常任务”使用');
+        }
         return {
           success: true,
           kind: 'preset',
@@ -445,8 +449,6 @@ export class PlanManagementService {
         path.basename(selectedPath),
         this.combatRepository.read(selectedPath),
         overwrite,
-        undefined,
-        'user',
       );
     } catch (error) {
       return {
@@ -462,7 +464,6 @@ export class PlanManagementService {
     content: string,
     overwrite: boolean,
     currentFile?: string,
-    rawSource?: PlanPresetSource,
   ): Record<string, unknown> {
     try {
       const name = typeof rawName === 'string'
@@ -477,35 +478,34 @@ export class PlanManagementService {
         '出征计划根节点必须是对象',
       );
 
-      const source: PlanPresetSource = rawSource === 'system'
-        ? 'system'
-        : 'user';
       if (this.taskPresetCodec.isStandalone(parsed)) {
+        const preset = this.taskPresetCodec.normalize(parsed);
+        if (this.isDailyTaskType(preset.task_type)) {
+          throw new Error(
+            '演习、战役和决战配置请使用“加载日常任务”管理',
+          );
+        }
         return this.saveManagedTaskPreset(
           name,
           content,
-          parsed,
+          preset,
           overwrite,
           currentFile,
-          source,
         );
       }
       const split = this.combatCodec.normalizeFleetPresets(
         parsed,
-        source,
+        'user',
         false,
       );
       const file = `bettle-${name}.yaml`;
-      const target = this.combatRepository.safeManagedPath(source, file);
+      const target = this.combatRepository.safeUserPath(file);
       if (!target) throw new Error('出征计划名称不合法');
-      this.combatRepository.initializeDirectory(source);
+      this.combatRepository.initializeUserDirectory();
 
       let currentPath: string | null = null;
       if (currentFile !== undefined) {
-        currentPath = this.combatRepository.safeManagedPath(
-          source,
-          currentFile,
-        );
+        currentPath = this.combatRepository.safeUserPath(currentFile);
         if (!currentPath) {
           throw new Error('当前出征计划文件名不符合规则');
         }
@@ -517,7 +517,7 @@ export class PlanManagementService {
         this.combatRepository.exists(target)
         && !updatesCurrentFile
       );
-      const teamDirectory = this.teamRepository.directory(source);
+      const teamDirectory = this.teamRepository.directory('user');
       const teamWrites = this.teamRepository.buildWrites(
         split.teams,
         teamDirectory,
@@ -541,17 +541,13 @@ export class PlanManagementService {
           success: false,
           exists: true,
           file,
-          source,
+          source: 'user',
           conflicts,
           error: '存在同名配置',
         };
       }
 
-      if (source === 'system') {
-        this.teamRepository.initializeSystemDirectory();
-      } else {
-        this.teamRepository.initializeUserDirectory();
-      }
+      this.teamRepository.initializeUserDirectory();
       for (const item of teamWrites) {
         if (!item.unchanged) {
           this.teamRepository.write(item.path, item.content);
@@ -570,14 +566,14 @@ export class PlanManagementService {
       }
 
       if (currentFile && currentFile !== file) {
-        this.moveIgnoredKey('battle', source, currentFile, file);
+        this.moveIgnoredKey('battle', 'user', currentFile, file);
       }
       return {
         success: true,
         kind: 'battle',
         file,
         path: target,
-        source,
+        source: 'user',
         teamFiles: teamWrites.map(item => item.file),
       };
     } catch (error) {
@@ -595,17 +591,16 @@ export class PlanManagementService {
     parsed: Record<string, unknown>,
     overwrite: boolean,
     currentFile: string | undefined,
-    source: PlanPresetSource,
   ): Record<string, unknown> {
     const preset = this.taskPresetCodec.normalize(parsed);
     const file = `bettle-${name}.yaml`;
-    const target = this.combatRepository.safeManagedPath(source, file);
+    const target = this.combatRepository.safeUserPath(file);
     if (!target) throw new Error('任务预设名称不合法');
-    this.combatRepository.initializeDirectory(source);
+    this.combatRepository.initializeUserDirectory();
 
     const currentPath = currentFile === undefined
       ? null
-      : this.combatRepository.safeManagedPath(source, currentFile);
+      : this.combatRepository.safeUserPath(currentFile);
     if (currentFile !== undefined && !currentPath) {
       throw new Error('当前任务预设文件名不符合规则');
     }
@@ -622,7 +617,7 @@ export class PlanManagementService {
         exists: true,
         kind: 'preset',
         file,
-        source,
+        source: 'user',
         conflicts: [`任务预设：${file}`],
         error: '存在同名配置',
       };
@@ -640,14 +635,14 @@ export class PlanManagementService {
       this.combatRepository.remove(currentPath);
     }
     if (currentFile && currentFile !== file) {
-      this.moveIgnoredKey('battle', source, currentFile, file);
+      this.moveIgnoredKey('battle', 'user', currentFile, file);
     }
     return {
       success: true,
       kind: 'preset',
       file,
       path: target,
-      source,
+      source: 'user',
       teamFiles: [],
     };
   }
@@ -807,5 +802,13 @@ export class PlanManagementService {
     if (ignored.delete(key)) {
       this.writeIgnoredUnlinkedPlans(ignored);
     }
+  }
+
+  private isDailyTaskType(value: unknown): boolean {
+    return (
+      value === 'exercise'
+      || value === 'campaign'
+      || value === 'decisive'
+    );
   }
 }

@@ -1,10 +1,12 @@
 /** 渲染本地方案列表并发出导入、导出、重命名和删除意图。 */
 import type {
-  ElectronBridge,
   ManagedTeamPlan,
+  PlanFileOperationResult,
   PlanFileReadError,
+  PlanManagementResult,
   PlanPresetSource,
   PlanTeamBinding,
+  UserPlanExportResult,
   UserPlanExportSelection,
 } from '../../types/ipc.js';
 import {
@@ -31,15 +33,23 @@ export interface PlanManagementTaskGroup {
   }>;
 }
 
-export interface PlanManagementViewHost extends Pick<
-  ElectronBridge,
-  | 'getPlanManagement'
-  | 'exportUserPlans'
-  | 'setPlanUnlinkedIgnored'
-  | 'renameUserCombatPlan'
-  | 'deleteUserCombatPlan'
-  | 'deleteUserTeamPlan'
-> {
+export interface PlanManagementViewHost {
+  loadPlanManagement(): Promise<PlanManagementResult>;
+  exportUserPlans(
+    selections: UserPlanExportSelection[],
+  ): Promise<UserPlanExportResult>;
+  setPlanUnlinkedIgnored(
+    kind: 'battle' | 'team',
+    source: PlanPresetSource,
+    file: string,
+    ignored: boolean,
+  ): Promise<string[]>;
+  renameUserCombatPlan(
+    file: string,
+    newName: string,
+  ): Promise<PlanFileOperationResult>;
+  deleteUserCombatPlan(file: string): Promise<PlanFileOperationResult>;
+  deleteUserTeamPlan(file: string): Promise<PlanFileOperationResult>;
   taskGroups(): ReadonlyArray<PlanManagementTaskGroup>;
   openBattlePlan(file: string, source: PlanPresetSource): Promise<void>;
   openTeamPlan(file: string, source: PlanPresetSource): Promise<void>;
@@ -87,6 +97,9 @@ export class PlanManagementView {
   private readonly exportButton = document.getElementById(
     'btn-export-user-plans',
   ) as HTMLButtonElement | null;
+  private readonly deleteButton = document.getElementById(
+    'btn-delete-user-plans',
+  ) as HTMLButtonElement | null;
 
   private source: ManagementSource = 'all';
   private kind: ManagementKind = 'all';
@@ -98,6 +111,7 @@ export class PlanManagementView {
   private selections = new Map<string, UserPlanExportSelection>();
   private visibleSelections: UserPlanExportSelection[] = [];
   private exporting = false;
+  private deleting = false;
 
   constructor(private readonly host: PlanManagementViewHost) {
     this.bindActions();
@@ -107,7 +121,7 @@ export class PlanManagementView {
     if (!this.body) return;
     this.body.innerHTML = '<tr><td colspan="7">正在读取计划…</td></tr>';
     try {
-      const result = await this.host.getPlanManagement();
+      const result = await this.host.loadPlanManagement();
       this.bindings = result.bindings;
       this.teamPlans = result.teamPlans;
       this.errors = result.errors;
@@ -132,6 +146,9 @@ export class PlanManagementView {
       });
     this.exportButton?.addEventListener('click', () => {
       void this.exportSelectedPlans();
+    });
+    this.deleteButton?.addEventListener('click', () => {
+      void this.deleteSelectedPlans();
     });
     this.selectAll?.addEventListener('change', () => {
       const selected = this.selectAll?.checked === true;
@@ -561,7 +578,7 @@ export class PlanManagementView {
     checkbox.dataset['planKind'] = item.kind;
     checkbox.dataset['planFile'] = item.file;
     checkbox.checked = this.selections.has(this.selectionKey(selection));
-    checkbox.disabled = this.exporting;
+    checkbox.disabled = this.exporting || this.deleting;
     checkbox.setAttribute('aria-label', `选择用户配置 ${item.name}`);
     cell.append(checkbox);
     return cell;
@@ -739,24 +756,36 @@ export class PlanManagementView {
         && visibleSelectedCount < this.visibleSelections.length
       );
       this.selectAll.disabled = (
-        this.exporting || this.visibleSelections.length === 0
+        this.exporting
+        || this.deleting
+        || this.visibleSelections.length === 0
       );
     }
     if (this.exportButton) {
-      this.exportButton.disabled = this.exporting || this.selections.size === 0;
+      this.exportButton.disabled = (
+        this.exporting || this.deleting || this.selections.size === 0
+      );
       this.exportButton.title = this.selections.size > 0
         ? `导出已选择的 ${this.selections.size} 个用户配置`
+        : '请先选择用户配置';
+    }
+    if (this.deleteButton) {
+      this.deleteButton.disabled = (
+        this.exporting || this.deleting || this.selections.size === 0
+      );
+      this.deleteButton.title = this.selections.size > 0
+        ? `删除已选择的 ${this.selections.size} 个用户配置`
         : '请先选择用户配置';
     }
     this.body
       ?.querySelectorAll<HTMLInputElement>('[data-plan-selection]')
       .forEach(checkbox => {
-        checkbox.disabled = this.exporting;
+        checkbox.disabled = this.exporting || this.deleting;
       });
   }
 
   private async exportSelectedPlans(): Promise<void> {
-    if (this.exporting || this.selections.size === 0) return;
+    if (this.exporting || this.deleting || this.selections.size === 0) return;
     const selections = [...this.selections.values()];
     this.exporting = true;
     this.updateSelectionControls();
@@ -777,6 +806,63 @@ export class PlanManagementView {
       );
     } finally {
       this.exporting = false;
+      this.updateSelectionControls();
+    }
+  }
+
+  private async deleteSelectedPlans(): Promise<void> {
+    if (this.exporting || this.deleting || this.selections.size === 0) return;
+    const selections = [...this.selections.values()];
+    const battleCount = selections.filter(
+      selection => selection.kind === 'battle',
+    ).length;
+    const teamCount = selections.length - battleCount;
+    const confirmed = await showConfirm(
+      '批量删除用户配置',
+      `即将删除 ${selections.length} 个用户配置`
+        + `（出征计划 ${battleCount} 个，舰队方案 ${teamCount} 个）。\n`
+        + '引用这些配置的任务不会一并删除，此操作无法撤销。是否继续？',
+    );
+    if (!confirmed) return;
+
+    this.deleting = true;
+    this.updateSelectionControls();
+    const failures: string[] = [];
+    let deletedCount = 0;
+    try {
+      for (const selection of selections) {
+        try {
+          const result = selection.kind === 'battle'
+            ? await this.host.deleteUserCombatPlan(selection.file)
+            : await this.host.deleteUserTeamPlan(selection.file);
+          if (!result.success) {
+            failures.push(
+              `${selection.file}：${result.error || '未知错误'}`,
+            );
+            continue;
+          }
+          deletedCount += 1;
+          this.selections.delete(this.selectionKey(selection));
+        } catch (error) {
+          failures.push(
+            `${selection.file}：${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+      await this.load();
+      if (failures.length > 0) {
+        await showAlert(
+          '批量删除未全部完成',
+          `成功删除 ${deletedCount} 个，失败 ${failures.length} 个。\n`
+            + failures.join('\n'),
+        );
+      } else {
+        showSaveSuccess(`已删除 ${deletedCount} 个用户配置`);
+      }
+    } finally {
+      this.deleting = false;
       this.updateSelectionControls();
     }
   }

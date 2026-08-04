@@ -129,12 +129,25 @@ export class TaskQueue {
     return id;
   }
 
-  /** 移除排队中的任务 */
-  removeTask(taskId: string): boolean {
+  /** 查找就绪或修理延迟中的任务。 */
+  findTask(taskId: string): SchedulerTask | null {
+    return this.queue.find(task => task.id === taskId)
+      ?? this.deferredTasks.find(task => task.id === taskId)
+      ?? null;
+  }
+
+  /** 移除就绪或修理延迟中的任务，并返回被移除的任务。 */
+  removeTask(taskId: string): SchedulerTask | null {
     const idx = this.queue.findIndex((t) => t.id === taskId);
-    if (idx === -1) return false;
-    this.queue.splice(idx, 1);
-    return true;
+    if (idx !== -1) {
+      return this.queue.splice(idx, 1)[0];
+    }
+
+    const deferredIdx = this.deferredTasks.findIndex(
+      task => task.id === taskId,
+    );
+    if (deferredIdx === -1) return null;
+    return this.deferredTasks.splice(deferredIdx, 1)[0];
   }
 
   /** 移动队列中的任务顺序 */

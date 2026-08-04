@@ -1,6 +1,7 @@
 /** 编排设置页的环境检测、设备连接、资料库更新和主题交互。 */
 import type { ConfigView } from '../../view/config/ConfigView';
 import type { ManagedBattlePlanSelection } from '../../types/ipc.js';
+import type { LootAutomationPlan } from '../../shared/lootPlans.js';
 import { ApiClient } from '../../model/ApiClient';
 import { Logger } from '../../utils/Logger';
 import { showAlert, showConfirm } from '../shared/DialogHelper';
@@ -11,6 +12,9 @@ export interface SettingsControllerHost {
   getConfigDir(): string;
   saveConfig(): Promise<void>;
   pickAutomationPlan(): Promise<ManagedBattlePlanSelection | null>;
+  pickLootAutomationPlans(
+    currentPlans: readonly LootAutomationPlan[],
+  ): Promise<LootAutomationPlan[] | null>;
   reloadShipLibrary(): Promise<void>;
 }
 
@@ -77,6 +81,10 @@ export class SettingsController {
     document.getElementById('btn-add-normal-fight-task')?.addEventListener(
       'click',
       () => void this.selectAutomationPlan(),
+    );
+    document.getElementById('btn-load-loot-plans')?.addEventListener(
+      'click',
+      () => void this.selectLootAutomationPlans(),
     );
     document.getElementById('btn-check-backend')?.addEventListener(
       'click',
@@ -257,6 +265,13 @@ export class SettingsController {
         error instanceof Error ? error.message : String(error),
       );
     }
+  }
+
+  private async selectLootAutomationPlans(): Promise<void> {
+    const plans = await this.host.pickLootAutomationPlans(
+      this.host.configView.getLootPlans(),
+    );
+    if (plans) this.host.configView.setLootPlans(plans);
   }
 
   private async checkBackend(): Promise<void> {

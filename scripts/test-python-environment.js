@@ -30,14 +30,30 @@ const {
   resolvePythonEnvironment,
 } = require('../dist/electron/pythonEnv/environment.js');
 const {
+  buildBackendRuntimeEnvironment,
   resolveConfiguredCudaRoot,
 } = require('../dist/electron/pythonEnv/cuda.js');
 const {
   buildDependencyInstallPlan,
 } = require('../dist/electron/pythonEnv/installer.js');
 const {
-  buildBackendRuntimeEnvironment,
-} = require('../dist/electron/services/BackendService.js');
+  MANAGED_AUTOWSGR_COMMIT,
+  MANAGED_AUTOWSGR_REQUIREMENT,
+} = require('../dist/electron/pythonEnv/backendRequirement.js');
+const {
+  buildManagedAutowsgrUpdateArgs,
+} = require('../dist/electron/pythonEnv/updater.js');
+const {
+  buildBackendRuntimeContractProbeLines,
+} = require('../dist/electron/pythonEnv/backendContractProbe.js');
+const {
+  applyBackendRuntimeSettings,
+  buildBackendBootstrap,
+  buildBackendCapabilityProbe,
+  selectBackendOcrGpuMode,
+} = require(
+  '../dist/electron/services/BackendRuntimeContract.js',
+);
 
 const temporaryDirectory = fs.mkdtempSync(
   path.join(os.tmpdir(), 'autowsgr-python-environment-'),
@@ -103,6 +119,39 @@ try {
     managedPlan.toolArgs.includes('beautifulsoup4>=4.12.0'),
     true,
   );
+  assert.equal(
+    MANAGED_AUTOWSGR_COMMIT,
+    'b0f473fb1ec5318c2c4cff4795a804a3d2dd25bd',
+  );
+  assert.equal(
+    MANAGED_AUTOWSGR_REQUIREMENT.endsWith(
+      `${MANAGED_AUTOWSGR_COMMIT}.zip`,
+    ),
+    true,
+  );
+  const managedUpdateArgs = buildManagedAutowsgrUpdateArgs(localSite);
+  assert.equal(managedUpdateArgs.at(-1), MANAGED_AUTOWSGR_REQUIREMENT);
+  assert.equal(managedUpdateArgs.includes('autowsgr'), false);
+  assert.equal(managedUpdateArgs.includes(localSite), true);
+  const contractProbeLines = buildBackendRuntimeContractProbeLines();
+  assert.equal(
+    contractProbeLines.some(
+      line => line.includes('unittest.mock'),
+    ),
+    true,
+  );
+  assert.equal(
+    contractProbeLines.some(
+      line => line.includes("_save_values != [True, False]"),
+    ),
+    true,
+  );
+  assert.equal(
+    contractProbeLines.some(
+      line => line.includes("_ocr_values != [True, False]"),
+    ),
+    true,
+  );
 
   state.mode = 'external';
   const external = resolvePythonEnvironment(externalPython);
@@ -164,6 +213,40 @@ try {
   const externalWithLocalPython = resolvePythonEnvironment(localPython);
   assert.equal(externalWithLocalPython.useLocalSite, true);
   assert.equal(externalWithLocalPython.installTarget, localSite);
+
+  const settingsEnv = applyBackendRuntimeSettings(
+    cudaRuntimeEnv,
+    {
+      ocrGpuMode: 'cuda',
+      saveImages: true,
+    },
+  );
+  assert.equal(settingsEnv.AUTOWSGR_OCR_GPU_MODE, 'cuda');
+  assert.equal(settingsEnv.AUTOWSGR_SAVE_IMAGES, 'true');
+  assert.equal(selectBackendOcrGpuMode('auto', true), 'cuda');
+  assert.equal(selectBackendOcrGpuMode('auto', false), 'cpu');
+  assert.equal(selectBackendOcrGpuMode('cpu', true), 'cpu');
+  assert.throws(
+    () => selectBackendOcrGpuMode('cuda', false),
+    /未检测到可用 CUDA/,
+  );
+
+  const capabilityProbe = buildBackendCapabilityProbe(external);
+  assert.match(capabilityProbe, /AUTOWSGR_SAVE_IMAGES/);
+  assert.match(capabilityProbe, /AUTOWSGR_OCR_GPU_MODE/);
+  assert.match(capabilityProbe, /autowsgr\.server\.main/);
+  assert.match(capabilityProbe, /GUI 后端来源错误/);
+  assert.match(capabilityProbe, /gui-runtime-env-v1/);
+  assert.match(capabilityProbe, /unittest\.mock/);
+  assert.match(capabilityProbe, /iscoroutinefunction/);
+
+  const bootstrap = buildBackendBootstrap(external, 16710);
+  assert.match(bootstrap, /AUTOWSGR_SAVE_IMAGES/);
+  assert.match(bootstrap, /AUTOWSGR_OCR_GPU_MODE/);
+  assert.match(bootstrap, /port=16710/);
+  assert.doesNotMatch(bootstrap, /__func__/);
+  assert.doesNotMatch(bootstrap, /_image_dir/);
+  assert.doesNotMatch(bootstrap, /_patched_/);
 
   state.repoPath = path.join(temporaryDirectory, 'missing-repo');
   assert.throws(

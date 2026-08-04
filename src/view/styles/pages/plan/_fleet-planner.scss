@@ -202,7 +202,8 @@
   }
 }
 
-.plan-management-export {
+.plan-management-export,
+.plan-management-delete {
   height: 26px;
   padding: 0 10px;
   font-size: 11px;
@@ -698,30 +699,6 @@
   min-width: 0;
 }
 
-.fleet-backup-append-drop {
-  display: inline-flex;
-  min-height: 24px;
-  align-items: center;
-  padding: 3px 8px;
-  color: var(--success);
-  background: color-mix(in srgb, var(--success) 10%, var(--bg-card-solid));
-  border: 1px dashed color-mix(in srgb, var(--success) 72%, var(--border));
-  border-radius: 6px;
-  font-size: 10px;
-  font-weight: 600;
-
-  &[hidden] {
-    display: none;
-  }
-
-  &.drag-over {
-    color: var(--text);
-    background: color-mix(in srgb, var(--success) 28%, var(--bg-card-solid));
-    border-style: solid;
-    box-shadow: 0 0 10px color-mix(in srgb, var(--success) 38%, transparent);
-  }
-}
-
 .fleet-backup-hint {
   color: var(--text-secondary);
   font-size: 10px;
@@ -763,6 +740,26 @@
     color: var(--success);
     background: color-mix(in srgb, var(--success) 10%, var(--bg-card-solid));
     border-color: color-mix(in srgb, var(--success) 55%, var(--border));
+
+    &[data-follow-mode="position"] {
+      color: var(--accent);
+      background: var(--accent-subtle);
+      border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+    }
+  }
+}
+
+#btn-backup-follow-mode {
+  &[data-mode="ship"] {
+    color: var(--success);
+    background: color-mix(in srgb, var(--success) 10%, var(--bg-card-solid));
+    border-color: color-mix(in srgb, var(--success) 55%, var(--border));
+  }
+
+  &[data-mode="position"] {
+    color: var(--accent);
+    background: var(--accent-subtle);
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
   }
 }
 
@@ -1157,9 +1154,17 @@
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   box-shadow: var(--shadow-elevated);
+  transform-origin: top right;
+  animation: floating-popover-in 140ms cubic-bezier(0.2, 0.72, 0.2, 1) both;
 
   &[hidden] {
     display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fleet-filter-popover {
+    animation-duration: 1ms;
   }
 }
 

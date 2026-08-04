@@ -63,6 +63,24 @@ async function runRendererTest(root, tempDirectory) {
     root,
     'dist/src/controller/app/ConfigController.js',
   ));
+  const {
+    BattlePlanLoaderController,
+  } = require(rendererPath.join(
+    root,
+    'dist/src/controller/plan/BattlePlanLoaderController.js',
+  ));
+  const {
+    BattlePlanLoaderView,
+  } = require(rendererPath.join(
+    root,
+    'dist/src/view/plan/BattlePlanLoaderView.js',
+  ));
+  const {
+    DEFAULT_LOOT_PLANS,
+  } = require(rendererPath.join(
+    root,
+    'dist/src/shared/lootPlans.js',
+  ));
 
   const shipNameAliases = {
     测试别名: 'U-47',
@@ -92,8 +110,23 @@ async function runRendererTest(root, tempDirectory) {
         times: 2,
       },
     ],
+    autoDecisive: true,
+    decisiveTemplateId: 'system_preset',
     autoLoot: true,
-    lootPlanId: 'bettle-周常-8-2.yaml',
+    lootPlanSource: 'user',
+    lootPlanId: 'bettle-用户胖次测试.yaml',
+    lootPlans: [
+      {
+        source: 'system',
+        file: 'bettle-周常-8-2.yaml',
+        name: '周常 8-2',
+      },
+      {
+        source: 'user',
+        file: 'bettle-用户胖次测试.yaml',
+        name: '用户胖次测试',
+      },
+    ],
     lootStopCount: 17,
     logLevel: 'WARNING',
     logRoot: 'C:\\SettingsTest\\logs',
@@ -126,14 +159,499 @@ async function runRendererTest(root, tempDirectory) {
     planRoot: 'C:\\SettingsTest\\plans',
   };
 
+  const sectionByTitle = title => Array.from(
+    document.querySelectorAll('.config-list-section'),
+  ).find(section => (
+    section.querySelector('.config-section-heading h3')?.textContent === title
+  ));
+  const systemPanel = document.querySelector(
+    '[data-config-panel="system"]',
+  );
+  const behaviorPanel = document.querySelector(
+    '[data-config-panel="behavior"]',
+  );
+  const delaySection = sectionByTitle('全局延迟');
+  const automationSection = sectionByTitle('自动化设置');
+  const fleetSection = sectionByTitle('舰队设置');
+  const ocrSection = sectionByTitle('OCR 设置');
+  rendererAssert.equal(
+    automationSection?.parentElement,
+    behaviorPanel,
+    '自动化设置必须位于脚本行为面板',
+  );
+  rendererAssert.equal(
+    systemPanel?.contains(automationSection),
+    false,
+    '系统设置面板不得再包含自动化设置',
+  );
+  rendererAssert.ok(
+    delaySection.compareDocumentPosition(automationSection)
+      & Node.DOCUMENT_POSITION_FOLLOWING,
+    '自动化设置必须位于全局延迟设置之后',
+  );
+  rendererAssert.equal(
+    fleetSection?.parentElement,
+    behaviorPanel,
+    '舰队设置必须位于脚本行为面板',
+  );
+  rendererAssert.ok(
+    fleetSection.compareDocumentPosition(ocrSection)
+      & Node.DOCUMENT_POSITION_FOLLOWING,
+    '舰队设置必须位于 OCR 设置之前',
+  );
+
   const view = new ConfigView();
+  const decisiveOptions = Array.from(
+    document.getElementById('cfg-decisive-template').options,
+  ).map(option => [option.value, option.textContent]);
+  rendererAssert.deepStrictEqual(decisiveOptions, [
+    ['user_plan', '用户计划'],
+    ['system_preset', '系统预设'],
+  ]);
+  const battleTypeStyle = getComputedStyle(
+    document.getElementById('cfg-battle-type'),
+  );
+  const exerciseFleetStyle = getComputedStyle(
+    document.getElementById('cfg-exercise-fleet'),
+  );
+  rendererAssert.equal(
+    document.getElementById('cfg-battle-type')
+      .dataset.animatedSelectWidth,
+    'source',
+    '自动战役选项浮层必须跟随输入框宽度',
+  );
+  rendererAssert.equal(
+    document.getElementById('cfg-exercise-fleet')
+      .dataset.animatedSelectWidth,
+    'source',
+    '出征舰队选项浮层必须跟随输入框宽度',
+  );
+  rendererAssert.equal(
+    document.getElementById('cfg-battle-type')
+      .dataset.configSelectWidth,
+    document.getElementById('cfg-exercise-fleet')
+      .dataset.configSelectWidth,
+    '自动战役与出征舰队必须使用同一个固定宽度',
+  );
+  rendererAssert.equal(
+    document.getElementById('cfg-battle-type')
+      .style.getPropertyValue('--config-select-width'),
+    document.getElementById('cfg-exercise-fleet')
+      .style.getPropertyValue('--config-select-width'),
+    '自动战役与出征舰队渲染后的宽度必须一致',
+  );
+  ['width', 'minWidth', 'maxWidth', 'flexBasis'].forEach((property) => {
+    rendererAssert.equal(
+      battleTypeStyle[property],
+      exerciseFleetStyle[property],
+      `自动战役与出征舰队下拉框的 ${property} 必须一致`,
+    );
+  });
   view.render(sample);
+
+  [
+    ['cfg-auto-battle', 'cfg-auto-battle-body'],
+    ['cfg-auto-exercise', 'cfg-auto-exercise-body'],
+    ['cfg-auto-normal-fight', 'cfg-auto-normal-fight-body'],
+    ['cfg-auto-decisive', 'cfg-auto-decisive-body'],
+    ['cfg-auto-loot', 'cfg-auto-loot-body'],
+  ].forEach(([switchId, bodyId]) => {
+    const automationSwitch = document.getElementById(switchId);
+    const automationBody = document.getElementById(bodyId);
+    const originalChecked = automationSwitch.checked;
+    automationSwitch.checked = false;
+    automationSwitch.dispatchEvent(new Event('change'));
+    rendererAssert.notEqual(
+      getComputedStyle(automationBody).display,
+      'none',
+      `关闭 ${switchId} 后不得收起内部配置`,
+    );
+    automationSwitch.checked = originalChecked;
+  });
 
   const collected = view.collect();
   rendererAssert.deepStrictEqual(
     collected,
     sample,
     '设置页渲染后收集的数据与输入不一致',
+  );
+  view.setLootPlans([
+    {
+      source: 'system',
+      file: 'short.yaml',
+      name: '短',
+    },
+    {
+      source: 'user',
+      file: 'long.yaml',
+      name: '这是一个较长的自动胖次计划名称',
+    },
+  ]);
+  const lootPlanSelect = document.getElementById('cfg-loot-plan');
+  const lootPlanWidth = Number.parseFloat(
+    lootPlanSelect.style.getPropertyValue('--config-select-width'),
+  );
+  lootPlanSelect.selectedIndex = 1;
+  lootPlanSelect.dispatchEvent(new Event('change'));
+  rendererAssert.ok(
+    Number.isFinite(lootPlanWidth) && lootPlanWidth <= 320,
+    `自动胖次下拉框必须使用有效的分级宽度（${lootPlanWidth}）`,
+  );
+  rendererAssert.match(
+    lootPlanSelect.title,
+    /这是一个较长的自动胖次计划名称/,
+    '自动胖次下拉框必须保留完整文案提示',
+  );
+  view.render(sample);
+  view.setLootPlans([]);
+  const emptyLootCollected = view.collect();
+  rendererAssert.equal(
+    emptyLootCollected.autoLoot,
+    false,
+    '删除全部自动胖次计划后必须关闭开关',
+  );
+  rendererAssert.deepStrictEqual(
+    emptyLootCollected.lootPlans,
+    [],
+    '显式空列表不得恢复默认计划',
+  );
+  view.render(sample);
+
+  const autoLootControl = document.querySelector(
+    '.config-auto-loot-control',
+  );
+  rendererAssert.ok(autoLootControl, '自动胖次设置行不存在');
+  rendererAssert.equal(
+    getComputedStyle(autoLootControl).flexWrap,
+    'nowrap',
+    '自动胖次加载、下拉框、停止数量和开关必须保持同一行',
+  );
+  [
+    'btn-load-loot-plans',
+    'cfg-loot-plan',
+    'cfg-loot-stop-count',
+    'cfg-auto-loot',
+  ].forEach((id) => {
+    rendererAssert.equal(
+      document.getElementById(id)?.closest('.config-auto-loot-control'),
+      autoLootControl,
+      `自动胖次控件 ${id} 没有放在同一设置行`,
+    );
+  });
+
+  const managedBattlePlans = [
+    {
+      kind: 'battle',
+      file: 'bettle-周常-8-2.yaml',
+      name: '周常 8-2',
+      source: 'system',
+      modifiedAt: 1,
+      chapter: 8,
+      map: 2,
+      times: 1,
+      gap: 0,
+      fleetId: 1,
+      repairMode: 1,
+      result: 'S',
+      lootCountGe: 48,
+      shipCountGe: 7,
+      fleetCount: 0,
+      nodeCount: 1,
+      fleets: [],
+    },
+    {
+      kind: 'battle',
+      file: 'bettle-用户胖次测试.yaml',
+      name: '用户胖次测试',
+      source: 'user',
+      modifiedAt: 2,
+      chapter: 9,
+      map: 2,
+      times: 1,
+      gap: 0,
+      fleetId: 1,
+      repairMode: 1,
+      result: 'S',
+      lootCountGe: 48,
+      shipCountGe: 7,
+      fleetCount: 0,
+      nodeCount: 1,
+      fleets: [],
+    },
+  ];
+  window.electronBridge = {
+    getPlanManagement: async () => ({
+      bindings: [],
+      battlePlans: structuredClone(managedBattlePlans),
+      teamPlans: [],
+      errors: [],
+      ignoredUnlinkedPlans: [],
+    }),
+  };
+  const loaderView = new BattlePlanLoaderView();
+  const loaderController = new BattlePlanLoaderController(
+    loaderView,
+    {
+      getCurrentPlanIdentity: () => ({
+        file: null,
+        source: 'user',
+      }),
+      openManagedPlan: async () => false,
+    },
+  );
+  loaderController.bindActions();
+  const pickedLootPlansPromise = loaderController.pickLootPlans([
+    {
+      source: 'system',
+      file: 'bettle-周常-8-2.yaml',
+      name: '周常 8-2',
+    },
+  ]);
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  rendererAssert.equal(
+    document.getElementById('battle-plan-loader')?.style.display,
+    'flex',
+    '加载自动胖次时没有打开复用的出征计划浮窗',
+  );
+  rendererAssert.equal(
+    document.getElementById('battle-plan-loader-title')?.textContent,
+    '加载自动胖次计划',
+  );
+  rendererAssert.equal(
+    document.getElementById('btn-confirm-battle-plan-loader')?.textContent,
+    '确认',
+    '浮窗底部按钮没有改为确认',
+  );
+  const findAddButton = (file) => (
+    Array.from(document.querySelectorAll('[data-loot-plan-add]'))
+      .find(button => button.dataset.lootPlanFile === file)
+  );
+  const userAddButton = findAddButton('bettle-用户胖次测试.yaml');
+  rendererAssert.ok(userAddButton, '用户计划卡片缺少加入列表按钮');
+  rendererAssert.equal(userAddButton.textContent, '加入列表');
+  rendererAssert.equal(userAddButton.disabled, false);
+  rendererAssert.equal(
+    getComputedStyle(userAddButton).backgroundColor,
+    'rgb(37, 99, 235)',
+    '加入列表按钮必须使用蓝色背景',
+  );
+  rendererAssert.equal(
+    getComputedStyle(userAddButton).position,
+    'absolute',
+    '加入列表按钮没有嵌入任务卡片右下角',
+  );
+  rendererAssert.equal(getComputedStyle(userAddButton).right, '7px');
+  rendererAssert.equal(getComputedStyle(userAddButton).bottom, '7px');
+  const addButtonBadge = userAddButton
+    .closest('.loot-automation-plan-card')
+    ?.querySelector('.fleet-team-source-badge');
+  rendererAssert.ok(
+    Math.abs(
+      userAddButton.getBoundingClientRect().height
+      - (addButtonBadge?.getBoundingClientRect().height ?? 0),
+    ) < 0.1,
+    '加入列表按钮必须与配置标签同高',
+  );
+  rendererAssert.ok(
+    Math.abs(
+      userAddButton.getBoundingClientRect().width
+      - (addButtonBadge?.getBoundingClientRect().width ?? 0),
+    ) < 0.1,
+    '加入列表按钮必须与配置标签同宽',
+  );
+  rendererAssert.equal(
+    document.querySelector('.battle-plan-preview-stop-values'),
+    null,
+    '自动胖次列表浮窗不应展示 YAML 停止检测',
+  );
+  const configPreviewTitle = document.getElementById(
+    'battle-plan-loader-preview-title',
+  );
+  const lootPreviewTitle = document.querySelector(
+    '.loot-plan-list-preview-heading h3',
+  );
+  rendererAssert.match(lootPreviewTitle?.textContent ?? '', /^列表预览：/);
+  rendererAssert.equal(
+    lootPreviewTitle?.tagName,
+    configPreviewTitle?.tagName,
+    '列表预览与配置预览必须使用同级标题',
+  );
+  rendererAssert.equal(
+    getComputedStyle(lootPreviewTitle).fontSize,
+    getComputedStyle(configPreviewTitle).fontSize,
+    '列表预览与配置预览标题字号必须一致',
+  );
+  rendererAssert.equal(
+    getComputedStyle(lootPreviewTitle).lineHeight,
+    getComputedStyle(configPreviewTitle).lineHeight,
+    '列表预览与配置预览标题行高必须一致',
+  );
+  rendererAssert.equal(
+    document.querySelector(
+      '.loot-plan-list-preview-heading span',
+    )?.textContent,
+    '设置自动胖次的下拉列表',
+  );
+  const previewFrame = document.querySelector(
+    '.battle-plan-loader-preview',
+  );
+  const previewFrameHeight = previewFrame.getBoundingClientRect().height;
+
+  userAddButton.click();
+  rendererAssert.equal(
+    document.querySelectorAll('.loot-plan-list-preview-card').length,
+    2,
+    '加入列表后右侧预览没有立即更新',
+  );
+  rendererAssert.equal(
+    findAddButton('bettle-用户胖次测试.yaml')?.textContent,
+    '已加入',
+  );
+  rendererAssert.equal(
+    previewFrame.getBoundingClientRect().height,
+    previewFrameHeight,
+    '加入列表不得改变右侧配置预览框架高度',
+  );
+  const lootPreview = document.querySelector('.loot-plan-list-preview');
+  const lootPreviewCards = document.querySelector(
+    '.loot-plan-list-preview-cards',
+  );
+  rendererAssert.equal(
+    lootPreview.classList.contains('battle-plan-preview-section'),
+    true,
+    '列表预览必须复用使用舰队的灰底分区样式',
+  );
+  const fleetPreviewSection = document.querySelector(
+    '.battle-plan-preview-section:not(.loot-plan-list-preview)',
+  );
+  rendererAssert.equal(
+    getComputedStyle(lootPreview).backgroundColor,
+    getComputedStyle(fleetPreviewSection).backgroundColor,
+    '列表预览与使用舰队必须使用相同灰色背景',
+  );
+  rendererAssert.ok(
+    lootPreview.getBoundingClientRect().bottom
+      <= previewFrame.getBoundingClientRect().bottom,
+    '列表预览不得超出右侧配置预览框架',
+  );
+  rendererAssert.equal(
+    getComputedStyle(lootPreview).maxHeight,
+    '150px',
+    '列表预览必须限制最大高度',
+  );
+  rendererAssert.equal(
+    getComputedStyle(lootPreviewCards).overflowY,
+    'auto',
+    '列表预览超高后必须在框架内滚动',
+  );
+  const findDeleteButton = (file) => (
+    Array.from(document.querySelectorAll('[data-loot-plan-delete]'))
+      .find(button => button.dataset.lootPlanFile === file)
+  );
+  findDeleteButton('bettle-周常-8-2.yaml')?.click();
+  rendererAssert.equal(
+    document.getElementById('generic-prompt-title')?.textContent,
+    '删除自动胖次计划',
+    '删除计划没有弹出二次确认',
+  );
+  rendererAssert.match(
+    document.getElementById('generic-prompt-message')?.textContent ?? '',
+    /周常 8-2/,
+  );
+  document.getElementById('generic-prompt-cancel')?.click();
+  await Promise.resolve();
+  rendererAssert.equal(
+    document.querySelectorAll('.loot-plan-list-preview-card').length,
+    2,
+    '取消删除后不应修改列表草稿',
+  );
+
+  findDeleteButton('bettle-周常-8-2.yaml')?.click();
+  document.getElementById('generic-prompt-ok')?.click();
+  await Promise.resolve();
+  rendererAssert.equal(
+    document.querySelectorAll('.loot-plan-list-preview-card').length,
+    1,
+    '确认删除后右侧列表没有移除任务',
+  );
+  const previewCard = document.querySelector(
+    '.loot-plan-list-preview-card',
+  );
+  const currentLootPreviewCards = document.querySelector(
+    '.loot-plan-list-preview-cards',
+  );
+  rendererAssert.equal(
+    previewCard?.children.length,
+    2,
+    '列表卡片只能显示任务名称和删除按钮',
+  );
+  rendererAssert.equal(
+    getComputedStyle(previewCard).paddingTop,
+    '3px',
+    '列表卡片顶部必须预留 3px',
+  );
+  rendererAssert.equal(
+    getComputedStyle(previewCard).paddingBottom,
+    '3px',
+    '列表卡片底部必须预留 3px',
+  );
+  rendererAssert.ok(
+    (
+      (currentLootPreviewCards?.getBoundingClientRect().width ?? 0)
+      - (previewCard?.getBoundingClientRect().width ?? 0)
+    ) <= 12,
+    '列表卡片宽度必须铺满列表预览区域',
+  );
+  rendererAssert.ok(
+    (previewCard?.getBoundingClientRect().height ?? 0) <= 24,
+    '列表预览卡片不得被删除按钮额外撑高',
+  );
+  rendererAssert.ok(
+    Math.abs(
+      (
+        previewCard?.querySelector('button')
+          ?.getBoundingClientRect().height ?? 0
+      ) - (
+        document.getElementById('battle-plan-loader-preview-source')
+          ?.getBoundingClientRect().height ?? 0
+      ),
+    ) < 0.1,
+    '列表预览删除按钮必须与用户预设标签同高',
+  );
+  document.getElementById('btn-confirm-battle-plan-loader')?.click();
+  rendererAssert.deepStrictEqual(
+    await pickedLootPlansPromise,
+    [{
+      source: 'user',
+      file: 'bettle-用户胖次测试.yaml',
+      name: '用户胖次测试',
+    }],
+    '确认后没有返回完整的自动胖次下拉列表草稿',
+  );
+
+  const canceledLootPlansPromise = loaderController.pickLootPlans([
+    {
+      source: 'user',
+      file: 'bettle-用户胖次测试.yaml',
+      name: '用户胖次测试',
+    },
+  ]);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  document.getElementById('btn-cancel-battle-plan-loader')?.click();
+  rendererAssert.equal(
+    await canceledLootPlansPromise,
+    null,
+    '取消浮窗不应回填列表草稿',
+  );
+
+  const globalScrollButtonRule = Array.from(document.styleSheets)
+    .flatMap(sheet => Array.from(sheet.cssRules))
+    .find(rule => rule.selectorText === '::-webkit-scrollbar-button');
+  rendererAssert.equal(
+    globalScrollButtonRule?.style.display,
+    'none',
+    '所有下拉框的滚动条顶部和底部按钮必须统一隐藏',
   );
 
   const delayMinimum = document.getElementById('cfg-delay-min');
@@ -183,6 +701,9 @@ async function runRendererTest(root, tempDirectory) {
     'daily_automation:',
     '  auto_gain_bonus: true',
     '  auto_bath_repair: true',
+    '  auto_decisive: true',
+    '  decisive_ticket_reserve: 0',
+    '  decisive_template_id: builtin_decisive_6',
     '  loot_plan_index: 2',
     '  backend_options:',
     '    scheduler:',
@@ -193,13 +714,31 @@ async function runRendererTest(root, tempDirectory) {
   ].join('\n'));
   rendererAssert.equal(
     model.migratedGuiAutomation.lootPlanId,
-    'bettle-捞胖次-8-5.yaml',
+    'bettle-old-8-5AI六潜胖次.yaml',
     '旧 usersettings.yaml 的索引没有保持 8-5 语义',
+  );
+  rendererAssert.deepStrictEqual(
+    model.migratedLegacyDecisiveAutomation,
+    {
+      autoDecisive: true,
+      ticketReserve: 0,
+      templateId: 'builtin_decisive_6',
+    },
+    '旧版决战自动化原值没有被逐字段读取',
   );
 
   const guiSettings = {
     preserved_key: 'keep',
+    decisive_plan: {
+      chapter: 5,
+      use_quick_repair: false,
+      level1: ['当前主力'],
+      level2: ['当前替补'],
+    },
   };
+  let failGuiAutomationMigration = false;
+  let failLegacyDecisiveMigration = false;
+  let legacyDecisiveMigrationCalls = 0;
   const writeGuiSettings = patch => {
     Object.assign(guiSettings, patch);
     rendererFs.writeFileSync(
@@ -210,6 +749,12 @@ async function runRendererTest(root, tempDirectory) {
   };
 
   window.electronBridge = {
+    readFile: async name => {
+      const file = rendererPath.join(tempDirectory, name);
+      return rendererFs.existsSync(file)
+        ? rendererFs.readFileSync(file, 'utf8')
+        : '';
+    },
     saveFile: async (name, content) => {
       rendererFs.writeFileSync(
         rendererPath.join(tempDirectory, name),
@@ -217,11 +762,32 @@ async function runRendererTest(root, tempDirectory) {
         'utf8',
       );
     },
+    getGuiAutomationSettings: async () => ({
+      exists: Boolean(guiSettings.automation),
+      settings: structuredClone(guiSettings.automation ?? {}),
+    }),
     setGuiAutomationSettings: async settings => {
+      if (failGuiAutomationMigration) {
+        throw new Error('模拟 GUI 自动化配置写入失败');
+      }
       writeGuiSettings({
         automation: structuredClone(settings),
       });
       return settings;
+    },
+    migrateLegacyDecisiveAutomation: async settings => {
+      legacyDecisiveMigrationCalls += 1;
+      if (failLegacyDecisiveMigration) {
+        throw new Error('模拟旧版决战配置写入失败');
+      }
+      writeGuiSettings({
+        legacy_decisive_automation: {
+          auto_decisive: settings.autoDecisive,
+          decisive_ticket_reserve: settings.ticketReserve,
+          decisive_template_id: settings.templateId,
+        },
+      });
+      return structuredClone(settings);
     },
     setBackendPort: async backendPort => {
       writeGuiSettings({
@@ -295,6 +861,131 @@ async function runRendererTest(root, tempDirectory) {
     configDir: tempDirectory,
   };
 
+  const partialYaml = [
+    'daily_automation:',
+    '  expedition_interval: 41',
+    '  battle_times: 6',
+    '  auto_loot: false',
+    '  loot_plan_id: bettle-捞胖次-8-5.yaml',
+    '  loot_stop_count: 12',
+    '',
+  ].join('\n');
+  rendererFs.writeFileSync(
+    rendererPath.join(tempDirectory, 'usersettings.yaml'),
+    partialYaml,
+    'utf8',
+  );
+  writeGuiSettings({
+    automation: {
+      expeditionInterval: 29,
+      autoLoot: true,
+    },
+  });
+  const partialModel = new ConfigModel();
+  const partialController = new ConfigController({
+    ...host,
+    configModel: partialModel,
+  });
+
+  failGuiAutomationMigration = true;
+  await rendererAssert.rejects(
+    () => partialController.loadConfig(),
+    /模拟 GUI 自动化配置写入失败/,
+  );
+  const yamlAfterFailedGuiMigration = yaml.load(
+    rendererFs.readFileSync(
+      rendererPath.join(tempDirectory, 'usersettings.yaml'),
+      'utf8',
+    ),
+  );
+  rendererAssert.equal(
+    yamlAfterFailedGuiMigration.daily_automation.battle_times,
+    6,
+    'GUI JSON 写入失败时不得删除 YAML 的缺失字段',
+  );
+  rendererAssert.equal(
+    yamlAfterFailedGuiMigration.daily_automation.loot_plan_id,
+    'bettle-捞胖次-8-5.yaml',
+    'GUI JSON 写入失败时不得删除 YAML 的计划标识',
+  );
+
+  failGuiAutomationMigration = false;
+  await partialController.loadConfig();
+  rendererAssert.deepStrictEqual(
+    partialModel.currentGuiAutomation,
+    {
+      expeditionInterval: 29,
+      battleTimes: 6,
+      autoDecisive: false,
+      decisiveTemplateId: 'system_preset',
+      autoLoot: true,
+      lootPlanSource: 'system',
+      lootPlanId: 'bettle-old-8-5AI六潜胖次.yaml',
+      lootPlans: structuredClone(DEFAULT_LOOT_PLANS),
+      lootStopCount: 12,
+    },
+    '部分 GUI JSON 没有按字段优先级与 YAML 合并',
+  );
+  rendererAssert.deepStrictEqual(
+    guiSettings.automation,
+    partialModel.currentGuiAutomation,
+    '逐字段合并结果没有完整写入 gui_settings.json',
+  );
+  const yamlAfterSuccessfulGuiMigration = yaml.load(
+    rendererFs.readFileSync(
+      rendererPath.join(tempDirectory, 'usersettings.yaml'),
+      'utf8',
+    ),
+  );
+  for (const field of [
+    'expedition_interval',
+    'battle_times',
+    'auto_loot',
+    'loot_plan_id',
+    'loot_stop_count',
+  ]) {
+    rendererAssert.equal(
+      Object.hasOwn(
+        yamlAfterSuccessfulGuiMigration.daily_automation,
+        field,
+      ),
+      false,
+      `完整写入 GUI JSON 后未清理 ${field}`,
+    );
+  }
+
+  rendererFs.writeFileSync(
+    rendererPath.join(tempDirectory, 'usersettings.yaml'),
+    [
+      'daily_automation:',
+      '  auto_loot: true',
+      '  loot_plan_id: bettle-不存在.yaml',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeGuiSettings({
+    automation: {
+      autoLoot: true,
+    },
+  });
+  const unsafeLootModel = new ConfigModel();
+  const unsafeLootController = new ConfigController({
+    ...host,
+    configModel: unsafeLootModel,
+  });
+  await unsafeLootController.loadConfig();
+  rendererAssert.equal(
+    unsafeLootModel.currentGuiAutomation.autoLoot,
+    false,
+    '缺少有效计划标识时必须关闭自动刷取',
+  );
+  rendererAssert.equal(
+    unsafeLootModel.currentGuiAutomation.lootPlanId,
+    'bettle-周常-9-2.yaml',
+    '损坏计划标识只能安全回退到默认计划',
+  );
+
   const controller = new ConfigController(host);
   await controller.saveConfig();
 
@@ -332,6 +1023,9 @@ async function runRendererTest(root, tempDirectory) {
     auto_exercise: sample.autoExercise,
     exercise_fleet_id: sample.exerciseFleetId,
     auto_normal_fight: sample.autoNormalFight,
+    auto_decisive: true,
+    decisive_ticket_reserve: 0,
+    decisive_template_id: 'builtin_decisive_6',
     auto_gain_bonus: true,
     auto_bath_repair: true,
     auto_set_support: false,
@@ -424,8 +1118,12 @@ async function runRendererTest(root, tempDirectory) {
   rendererAssert.deepStrictEqual(savedGui.automation, {
     expeditionInterval: sample.expeditionInterval,
     battleTimes: sample.battleTimes,
+    autoDecisive: sample.autoDecisive,
+    decisiveTemplateId: sample.decisiveTemplateId,
     autoLoot: sample.autoLoot,
+    lootPlanSource: sample.lootPlanSource,
     lootPlanId: sample.lootPlanId,
+    lootPlans: sample.lootPlans,
     lootStopCount: sample.lootStopCount,
   });
   rendererAssert.equal(savedGui.backend_port, sample.backendPort);
@@ -458,6 +1156,139 @@ async function runRendererTest(root, tempDirectory) {
     sample.rememberWindowBounds,
   );
   rendererAssert.equal(savedGui.preserved_key, 'keep');
+  rendererAssert.deepStrictEqual(savedGui.decisive_plan, {
+    chapter: 5,
+    use_quick_repair: false,
+    level1: ['当前主力'],
+    level2: ['当前替补'],
+  });
+
+  const runWithAutoClosedAlert = async action => {
+    const notices = [];
+    const timer = window.setInterval(() => {
+      const overlay = document.getElementById('generic-prompt');
+      if (!overlay || overlay.style.display === 'none') return;
+      const title = document.getElementById(
+        'generic-prompt-title',
+      )?.textContent ?? '';
+      const message = document.getElementById(
+        'generic-prompt-message',
+      )?.textContent ?? '';
+      if (!title) return;
+      notices.push({ title, message });
+      document.getElementById('generic-prompt-ok')?.click();
+    }, 5);
+    try {
+      await action();
+    } finally {
+      window.clearInterval(timer);
+    }
+    return notices;
+  };
+
+  failLegacyDecisiveMigration = true;
+  const failedNotices = await runWithAutoClosedAlert(
+    () => controller.loadConfig(),
+  );
+  const yamlAfterFailedMigration = yaml.load(
+    rendererFs.readFileSync(
+      rendererPath.join(tempDirectory, 'usersettings.yaml'),
+      'utf8',
+    ),
+  );
+  rendererAssert.equal(
+    yamlAfterFailedMigration.daily_automation.auto_decisive,
+    true,
+    '迁移失败时不得删除 auto_decisive',
+  );
+  rendererAssert.equal(
+    yamlAfterFailedMigration.daily_automation
+      .decisive_ticket_reserve,
+    0,
+    '迁移失败时不得删除 decisive_ticket_reserve',
+  );
+  rendererAssert.equal(
+    yamlAfterFailedMigration.daily_automation
+      .decisive_template_id,
+    'builtin_decisive_6',
+    '迁移失败时不得删除 decisive_template_id',
+  );
+  rendererAssert.equal(
+    Object.hasOwn(guiSettings, 'legacy_decisive_automation'),
+    false,
+  );
+  rendererAssert.match(
+    failedNotices[0]?.title ?? '',
+    /迁移失败/,
+  );
+
+  failLegacyDecisiveMigration = false;
+  const successNotices = await runWithAutoClosedAlert(
+    () => controller.loadConfig(),
+  );
+  const yamlAfterSuccessfulMigration = yaml.load(
+    rendererFs.readFileSync(
+      rendererPath.join(tempDirectory, 'usersettings.yaml'),
+      'utf8',
+    ),
+  );
+  for (const field of [
+    'auto_decisive',
+    'decisive_ticket_reserve',
+    'decisive_template_id',
+  ]) {
+    rendererAssert.equal(
+      Object.hasOwn(
+        yamlAfterSuccessfulMigration.daily_automation,
+        field,
+      ),
+      false,
+      `迁移成功后未清理 ${field}`,
+    );
+  }
+  const guiAfterSuccessfulMigration = JSON.parse(
+    rendererFs.readFileSync(
+      rendererPath.join(tempDirectory, 'gui_settings.json'),
+      'utf8',
+    ),
+  );
+  rendererAssert.deepStrictEqual(
+    guiAfterSuccessfulMigration.legacy_decisive_automation,
+    {
+      auto_decisive: true,
+      decisive_ticket_reserve: 0,
+      decisive_template_id: 'builtin_decisive_6',
+    },
+  );
+  rendererAssert.deepStrictEqual(
+    guiAfterSuccessfulMigration.decisive_plan,
+    savedGui.decisive_plan,
+    '旧配置迁移不得覆盖当前决战计划',
+  );
+  rendererAssert.match(
+    successNotices[0]?.message ?? '',
+    /自动决战：开启/,
+  );
+  rendererAssert.match(
+    successNotices[0]?.message ?? '',
+    /决战票保留：0/,
+  );
+  rendererAssert.match(
+    successNotices[0]?.message ?? '',
+    /决战模板：builtin_decisive_6/,
+  );
+  rendererAssert.match(
+    successNotices[0]?.message ?? '',
+    /决战票保留仅无损保存，不参与执行轮数/,
+  );
+  rendererAssert.equal(legacyDecisiveMigrationCalls, 2);
+
+  await controller.loadConfig();
+  rendererAssert.equal(
+    legacyDecisiveMigrationCalls,
+    2,
+    '迁移成功后再次启动不应重复迁移或提示',
+  );
 
   rendererAssert.equal(
     localStorage.getItem('themeMode'),
@@ -494,6 +1325,8 @@ async function runRendererTest(root, tempDirectory) {
     'cfg-auto-exercise',
     'cfg-exercise-fleet',
     'cfg-auto-normal-fight',
+    'cfg-auto-decisive',
+    'cfg-decisive-template',
     'cfg-auto-loot',
     'cfg-loot-plan',
     'cfg-loot-stop-count',

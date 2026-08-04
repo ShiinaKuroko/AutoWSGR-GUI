@@ -6,6 +6,21 @@ import type {
   FleetRuleDraftViewObject as FleetRuleDraft,
   FleetSlotDraftViewObject as FleetSlotDraft,
 } from '../../types/view.js';
+import {
+  compactFleetDraftSlots,
+  hasOtherPrimaryShip,
+  insertFleetCandidate,
+  insertFleetPrimary,
+  isFleetSlotEmpty,
+  moveFleetPrimary,
+  removeFleetPrimary,
+  resolveFleetSlotPosition,
+  resolveGalleryFormationAssignment,
+  resolveGalleryFormationDropTarget,
+} from '../../model/fleet/FleetDraft';
+import type {
+  BackupFollowMode,
+} from '../../model/fleet/FleetDraft';
 import { normalizeFleetShipTypeCode } from '../../shared/fleetShipTypes';
 import {
   showAlert,
@@ -40,6 +55,8 @@ export interface FleetEditorViewHost {
   shipTypeDisplay(ship: ShipLibraryShip): string;
   renderGallerySelection(): void;
   updateGalleryCardTargets(): void;
+  getBackupFollowMode(): BackupFollowMode;
+  setBackupFollowMode(mode: BackupFollowMode): void;
 }
 
 const DEFAULT_BACKUP_SLOT_COUNT = 6;
@@ -54,9 +71,9 @@ export class FleetEditorView {
   private readonly backupTitle = document.getElementById(
     'fleet-backup-title',
   )!;
-  private readonly backupAppendDrop = document.getElementById(
-    'fleet-backup-append-drop',
-  )!;
+  private readonly backupFollowButton = document.getElementById(
+    'btn-backup-follow-mode',
+  ) as HTMLButtonElement;
   private readonly backupCopyDialog = document.getElementById(
     'fleet-backup-copy-dialog',
   )!;
@@ -71,10 +88,12 @@ export class FleetEditorView {
   private activeSlotGroup: SlotGroup = 'formation';
   private activePosition = 0;
   private activeBackupIndex = 0;
+  private backupFollowMode: BackupFollowMode;
   private backupDragScroll:
     { top: number; left: number } | null = null;
 
   constructor(private readonly host: FleetEditorViewHost) {
+    this.backupFollowMode = this.host.getBackupFollowMode();
     this.ruleView = new FleetRuleView({
       primaryRule: () => this.currentSlot(),
       backupRule: () => this.currentBackupRule(),
@@ -84,6 +103,7 @@ export class FleetEditorView {
   }
 
   render(): void {
+    this.renderBackupFollowMode();
     this.renderSlots();
     this.renderBackupSlots();
     this.ruleView.render();
@@ -119,13 +139,16 @@ export class FleetEditorView {
 
   assignShip(ship: ShipLibraryShip): void {
     if (this.activeSlotGroup === 'formation') {
-      const existingPrimary = this.currentFleet().slots.findIndex(
-        slot => slot.primary?.search_name === ship.search_name,
+      const assignment = resolveGalleryFormationAssignment(
+        this.currentFleet().slots,
+        this.activePosition,
+        ship.search_name,
       );
       this.assignFormationShip(
         ship,
-        existingPrimary >= 0 ? existingPrimary : this.activePosition,
+        assignment.targetPosition,
       );
+      this.activePosition = assignment.activePosition;
     } else {
       const slot = this.currentSlot();
       const existingBackup = slot.candidates.findIndex(
@@ -175,8 +198,7 @@ export class FleetEditorView {
   }
 
   isSlotEmpty(slot: FleetSlotDraft): boolean {
-    return slot.primary === null
-      && slot.candidates.every(candidate => candidate.ship === null);
+    return isFleetSlotEmpty(slot);
   }
 
   private bindActions(): void {
@@ -189,12 +211,16 @@ export class FleetEditorView {
         const slot = Number(removeButton.dataset['removeSlot']);
         if (Number.isInteger(slot) && slot >= 0 && slot < FLEET_SLOT_COUNT) {
           const slots = this.currentFleet().slots;
-          const selected = slots[slot];
-          selected.primary = null;
-          this.clearFleetRule(selected);
-          this.activePosition = this.compactFleetSlots(selected, slot);
-          this.activeSlotGroup = 'formation';
-          this.activeBackupIndex = 0;
+          const deletingFocused = slot === this.activePosition;
+          this.activePosition = removeFleetPrimary(
+            slots,
+            slot,
+            this.activePosition,
+          );
+          if (deletingFocused) {
+            this.activeSlotGroup = 'formation';
+            this.activeBackupIndex = 0;
+          }
           this.render();
           this.host.renderGallerySelection();
         }
@@ -229,15 +255,15 @@ export class FleetEditorView {
       );
       if (!slot || !event.dataTransfer) return;
       const position = Number(slot.dataset['fleetSlot']);
-      if (!this.currentFleet().slots[position]?.primary) return;
-      if (position === this.activePosition) this.rememberBackupScroll();
-      this.activeSlotGroup = 'formation';
-      this.activePosition = position;
-      this.activeBackupIndex = 0;
-      this.renderBackupSlots();
-      this.ruleView.render();
+      const sourceSlot = this.currentFleet().slots[position];
+      const movableCandidateOnly = (
+        this.backupFollowMode === 'position'
+        && sourceSlot
+        && !sourceSlot.primary
+        && !this.isSlotEmpty(sourceSlot)
+      );
+      if (!sourceSlot?.primary && !movableCandidateOnly) return;
       this.rememberBackupScroll();
-      this.showBackupAppendDrop(true);
       event.dataTransfer.effectAllowed = 'copyMove';
       event.dataTransfer.setData(
         FLEET_DRAG_MIME,
@@ -279,7 +305,6 @@ export class FleetEditorView {
       this.slotList.querySelectorAll('.drag-over').forEach((slot) => {
         slot.classList.remove('drag-over');
       });
-      this.showBackupAppendDrop(false);
       this.clearBackupDragScroll();
     });
 
@@ -392,25 +417,6 @@ export class FleetEditorView {
       });
       this.clearBackupDragScroll();
     });
-    this.backupAppendDrop.addEventListener('dragover', (event) => {
-      if (!event.dataTransfer?.types.includes(FLEET_DRAG_MIME)) return;
-      event.preventDefault();
-      event.dataTransfer.dropEffect = 'move';
-      this.backupAppendDrop.classList.add('drag-over');
-    });
-    this.backupAppendDrop.addEventListener('dragleave', () => {
-      this.backupAppendDrop.classList.remove('drag-over');
-    });
-    this.backupAppendDrop.addEventListener('drop', (event) => {
-      if (!event.dataTransfer) return;
-      event.preventDefault();
-      this.backupAppendDrop.classList.remove('drag-over');
-      this.handleBackupAppendDrop(
-        event.dataTransfer.getData(FLEET_DRAG_MIME),
-      );
-      this.showBackupAppendDrop(false);
-    });
-
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') this.closeBackupCopyDialog();
     });
@@ -424,6 +430,14 @@ export class FleetEditorView {
         this.reset();
       },
     );
+    this.backupFollowButton.addEventListener('click', () => {
+      this.backupFollowMode = this.backupFollowMode === 'ship'
+        ? 'position'
+        : 'ship';
+      this.host.setBackupFollowMode(this.backupFollowMode);
+      this.renderBackupFollowMode();
+      this.renderBackupSlots();
+    });
     document.getElementById('btn-add-fleet-backup')?.addEventListener(
       'click',
       () => {
@@ -480,7 +494,6 @@ export class FleetEditorView {
     ship: ShipLibraryShip,
     position: number,
     sourceRule?: FleetRuleDraft,
-    advanceToNextEmpty = true,
   ): void {
     const slots = this.currentFleet().slots;
     const firstEmpty = slots.findIndex(slot => this.isSlotEmpty(slot));
@@ -493,21 +506,11 @@ export class FleetEditorView {
       ? position
       : firstEmpty;
     const slot = slots[target];
-    const replacing = slot.primary !== null;
     slot.primary = ship;
     if (sourceRule) this.host.copyRule(slot, sourceRule);
     this.applyDefaultShipType(slot, ship);
     this.activeSlotGroup = 'formation';
-    this.activePosition = target;
     this.activeBackupIndex = 0;
-    if (!replacing && advanceToNextEmpty) {
-      const nextEmpty = slots.findIndex(
-        (current, index) => (
-          index > target && this.isSlotEmpty(current)
-        ),
-      );
-      if (nextEmpty >= 0) this.activePosition = nextEmpty;
-    }
   }
 
   private handleFleetDrop(raw: string, targetPosition: number): void {
@@ -516,6 +519,9 @@ export class FleetEditorView {
     }
     try {
       const data = JSON.parse(raw) as FleetDragData;
+      const slots = this.currentFleet().slots;
+      const focusedSlot = slots[this.activePosition];
+      const previousPosition = this.activePosition;
       if (
         data.source === 'formation'
         && Number.isInteger(data.position)
@@ -527,12 +533,10 @@ export class FleetEditorView {
           targetPosition,
         );
         if (!moved) return;
-        this.activeSlotGroup = 'formation';
-        this.activePosition = Math.max(
-          0,
-          this.currentFleet().slots.indexOf(moved),
+        this.activePosition = this.resolveFocusedPosition(
+          focusedSlot,
+          previousPosition,
         );
-        this.activeBackupIndex = 0;
       } else if (
         data.source === 'backup'
         && Number.isInteger(data.position)
@@ -545,16 +549,22 @@ export class FleetEditorView {
         const existing = this.currentFleet().slots.findIndex(
           slot => slot.primary?.search_name === dragged.ship.search_name,
         );
-        this.assignFormationShip(
+        if (existing >= 0) {
+          this.assignFormationShip(dragged.ship, existing);
+          this.activePosition = this.resolveFocusedPosition(
+            focusedSlot,
+            previousPosition,
+          );
+        } else if (!this.insertFormationShip(
           dragged.ship,
-          existing >= 0 ? existing : targetPosition,
-          existing < 0 ? dragged.rule : undefined,
-          false,
-        );
+          targetPosition,
+          dragged.rule,
+        )) {
+          return;
+        }
       }
       this.render();
       this.host.renderGallerySelection();
-      this.showBackupAppendDrop(false);
     } catch {
       // Ignore drag data created outside the fleet planner.
     }
@@ -584,22 +594,28 @@ export class FleetEditorView {
             candidate.ship?.search_name === dragged.ship.search_name
           ),
         );
-        const firstEmpty = candidates.findIndex(
-          candidate => candidate.ship === null,
-        );
-        const index = existing >= 0
-          ? existing
-          : (candidates[targetIndex].ship ? targetIndex : firstEmpty);
-        const selected = candidates[index];
-        selected.ship = dragged.ship;
-        this.applyDefaultShipType(selected, dragged.ship);
+        let index = existing;
+        if (existing >= 0) {
+          const selected = candidates[existing];
+          selected.ship = dragged.ship;
+          this.applyDefaultShipType(selected, dragged.ship);
+        } else {
+          const selected = this.host.createCandidateDraft(dragged.ship);
+          if (dragged.rule) this.host.copyRule(selected, dragged.rule);
+          this.applyDefaultShipType(selected, dragged.ship);
+          index = insertFleetCandidate(
+            candidates,
+            targetIndex,
+            selected,
+          );
+          if (index < 0) return;
+        }
         this.compactCandidates(candidates);
         this.activeSlotGroup = 'backup';
-        this.activeBackupIndex = Math.max(0, candidates.indexOf(selected));
+        this.activeBackupIndex = Math.max(0, index);
       }
       this.render();
       this.host.renderGallerySelection();
-      this.showBackupAppendDrop(false);
     } catch {
       // Ignore drag data created outside the fleet planner.
     }
@@ -609,23 +625,52 @@ export class FleetEditorView {
     sourcePosition: number,
     targetPosition: number,
   ): FleetSlotDraft | null {
-    const slots = this.currentFleet().slots;
-    const moved = slots[sourcePosition];
-    if (!moved?.primary) return null;
-    if (sourcePosition === targetPosition) return moved;
+    return moveFleetPrimary(
+      this.currentFleet().slots,
+      sourcePosition,
+      targetPosition,
+      this.backupFollowMode,
+    );
+  }
 
-    if (!this.isSlotEmpty(slots[targetPosition])) {
-      [slots[sourcePosition], slots[targetPosition]] = [
-        slots[targetPosition],
-        moved,
-      ];
-      return moved;
+  private insertFormationShip(
+    ship: ShipLibraryShip,
+    targetPosition: number,
+    sourceRule?: FleetRuleDraft,
+  ): boolean {
+    const resolvedTarget = resolveGalleryFormationDropTarget(
+      this.currentFleet().slots,
+      targetPosition,
+    );
+    if (resolvedTarget !== targetPosition) {
+      this.assignFormationShip(ship, resolvedTarget, sourceRule);
+      this.activeSlotGroup = 'formation';
+      this.activePosition = resolvedTarget;
+      this.activeBackupIndex = 0;
+      return true;
     }
-
-    slots.splice(sourcePosition, 1);
-    const firstEmpty = slots.findIndex(slot => this.isSlotEmpty(slot));
-    slots.splice(firstEmpty < 0 ? slots.length : firstEmpty, 0, moved);
-    return moved;
+    const inserted = this.host.createSlotDraft();
+    inserted.primary = ship;
+    if (sourceRule) this.host.copyRule(inserted, sourceRule);
+    this.applyDefaultShipType(inserted, ship);
+    if (!insertFleetPrimary(
+      this.currentFleet().slots,
+      resolvedTarget,
+      inserted,
+      this.backupFollowMode,
+    )) {
+      this.assignFormationShip(
+        ship,
+        resolvedTarget,
+        sourceRule,
+      );
+      this.activePosition = resolvedTarget;
+      return true;
+    }
+    this.activeSlotGroup = 'formation';
+    this.activePosition = resolvedTarget;
+    this.activeBackupIndex = 0;
+    return true;
   }
 
   private moveBackupToFormation(
@@ -633,11 +678,26 @@ export class FleetEditorView {
     targetPosition: number,
   ): boolean {
     const slots = this.currentFleet().slots;
+    const focusedSlot = slots[this.activePosition];
+    const previousPosition = this.activePosition;
     const sourceSlot = slots[data.position!];
     const targetSlot = slots[targetPosition];
     const sourceIndex = data.candidateIndex!;
     const candidate = sourceSlot?.candidates[sourceIndex];
     if (!candidate?.ship || !targetSlot) return false;
+    if (
+      hasOtherPrimaryShip(
+        slots,
+        candidate.ship.search_name,
+        targetPosition,
+      )
+    ) {
+      void showAlert(
+        '无法移动',
+        `主选编队中已存在 ${candidate.ship.name}，不能添加同名舰船`,
+      );
+      return false;
+    }
 
     if (targetSlot.primary) {
       this.swapPrimaryAndCandidate(targetSlot, sourceSlot, sourceIndex);
@@ -651,9 +711,10 @@ export class FleetEditorView {
       }
     }
 
-    this.activeSlotGroup = 'formation';
-    this.activePosition = Math.max(0, slots.indexOf(targetSlot));
-    this.activeBackupIndex = 0;
+    this.activePosition = this.resolveFocusedPosition(
+      focusedSlot,
+      previousPosition,
+    );
     return true;
   }
 
@@ -727,36 +788,6 @@ export class FleetEditorView {
       targetSlot.candidates.indexOf(selected),
     );
     return true;
-  }
-
-  private handleBackupAppendDrop(raw: string): void {
-    if (!raw) return;
-    try {
-      const data = JSON.parse(raw) as FleetDragData;
-      if (
-        data.source !== 'formation'
-        || !Number.isInteger(data.position)
-      ) {
-        return;
-      }
-      const sourceSlot = this.currentFleet().slots[data.position!];
-      const targetSlot = this.currentSlot();
-      if (!sourceSlot?.primary) return;
-      const selected = this.appendFormationToBackup(sourceSlot, targetSlot);
-      this.activeSlotGroup = 'backup';
-      this.activePosition = Math.max(
-        0,
-        this.currentFleet().slots.indexOf(targetSlot),
-      );
-      this.activeBackupIndex = Math.max(
-        0,
-        targetSlot.candidates.indexOf(selected),
-      );
-      this.render();
-      this.host.renderGallerySelection();
-    } catch {
-      // Ignore drag data created outside the fleet planner.
-    }
   }
 
   private appendFormationToBackup(
@@ -853,25 +884,22 @@ export class FleetEditorView {
     fallbackPosition: number,
   ): number {
     const slots = this.currentFleet().slots;
-    const occupied = slots.filter(slot => !this.isSlotEmpty(slot));
-    slots.splice(
-      0,
-      slots.length,
-      ...occupied,
-      ...Array.from(
-        { length: Math.max(0, FLEET_SLOT_COUNT - occupied.length) },
-        () => this.host.createSlotDraft(),
-      ),
-    );
+    compactFleetDraftSlots(slots);
     const preferredPosition = preferred ? slots.indexOf(preferred) : -1;
     return preferredPosition >= 0
       ? preferredPosition
       : Math.min(Math.max(0, fallbackPosition), FLEET_SLOT_COUNT - 1);
   }
 
-  private showBackupAppendDrop(visible: boolean): void {
-    this.backupAppendDrop.hidden = !visible;
-    if (!visible) this.backupAppendDrop.classList.remove('drag-over');
+  private resolveFocusedPosition(
+    focusedSlot: FleetSlotDraft,
+    fallbackPosition: number,
+  ): number {
+    return resolveFleetSlotPosition(
+      this.currentFleet().slots,
+      focusedSlot,
+      fallbackPosition,
+    );
   }
 
   private draggedShipRule(
@@ -945,9 +973,27 @@ export class FleetEditorView {
     this.backupSlotList.replaceChildren(fragment);
     restoreScrollPosition(this.backupScroll, preservedScroll);
     const primary = this.currentSlot().primary;
-    this.backupTitle.textContent = primary
+    this.backupTitle.textContent = (
+      this.backupFollowMode === 'ship' && primary
+    )
       ? `${primary.name} 的备选队列`
       : `位置 ${this.activePosition + 1} 的备选队列`;
+  }
+
+  private renderBackupFollowMode(): void {
+    const followsPosition = this.backupFollowMode === 'position';
+    this.backupFollowButton.textContent = followsPosition
+      ? '位置跟随'
+      : '舰船跟随';
+    this.backupFollowButton.dataset['mode'] = this.backupFollowMode;
+    this.backupTitle.dataset['followMode'] = this.backupFollowMode;
+    this.backupFollowButton.setAttribute(
+      'aria-pressed',
+      String(followsPosition),
+    );
+    this.backupFollowButton.title = followsPosition
+      ? '备选固定在当前位置，点击切换为舰船跟随'
+      : '备选跟随主选舰船移动，点击切换为位置跟随';
   }
 
   private scrollBackupSlotIntoView(index: number): void {
@@ -981,7 +1027,12 @@ export class FleetEditorView {
         && index === this.activeBackupIndex;
     slot.classList.toggle('active', active);
     slot.classList.toggle('candidate-only', candidateOnly);
-    slot.draggable = Boolean(ship);
+    slot.draggable = Boolean(ship)
+      || (
+        group === 'formation'
+        && candidateOnly
+        && this.backupFollowMode === 'position'
+      );
     if (candidateOnly) {
       slot.setAttribute(
         'aria-label',

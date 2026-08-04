@@ -8,7 +8,10 @@ import type {
   MapEdgeVO,
 } from '../../types/view.js';
 import type { PlanModel } from '../../model/PlanModel';
-import { FORMATION_NAMES } from '../../types/model.js';
+import {
+  FORMATION_NAMES,
+  type EventMapCatalogEntry,
+} from '../../types/model.js';
 import { getNodeType, isDetourNode, isNightNode } from '../../model/MapDataLoader';
 import type { MapData } from '../../model/MapDataLoader';
 
@@ -16,6 +19,7 @@ import type { MapData } from '../../model/MapDataLoader';
 export function buildPlanPreviewVO(
   currentPlan: PlanModel,
   currentMapData: MapData | null,
+  eventMaps: EventMapCatalogEntry[] = [],
 ): PlanPreviewViewObject {
   const plan = currentPlan;
   const mapData = currentMapData;
@@ -107,6 +111,8 @@ export function buildPlanPreviewVO(
     chapter: plan.data.chapter,
     map: plan.data.map,
     mapName: plan.mapName,
+    event: plan.data.event,
+    eventMaps,
     repairModeValue: Array.isArray(plan.repairMode) ? plan.repairMode[0] ?? 1 : plan.repairMode,
     fightConditionValue: plan.fightCondition,
     fleetId: plan.data.fleet_id ?? 1,

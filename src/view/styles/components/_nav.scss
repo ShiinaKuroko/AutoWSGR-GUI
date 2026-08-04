@@ -45,6 +45,7 @@
 }
 
 .nav-tabs {
+  position: relative;
   display: flex;
   gap: 2px;
   background: var(--bg-inset);
@@ -53,7 +54,29 @@
   -webkit-app-region: no-drag;
 }
 
+.nav-tab-indicator {
+  position: absolute;
+  z-index: 0;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: 0;
+  pointer-events: none;
+  background: var(--bg-card-solid);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  transform: translate3d(0, 0, 0);
+}
+
+.nav-tab-indicator.is-ready {
+  transition:
+    width 160ms cubic-bezier(0.2, 0.72, 0.2, 1),
+    transform 160ms cubic-bezier(0.2, 0.72, 0.2, 1);
+}
+
 .nav-tab {
+  position: relative;
+  z-index: 1;
   padding: 5px 14px;
   border: none;
   background: transparent;
@@ -62,18 +85,15 @@
   font-weight: 500;
   cursor: pointer;
   border-radius: var(--radius-pill);
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: color 160ms ease;
 }
 
 .nav-tab:hover {
   color: var(--text-secondary);
-  background: var(--bg-hover);
 }
 
 .nav-tab.active {
   color: var(--text);
-  background: var(--bg-card-solid);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
 
 .nav-runtime {
@@ -225,5 +245,11 @@
   .nav-status {
     min-width: 0;
     padding-left: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-tab-indicator.is-ready {
+    transition-duration: 1ms;
   }
 }

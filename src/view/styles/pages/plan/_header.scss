@@ -93,23 +93,25 @@
 
 .plan-map-picker {
   display: flex;
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
 }
 
 .plan-map-picker .input-inline {
+  flex: 0 0 88px;
   width: 88px;
-  min-width: 0;
+  min-width: 88px;
   height: 26px;
   padding: 4px 7px;
   font-size: 11px;
 }
 
 .plan-map-picker #plan-edit-map {
+  flex: 0 0 54px;
   width: 54px;
+  min-width: 54px;
 }
 
 .plan-config-pair {

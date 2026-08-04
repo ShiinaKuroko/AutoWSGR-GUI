@@ -3,17 +3,32 @@
  */
 import * as path from 'path';
 import * as fs from 'fs';
-import { execSync, spawn, ChildProcess } from 'child_process';
+import {
+  execFile,
+  execSync,
+  spawn,
+  ChildProcess,
+} from 'child_process';
 import type { BrowserWindow } from 'electron';
 import {
-  buildCudaEnvironment,
-  buildPythonProcessEnv,
+  buildBackendRuntimeEnvironment,
   ensurePthFile,
   ensureSslCertForPython,
   findPython,
   resolveConfiguredCudaRoot,
   resolvePythonEnvironment,
 } from '../pythonEnv';
+import {
+  applyBackendRuntimeSettings,
+  buildBackendBootstrap,
+  buildBackendCapabilityProbe,
+  selectBackendOcrGpuMode,
+  type BackendOcrGpuMode,
+  type ResolvedBackendOcrGpuMode,
+} from './BackendRuntimeContract';
+import { shutdownBackendProcess } from './BackendShutdownService';
+
+export { buildBackendRuntimeEnvironment } from '../pythonEnv';
 
 export interface BackendContext {
   appRoot: () => string;
@@ -25,6 +40,7 @@ export interface BackendContext {
 
 let ctx: BackendContext;
 let backendProcess: ChildProcess | null = null;
+let backendStopPromise: Promise<void> | null = null;
 
 /** 注入 Electron 运行时能力。 */
 export function initBackend(context: BackendContext): void {
@@ -35,20 +51,6 @@ export function initBackend(context: BackendContext): void {
 export function getBackendProcess(): ChildProcess | null {
   return backendProcess;
 }
-
-/** 将 Python 包环境与 CUDA 环境合并为后端实际启动环境。 */
-export function buildBackendRuntimeEnvironment(
-  environment: ReturnType<typeof resolvePythonEnvironment>,
-  configuredCudaRoot: string | null,
-  baseEnv: NodeJS.ProcessEnv = process.env,
-): NodeJS.ProcessEnv {
-  return buildCudaEnvironment(
-    buildPythonProcessEnv(environment, baseEnv),
-    configuredCudaRoot,
-  );
-}
-
-type OcrGpuMode = 'auto' | 'cpu' | 'cuda';
 
 function readGuiSettings(): Record<string, unknown> {
   try {
@@ -65,7 +67,7 @@ function readGuiSettings(): Record<string, unknown> {
   }
 }
 
-function readOcrGpuModeFromSettings(): OcrGpuMode {
+function readOcrGpuModeFromSettings(): BackendOcrGpuMode {
   const value = readGuiSettings().ocr_gpu_mode;
   if (value === 'cpu' || value === 'cuda') return value;
   return 'auto';
@@ -88,6 +90,123 @@ function readCudaPathFromSettings(): string | null {
 
 function readSaveBackendScreenshotsFromSettings(): boolean {
   return readGuiSettings().save_backend_screenshots === true;
+}
+
+/** 使用后端实际运行环境解析 OCR 的自动/强制 CUDA 模式。 */
+function resolveBackendOcrGpuMode(
+  pythonCommand: string,
+  requestedMode: BackendOcrGpuMode,
+  cwd: string,
+  processEnv: NodeJS.ProcessEnv,
+): Promise<ResolvedBackendOcrGpuMode> {
+  if (requestedMode === 'cpu') return Promise.resolve('cpu');
+
+  const probe = [
+    'import json',
+    'try:',
+    '    import torch',
+    '    result = {',
+    '        "available": bool(torch.cuda.is_available()),',
+    '        "torch_version": str(torch.__version__),',
+    '        "cuda_version": getattr(torch.version, "cuda", None),',
+    '    }',
+    'except Exception as exc:',
+    '    result = {"available": False, "error": str(exc)}',
+    'print(json.dumps(result, ensure_ascii=False))',
+  ].join('\n');
+
+  return new Promise((resolve, reject) => {
+    execFile(
+      pythonCommand,
+      ['-X', 'utf8', '-c', probe],
+      {
+        cwd,
+        windowsHide: true,
+        timeout: 20000,
+        encoding: 'utf8',
+        env: processEnv,
+      },
+      (error, stdout, stderr) => {
+        let detail = String(stderr || error?.message || '').trim();
+        let available = false;
+        if (!error) {
+          try {
+            const output = String(stdout)
+              .trim()
+              .split(/\r?\n/)
+              .filter(Boolean)
+              .at(-1);
+            const result = JSON.parse(output || '{}') as {
+              available?: boolean;
+              torch_version?: string;
+              cuda_version?: string | null;
+              error?: string;
+            };
+            available = result.available === true;
+            detail = result.error
+              ?? `PyTorch ${result.torch_version ?? 'unknown'}, CUDA ${
+                result.cuda_version ?? '不可用'
+              }`;
+          } catch (parseError) {
+            detail = parseError instanceof Error
+              ? parseError.message
+              : String(parseError);
+          }
+        }
+
+        try {
+          resolve(selectBackendOcrGpuMode(requestedMode, available));
+        } catch {
+          reject(new Error(
+            `已强制使用 CUDA，但后端运行环境未检测到可用 CUDA：${detail || '无检测结果'}`,
+          ));
+          return;
+        }
+        if (!available) {
+          console.warn(
+            `[Backend] 未检测到可用 CUDA，OCR 自动切换为 CPU: ${detail || '无检测结果'}`,
+          );
+        }
+      },
+    );
+  });
+}
+
+/** 启动前验证后端来源、服务入口和正式运行设置契约。 */
+function verifyBackendRuntimeContract(
+  pythonCommand: string,
+  environment: ReturnType<typeof resolvePythonEnvironment>,
+  cwd: string,
+  processEnv: NodeJS.ProcessEnv,
+): Promise<void> {
+  const probe = buildBackendCapabilityProbe(environment);
+  return new Promise((resolve, reject) => {
+    execFile(
+      pythonCommand,
+      ['-X', 'utf8', '-c', probe],
+      {
+        cwd,
+        windowsHide: true,
+        timeout: 30000,
+        encoding: 'utf8',
+        env: processEnv,
+      },
+      (error, stdout, stderr) => {
+        if (!error) {
+          const message = String(stdout).trim();
+          if (message) console.log(`[Backend] ${message}`);
+          resolve();
+          return;
+        }
+        const detail = String(stderr || stdout || error.message)
+          .trim()
+          .slice(-2000);
+        reject(new Error(
+          `后端版本或能力不兼容，已阻止启动：${detail || error.message}`,
+        ));
+      },
+    );
+  });
 }
 
 /** 运行 setup.bat 安装环境。 */
@@ -149,114 +268,14 @@ export async function startBackend(): Promise<void> {
   }
 
   const cwd = ctx.appRoot();
-  const localSite = environment.localSite;
   const localBackendRepo = environment.backendRoot;
-  const useLocalSite = environment.useLocalSite;
-  const ocrGpuMode = readOcrGpuModeFromSettings();
+  const requestedOcrGpuMode = readOcrGpuModeFromSettings();
   const configuredCudaRoot = readCudaPathFromSettings();
   const saveBackendScreenshots = readSaveBackendScreenshotsFromSettings();
-
-  const pyLiteral = (value: string): string => value
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\'");
-
-  // 通过 bootstrap 显式控制源码和依赖优先级，并应用 GUI 运行设置。
-  const bootstrapParts = [
-    'import sys, os, site',
-    ...(useLocalSite
-      ? [
-          `sp = r'${pyLiteral(localSite)}'`,
-          'sys.path.insert(0, sp)',
-          'site.addsitedir(sp)',
-        ]
-      : []),
-    ...(localBackendRepo
-      ? [
-          `repo = r'${pyLiteral(localBackendRepo)}'`,
-          'sys.path.insert(0, repo)',
-        ]
-      : []),
-    `GUI_OCR_GPU_MODE = '${ocrGpuMode}'`,
-    `GUI_SAVE_IMAGES = ${saveBackendScreenshots ? 'True' : 'False'}`,
-    'from pathlib import Path',
-    'import autowsgr',
-    ...(!localBackendRepo
-      ? [
-          '_autowsgr_file = Path(autowsgr.__file__).resolve()',
-          'if not _autowsgr_file.is_relative_to(Path(sp).resolve()):',
-          "    raise RuntimeError('GUI 后端来源错误: ' + str(_autowsgr_file))",
-        ]
-      : []),
-    "print('[Bootstrap] autowsgr=' + getattr(autowsgr, '__file__', 'unknown'))",
-    `print('[Bootstrap] repo_override=' + (r'${pyLiteral(localBackendRepo ?? '')}' or '<none>'))`,
-    "print('[Bootstrap] ocr_gpu_mode=' + GUI_OCR_GPU_MODE)",
-    "print('[Bootstrap] save_backend_screenshots=' + ('true' if GUI_SAVE_IMAGES else 'false'))",
-    'import autowsgr.infra.logger as _aw_logger',
-    'from autowsgr.scheduler import launcher as _aw_launcher',
-    'import autowsgr.vision.ocr as _aw_ocr',
-    '_orig_load_config = _aw_launcher.Launcher.load_config',
-    '_orig_save_image = _aw_logger.save_image',
-    '_orig_create = _aw_ocr.OCREngine.create.__func__',
-    '_cuda_cache = None',
-    'def _detect_cuda():',
-    '    global _cuda_cache',
-    '    if _cuda_cache is not None:',
-    '        return _cuda_cache',
-    '    try:',
-    '        import torch',
-    "        print('[Bootstrap] torch=' + str(getattr(torch, '__version__', 'unknown')))",
-    "        print('[Bootstrap] torch_cuda_build=' + str(getattr(getattr(torch, 'version', None), 'cuda', None)))",
-    '        _cuda_cache = bool(torch.cuda.is_available())',
-    '    except Exception:',
-    '        _cuda_cache = False',
-    '    return _cuda_cache',
-    'def _resolve_gpu_mode():',
-    "    if GUI_OCR_GPU_MODE == 'cuda':",
-    '        if not _detect_cuda():',
-    "            raise RuntimeError('已强制使用 CUDA，但当前 PyTorch/驱动未检测到可用 CUDA；请检查 CUDA 路径、CUDA 版 PyTorch 与 NVIDIA 驱动')",
-    '        return True',
-    "    if GUI_OCR_GPU_MODE == 'cpu':",
-    '        return False',
-    '    return _detect_cuda()',
-    "if GUI_OCR_GPU_MODE == 'cpu':",
-    "    print('[Bootstrap] cuda_available=skipped(cpu mode)')",
-    'else:',
-    "    print('[Bootstrap] cuda_available=' + ('true' if _detect_cuda() else 'false'))",
-    "def _patched_create(cls, engine='easyocr', gpu=False, mirror='tencent'):",
-    '    use_gpu = gpu',
-    "    if str(engine).lower() == 'easyocr':",
-    '        use_gpu = _resolve_gpu_mode()',
-    '    return _orig_create(cls, engine=engine, gpu=use_gpu, mirror=mirror)',
-    '_aw_ocr.OCREngine.create = classmethod(_patched_create)',
-    'def _patched_load_config(self):',
-    '    cfg = _orig_load_config(self)',
-    '    if GUI_SAVE_IMAGES:',
-    '        try:',
-    "            log_dir = getattr(cfg.log, 'dir', None)",
-    '            if log_dir is not None:',
-    "                img_dir = Path(log_dir) / 'images'",
-    '                img_dir.mkdir(parents=True, exist_ok=True)',
-    '                _aw_logger._image_dir = img_dir',
-    "                _aw_logger.logger.info('[GUI] 截图保存目录: {}', img_dir)",
-    '        except Exception as _e:',
-    "            _aw_logger.logger.warning('[GUI] 截图目录初始化失败: {}', _e)",
-    '    else:',
-    '        _aw_logger._image_dir = None',
-    '    return cfg',
-    '_aw_launcher.Launcher.load_config = _patched_load_config',
-    "def _patched_save_image(image, tag='screenshot', img_dir=None):",
-    '    if not GUI_SAVE_IMAGES:',
-    '        return None',
-    "    target_dir = img_dir or getattr(_aw_logger, '_image_dir', None)",
-    '    if target_dir is None:',
-    '        return None',
-    '    return _orig_save_image(image, tag=tag, img_dir=target_dir)',
-    '_aw_logger.save_image = _patched_save_image',
-    'import uvicorn',
-    `uvicorn.run('autowsgr.server.main:app', host='127.0.0.1', port=${ctx.BACKEND_PORT})`,
-  ];
-
-  const bootstrap = bootstrapParts.join('\n');
+  const bootstrap = buildBackendBootstrap(
+    environment,
+    ctx.BACKEND_PORT,
+  );
   const mainWindow = ctx.getMainWindow();
   if (localBackendRepo) {
     console.log(`[Backend] 使用本地后端仓库: ${localBackendRepo}`);
@@ -270,10 +289,6 @@ export async function startBackend(): Promise<void> {
       '[GUI] 未启用本地后端仓库覆盖，使用 site-packages 中的 autowsgr',
     );
   }
-  mainWindow?.webContents.send(
-    'backend-log',
-    `[GUI] OCR 加速模式: ${ocrGpuMode}`,
-  );
   mainWindow?.webContents.send(
     'backend-log',
     `[GUI] CUDA 路径: ${configuredCudaRoot ?? '系统自动检测'}`,
@@ -292,6 +307,44 @@ export async function startBackend(): Promise<void> {
   const pathWithAdb = fs.existsSync(adbDir)
     ? `${adbDir}${path.delimiter}${envPath}`
     : envPath;
+  const runtimeEnv = {
+    ...cudaEnv,
+    PYTHONUTF8: '1',
+    PYTHONIOENCODING: 'utf-8',
+    PATH: pathWithAdb,
+  };
+  const resolvedOcrGpuMode = await resolveBackendOcrGpuMode(
+    pythonCmd,
+    requestedOcrGpuMode,
+    cwd,
+    runtimeEnv,
+  );
+  mainWindow?.webContents.send(
+    'backend-log',
+    `[GUI] OCR 加速模式: ${requestedOcrGpuMode}${
+      requestedOcrGpuMode === 'auto'
+        ? ` -> ${resolvedOcrGpuMode}`
+        : ''
+    }`,
+  );
+  const backendEnv = applyBackendRuntimeSettings(
+    runtimeEnv,
+    {
+      ocrGpuMode: resolvedOcrGpuMode,
+      saveImages: saveBackendScreenshots,
+    },
+  );
+
+  await verifyBackendRuntimeContract(
+    pythonCmd,
+    environment,
+    cwd,
+    backendEnv,
+  );
+  mainWindow?.webContents.send(
+    'backend-log',
+    '[GUI] 后端运行契约验证通过',
+  );
 
   // MuMu 多开实例不会自动被 ADB 发现，因此启动前主动连接。
   try {
@@ -315,21 +368,17 @@ export async function startBackend(): Promise<void> {
     console.warn(`[Backend] ADB connect 失败 (非致命): ${error.message}`);
   }
 
-  backendProcess = spawn(
+  const spawnedProcess = spawn(
     pythonCmd,
     ['-X', 'utf8', '-c', bootstrap],
     {
       cwd,
       windowsHide: true,
       stdio: 'pipe',
-      env: {
-        ...cudaEnv,
-        PYTHONUTF8: '1',
-        PYTHONIOENCODING: 'utf-8',
-        PATH: pathWithAdb,
-      },
+      env: backendEnv,
     },
   );
+  backendProcess = spawnedProcess;
 
   const CYAN = '\x1b[36m';
   const RED = '\x1b[31m';
@@ -368,41 +417,45 @@ export async function startBackend(): Promise<void> {
       mainWindow?.webContents.send('backend-log', trimmed);
     }
   };
-  backendProcess.stdout?.on('data', handleOutput);
-  backendProcess.stderr?.on('data', handleOutput);
-  backendProcess.on('error', (error) => {
+  spawnedProcess.stdout?.on('data', handleOutput);
+  spawnedProcess.stderr?.on('data', handleOutput);
+  spawnedProcess.on('error', (error) => {
     console.error('[Backend] 启动失败:', error.message);
-    backendProcess = null;
+    if (backendProcess === spawnedProcess) backendProcess = null;
   });
-  backendProcess.on('close', (code) => {
+  spawnedProcess.on('close', (code) => {
     console.log(`[Backend] 进程退出, code=${code}`);
-    backendProcess = null;
+    if (backendProcess === spawnedProcess) backendProcess = null;
   });
 }
 
-/** 优雅停止后端；五秒内未退出则强制终止。 */
+/** 停止后端任务和完整进程树，并等待操作系统确认进程退出。 */
 export async function stopBackend(): Promise<void> {
-  const process = backendProcess;
-  if (!process) return;
+  if (backendStopPromise) return backendStopPromise;
+  const activeProcess = backendProcess;
+  if (!activeProcess) return;
+  if (
+    activeProcess.exitCode !== null
+    || activeProcess.signalCode !== null
+  ) {
+    if (backendProcess === activeProcess) backendProcess = null;
+    return;
+  }
 
-  backendProcess = null;
-  if (process.killed || process.exitCode !== null) return;
-
-  process.kill('SIGTERM');
-  await new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      if (process.exitCode === null) {
-        try {
-          process.kill('SIGKILL');
-        } catch {
-          // 进程已自行退出。
-        }
-      }
-      resolve();
-    }, 5000);
-    process.once('close', () => {
-      clearTimeout(timer);
-      resolve();
-    });
+  backendStopPromise = shutdownBackendProcess(
+    activeProcess,
+    { backendPort: ctx.BACKEND_PORT },
+  ).finally(() => {
+    if (
+      backendProcess === activeProcess
+      && (
+        activeProcess.exitCode !== null
+        || activeProcess.signalCode !== null
+      )
+    ) {
+      backendProcess = null;
+    }
+    backendStopPromise = null;
   });
+  return backendStopPromise;
 }

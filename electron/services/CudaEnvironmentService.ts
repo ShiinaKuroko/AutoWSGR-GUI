@@ -5,7 +5,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { buildCudaEnvironment } from '../pythonEnv';
+import {
+  buildBackendRuntimeEnvironment,
+  resolvePythonEnvironment,
+} from '../pythonEnv';
 
 const execFileAsync = promisify(execFile);
 
@@ -28,6 +31,10 @@ export interface CudaCommandOptions {
 
 export interface CudaEnvironmentDependencies {
   findPython(): Promise<string | null>;
+  buildRuntimeEnvironment(
+    pythonCommand: string,
+    configuredCudaRoot: string | null,
+  ): NodeJS.ProcessEnv;
   execute(
     executable: string,
     args: string[],
@@ -47,6 +54,12 @@ export class CudaEnvironmentService {
   ): CudaEnvironmentDependencies {
     return {
       findPython,
+      buildRuntimeEnvironment: (pythonCommand, configuredCudaRoot) => (
+        buildBackendRuntimeEnvironment(
+          resolvePythonEnvironment(pythonCommand),
+          configuredCudaRoot,
+        )
+      ),
       execute: async (executable, args, options) => {
         const result = await execFileAsync(
           executable,
@@ -199,8 +212,8 @@ export class CudaEnvironmentService {
           windowsHide: true,
           timeout: 20000,
           encoding: 'utf8',
-          env: buildCudaEnvironment(
-            process.env,
+          env: this.dependencies.buildRuntimeEnvironment(
+            pythonCommand,
             pathResult?.path ?? null,
           ),
         },

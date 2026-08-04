@@ -7,14 +7,19 @@ import { PlanModel } from '../../model/PlanModel';
 import type { CombatPlanReq, EventFightReq, NodeDecisionReq, NormalFightReq } from '../../types/api.js';
 import type { Scheduler } from '../../model/scheduler';
 import { TaskPriority } from '../../model/scheduler';
-import type { FleetPreset, NodeArgs, TaskPreset } from '../../types/model.js';
+import type {
+  EventMapCatalogEntry,
+  FleetPreset,
+  NodeArgs,
+  TaskPreset,
+} from '../../types/model.js';
 import {
   getNodeType,
   isNightNode,
   isDetourNode,
   isTerminalNode,
+  loadEventMapCatalog,
   loadMapData,
-  loadExMapData,
   loadEventMapData,
 } from '../../model/MapDataLoader';
 import type { MapData } from '../../model/MapDataLoader';
@@ -41,6 +46,7 @@ import { saveNodeEditorValues } from './nodeEditor';
 import { buildPlanPreviewVO } from './rendering';
 import { normalizeSelectedNodesForBackend } from './selectedNodes';
 import { BattlePlanLoaderController } from './BattlePlanLoaderController';
+import type { LootAutomationPlan } from '../../shared/lootPlans.js';
 
 export interface PlanHost {
   readonly scheduler: Scheduler;
@@ -60,6 +66,7 @@ export class PlanController {
   private currentManagedPlanFile: string | null = null;
   private currentPlanSource: PlanPresetSource = 'user';
   private savedPlanSnapshot = '';
+  private eventMapCatalog: EventMapCatalogEntry[] = [];
   private readonly battlePlanLoader: BattlePlanLoaderController;
 
   constructor(
@@ -96,6 +103,12 @@ export class PlanController {
     return this.battlePlanLoader.pick('automation');
   }
 
+  pickManagedLootPlans(
+    currentPlans: readonly LootAutomationPlan[],
+  ): Promise<LootAutomationPlan[] | null> {
+    return this.battlePlanLoader.pickLootPlans(currentPlans);
+  }
+
   setCurrentPlan(plan: PlanModel, mapData: MapData | null): void {
     this.editingNodeId = null;
     this.planView.resetNodeEditorDrafts();
@@ -107,6 +120,10 @@ export class PlanController {
     this.currentManagedPlanFile = null;
     this.currentPlanSource = 'user';
     this.savedPlanSnapshot = this.planDraftSnapshot();
+  }
+
+  private async ensureEventMapCatalog(): Promise<void> {
+    this.eventMapCatalog = await loadEventMapCatalog();
   }
 
   getCurrentPresetInfo(): { preset: TaskPreset; filePath: string } | null {
@@ -279,12 +296,11 @@ export class PlanController {
         return true;
       }
       const plan = PlanModel.fromYaml(result.content, result.path);
+      await this.ensureEventMapCatalog();
       const { chapter, map } = plan.data;
       const mapData = plan.isEvent
         ? await loadEventMapData(plan.data.event ?? '', chapter, map)
-        : chapter === 99
-          ? await loadExMapData(Number(map))
-          : await loadMapData(Number(chapter), Number(map));
+        : await loadMapData(Number(chapter), Number(map));
       this.setCurrentPlan(plan, mapData);
       this.currentManagedPlanFile = file;
       this.currentPlanSource = source;
@@ -384,13 +400,11 @@ export class PlanController {
       const currentFile = copiedFromSystem
         ? undefined
         : this.currentManagedPlanFile ?? undefined;
-      const source: PlanPresetSource = 'user';
       let result = await bridge.saveManagedCombatPlan(
         name,
         content,
         false,
         currentFile,
-        source,
       );
       if (result.exists) {
         const conflictDetails = result.conflicts?.length
@@ -406,7 +420,6 @@ export class PlanController {
           content,
           true,
           currentFile,
-          source,
         );
       }
       if (!result.success) {
@@ -415,7 +428,7 @@ export class PlanController {
 
       this.currentPlan.fileName = result.path ?? this.currentPlan.fileName;
       this.currentManagedPlanFile = result.file ?? `bettle-${name}.yaml`;
-      this.currentPlanSource = result.source ?? source;
+      this.currentPlanSource = result.source ?? 'user';
       this.planPresetName = name;
       this.savedPlanSnapshot = this.planDraftSnapshot();
       this.renderPlanPreview();
@@ -448,7 +461,11 @@ export class PlanController {
 
   renderPlanPreview(): void {
     if (!this.currentPlan) { this.planView.render(null); return; }
-    const vo = buildPlanPreviewVO(this.currentPlan, this.currentMapData);
+    const vo = buildPlanPreviewVO(
+      this.currentPlan,
+      this.currentMapData,
+      this.eventMapCatalog,
+    );
     this.planView.render(vo);
     this.planView.setPresetName(this.planPresetName);
     this.planView.showPlanView();
@@ -464,17 +481,31 @@ export class PlanController {
     this.savedPlanSnapshot = this.planDraftSnapshot();
   }
 
-  private async changeMap(chapterValue: string, map: number): Promise<void> {
+  private async changeMap(
+    chapterValue: string,
+    map: number | string,
+  ): Promise<void> {
+    await this.ensureEventMapCatalog();
     const version = ++this.mapLoadVersion;
-    const chapter = chapterValue === 'Ex'
-      ? 99
-      : Number(chapterValue);
-    const mapData = chapterValue === 'Ex'
-      ? await loadExMapData(map)
-      : await loadMapData(chapter, map);
+    const eventMatch = chapterValue.match(/^event:([^:]+):(E|H)$/);
+    const eventName = eventMatch?.[1];
+    const eventChapter = eventMatch?.[2];
+    let chapter: number | string;
+    let mapValue: number | string;
+    let mapData: MapData | null;
+
+    if (eventName && eventChapter) {
+      chapter = eventChapter;
+      mapValue = String(map).trim().toLowerCase();
+      mapData = await loadEventMapData(eventName, chapter, mapValue);
+    } else {
+      chapter = Number(chapterValue);
+      mapValue = Number(map);
+      mapData = await loadMapData(Number(chapter), mapValue);
+    }
     if (version !== this.mapLoadVersion) return;
     if (!mapData) {
-      Logger.error(`地图 ${chapterValue}-${map} 数据不存在`);
+      Logger.error(`地图 ${chapterValue}-${mapValue} 数据不存在`);
       this.renderPlanPreview();
       return;
     }
@@ -482,12 +513,17 @@ export class PlanController {
     this.planView.resetNodeEditorDrafts();
     const selectedNodes = Object.keys(mapData).sort();
     if (!this.currentPlan) {
-      this.currentPlan = PlanModel.create(chapter, map, selectedNodes);
+      this.currentPlan = PlanModel.create(
+        chapter,
+        mapValue,
+        selectedNodes,
+        eventName,
+      );
     } else {
       this.currentPlan.data.chapter = chapter;
-      this.currentPlan.data.map = map;
+      this.currentPlan.data.map = mapValue;
       this.currentPlan.data.mode = undefined;
-      this.currentPlan.data.event = undefined;
+      this.currentPlan.data.event = eventName;
       this.currentPlan.data.selected_nodes = selectedNodes;
       this.currentPlan.data.endpoint_nodes = undefined;
       this.currentPlan.data.result = undefined;

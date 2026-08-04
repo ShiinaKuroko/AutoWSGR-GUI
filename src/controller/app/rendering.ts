@@ -6,6 +6,7 @@ import type {
 } from '../../types/view.js';
 import type { Scheduler } from '../../model/scheduler';
 import type { TaskRequest } from '../../types/api.js';
+import type { DailySortieStatsSnapshot } from '../../types/statistics.js';
 import { PRIORITY_LABELS, STATUS_TEXT } from './constants';
 
 export interface RenderingState {
@@ -13,6 +14,7 @@ export interface RenderingState {
   currentProgress: string;
   trackedLoot: string;
   trackedShip: string;
+  dailySortieStats: DailySortieStatsSnapshot;
   wsConnected: boolean;
   expeditionTimerText: string;
 }
@@ -78,7 +80,15 @@ export function resolveCurrentFleet(
 
 /** 从调度器状态 + 追踪数据拼装 MainViewObject */
 export function buildMainViewObject(state: RenderingState): MainViewObject {
-  const { scheduler, currentProgress, trackedLoot, trackedShip, wsConnected, expeditionTimerText } = state;
+  const {
+    scheduler,
+    currentProgress,
+    trackedLoot,
+    trackedShip,
+    dailySortieStats,
+    wsConnected,
+    expeditionTimerText,
+  } = state;
   const running = scheduler.currentRunningTask;
   const queue = scheduler.taskQueue;
 
@@ -118,6 +128,22 @@ export function buildMainViewObject(state: RenderingState): MainViewObject {
     });
   }
 
+  for (const waiting of scheduler.waitingTaskList) {
+    const t = waiting.task;
+    taskQueueVo.push({
+      id: t.id,
+      name: t.name,
+      priorityLabel: PRIORITY_LABELS[t.priority] ?? '用户',
+      remaining: t.remainingTimes,
+      totalTimes: t.totalTimes,
+      unlimited: t.unlimited,
+      waiting: true,
+      waitingText: waiting.reason === 'gap'
+        ? '等待下一轮'
+        : '等待重试',
+    });
+  }
+
   return {
     status: scheduler.status === 'not_connected' ? 'not_connected' : scheduler.status,
     statusText: STATUS_TEXT[scheduler.status] ?? '未知',
@@ -132,6 +158,7 @@ export function buildMainViewObject(state: RenderingState): MainViewObject {
     currentFleet: running
       ? resolveCurrentFleet(running.request)
       : [],
+    dailySortieStats,
     expeditionTimer: expeditionTimerText,
     taskQueue: taskQueueVo,
     wsConnected,

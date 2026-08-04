@@ -55,6 +55,20 @@ export class AppPaths {
     return path.join(this.userDataRoot(), 'user_battle_plans');
   }
 
+  /** 内置只读日常任务计划目录。 */
+  systemDailyPlansDir(): string {
+    return path.join(
+      this.resourceRoot(),
+      'resource',
+      'system_daily_plans',
+    );
+  }
+
+  /** GUI 管理的用户日常任务计划目录。 */
+  userDailyPlansDir(): string {
+    return path.join(this.userDataRoot(), 'user_daily_plans');
+  }
+
   /** 内置只读编队计划目录。 */
   systemTeamPlansDir(): string {
     return path.join(

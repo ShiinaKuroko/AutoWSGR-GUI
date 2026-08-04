@@ -8,6 +8,7 @@ import { PlanPreviewView } from '../../view/plan/PlanPreviewView';
 import { ConfigView } from '../../view/config/ConfigView';
 import { TaskGroupView } from '../../view/taskGroup/TaskGroupView';
 import { SetupWizardView } from '../../view/setup/SetupWizardView';
+import { initAnimatedSelects } from '../../view/shared/AnimatedSelect';
 import { ConfigModel } from '../../model/ConfigModel';
 import { ApiClient } from '../../model/ApiClient';
 import { Scheduler, CronScheduler } from '../../model/scheduler';
@@ -22,6 +23,9 @@ import { PlanController } from '../plan/PlanController';
 import { DecisivePlanController } from '../plan/DecisivePlanController';
 import { FleetPlannerController } from '../plan/FleetPlannerController';
 import { StartupController } from '../startup/StartupController';
+import {
+  MigrationConflictController,
+} from '../migration/MigrationConflictController';
 import { fleetPlannerRepository } from '../../adapter/IpcAdapter';
 
 import { SchedulerBinder } from './SchedulerBinder';
@@ -61,6 +65,7 @@ export class AppController {
   private taskGroupCtrl!: TaskGroupController;
   private planCtrl!: PlanController;
   private decisivePlanCtrl: DecisivePlanController;
+  private migrationConflictCtrl: MigrationConflictController;
   private startupCtrl!: StartupController;
 
   /** 待安装的 GUI 版本号 */
@@ -71,6 +76,7 @@ export class AppController {
     this.planView = new PlanPreviewView(fleetPlannerRepository);
     this.fleetPlannerCtrl = new FleetPlannerController();
     this.decisivePlanCtrl = new DecisivePlanController();
+    this.migrationConflictCtrl = new MigrationConflictController();
     this.configView = new ConfigView();
     this.taskGroupView = new TaskGroupView();
     this.setupView = new SetupWizardView();
@@ -107,7 +113,10 @@ export class AppController {
       battleType: cfg.battle_type,
       battleTimes: gui.battleTimes,
       autoNormalFight: cfg.auto_normal_fight,
+      autoDecisive: gui.autoDecisive,
+      decisiveTemplateId: gui.decisiveTemplateId,
       autoLoot: gui.autoLoot,
+      lootPlanSource: gui.lootPlanSource,
       lootPlanId: gui.lootPlanId,
       lootStopCount: gui.lootStopCount,
     });
@@ -126,6 +135,7 @@ export class AppController {
   /** 初始化：绑定事件、渲染初始状态、自动连接后端 */
   init(): void {
     applyTheme();
+    initAnimatedSelects();
     this.navigationCtrl.bindNavigation();
     this.navigationCtrl.bindPlanNavigation();
     this.bindQueueActions();
@@ -174,7 +184,7 @@ export class AppController {
     );
     this.templateCtrl.bindActions();
 
-    // 现在可以创建 configCtrl（依赖 templateCtrl / startupCtrl 后续会赋值）
+    // 现在可以创建 configCtrl（startupCtrl 后续赋值）
     this.configCtrl = new ConfigController({
       configModel: this.configModel,
       configView: this.configView,
@@ -182,7 +192,6 @@ export class AppController {
       mainView: this.mainView,
       scheduler: this.scheduler,
       cronScheduler: this.cronScheduler,
-      templateCtrl: this.templateCtrl,
       startupCtrl: null,
       configDir: this.configDir,
     });
@@ -192,6 +201,9 @@ export class AppController {
       saveConfig: () => this.configCtrl.saveConfig(),
       pickAutomationPlan: () => (
         this.planCtrl.pickManagedBattlePlanForAutomation()
+      ),
+      pickLootAutomationPlans: currentPlans => (
+        this.planCtrl.pickManagedLootPlans(currentPlans)
       ),
       reloadShipLibrary: () => this.fleetPlannerCtrl.load(true),
     });
@@ -261,7 +273,10 @@ export class AppController {
           battleType: da.battle_type,
           battleTimes: gui.battleTimes,
           autoNormalFight: da.auto_normal_fight,
+          autoDecisive: gui.autoDecisive,
+          decisiveTemplateId: gui.decisiveTemplateId,
           autoLoot: gui.autoLoot,
+          lootPlanSource: gui.lootPlanSource,
           lootPlanId: gui.lootPlanId,
           lootStopCount: gui.lootStopCount,
         });
@@ -270,12 +285,15 @@ export class AppController {
       showSetupWizard: () => this.configCtrl.showSetupWizard(),
       loadModelsAndRender: async (b) => {
         await this.templateModel.init(b);
+        this.templateCtrl.renderLibrary();
         this.configCtrl.renderConfig();
         this.mainView.setDebugMode(localStorage.getItem('debugMode') === 'true');
-        this.templateCtrl.renderLibrary();
         await this.taskGroupModel.load();
         this.taskGroupCtrl.render();
       },
+      reviewMigrationConflicts: () => (
+        this.migrationConflictCtrl.reviewPending()
+      ),
       bindBackendLog: (b) => {
         if (b.onBackendLog) {
           b.onBackendLog((line) => {
@@ -363,6 +381,7 @@ export class AppController {
       currentProgress: this.schedulerBinder.currentProgress,
       trackedLoot: this.schedulerBinder.trackedLoot,
       trackedShip: this.schedulerBinder.trackedShip,
+      dailySortieStats: this.schedulerBinder.dailyStatsSnapshot,
       wsConnected: this.schedulerBinder.wsConnected,
       expeditionTimerText: this.schedulerBinder.expeditionTimerText,
     };

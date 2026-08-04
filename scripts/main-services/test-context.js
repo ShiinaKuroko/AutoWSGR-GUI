@@ -35,6 +35,9 @@ const {
   LegacyPlanMigration,
 } = require('../../dist/electron/services/LegacyPlanMigration.js');
 const {
+  MigrationConflictService,
+} = require('../../dist/electron/services/MigrationConflictService.js');
+const {
   TeamPlanCodec,
 } = require('../../dist/electron/services/TeamPlanCodec.js');
 const {
@@ -97,6 +100,7 @@ module.exports = {
   WindowService,
   UserDataMigrationService,
   LegacyPlanMigration,
+  MigrationConflictService,
   TeamPlanCodec,
   TeamPlanRepository,
   TeamPlanService,

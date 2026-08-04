@@ -16,11 +16,9 @@ import {
   resolvePythonEnvironment,
 } from './environment';
 import { SHIP_LIBRARY_REQUIREMENTS } from './dependencies';
+import { MANAGED_AUTOWSGR_REQUIREMENT } from './backendRequirement';
 
 const execAsync = promisify(exec);
-
-/** PyPI 2.2.2 尚未包含 2026-07-30 活动支持，临时固定到上游已合入提交。 */
-const AUTOWSGR_REQUIREMENT = 'https://github.com/OpenWSGR/AutoWSGR/archive/a38252d3.zip';
 
 // 便携版 Python 安装
 
@@ -220,7 +218,7 @@ export async function installDependencies(pythonCmd: string): Promise<{ success:
     };
   }
   const backendRequirement = environment.backendRoot
-    ?? AUTOWSGR_REQUIREMENT;
+    ?? MANAGED_AUTOWSGR_REQUIREMENT;
   const installPlan = buildDependencyInstallPlan(
     environment,
     backendRequirement,
@@ -335,7 +333,7 @@ export async function pullUpdates(): Promise<{ success: boolean; output: string 
       '--no-deps',
       '-i', 'https://pypi.tuna.tsinghua.edu.cn/simple',
       '--trusted-host', 'pypi.tuna.tsinghua.edu.cn',
-      AUTOWSGR_REQUIREMENT,
+      MANAGED_AUTOWSGR_REQUIREMENT,
     ], {
       cwd: ctx.appRoot(),
       windowsHide: true,

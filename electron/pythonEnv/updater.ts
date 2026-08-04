@@ -5,11 +5,12 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
+import { MANAGED_AUTOWSGR_REQUIREMENT } from './backendRequirement';
+import {
+  buildBackendRuntimeContractProbeLines,
+} from './backendContractProbe';
 
 const execAsync = promisify(exec);
-
-/** PyPI 2.2.2 尚未包含 2026-07-30 活动支持，临时固定到上游已合入提交。 */
-const AUTOWSGR_REQUIREMENT = 'https://github.com/OpenWSGR/AutoWSGR/archive/a38252d3.zip';
 
 export interface AutoUpdateDeps {
   sendProgress: (msg: string) => void;
@@ -20,12 +21,28 @@ export interface AutoUpdateDeps {
   ensurePip: (pythonCmd: string) => Promise<boolean>;
 }
 
-/** 检查 PyPI 更新并返回最终安装版本。 */
+/** 生成 managed 后端更新参数，确保自动更新不会改装 PyPI 裸包。 */
+export function buildManagedAutowsgrUpdateArgs(
+  targetDir: string,
+): string[] {
+  return [
+    '-m', 'pip', 'install',
+    '--upgrade',
+    '--target', targetDir,
+    '--no-build-isolation',
+    '--no-deps',
+    '-i', 'https://pypi.tuna.tsinghua.edu.cn/simple',
+    '--trusted-host', 'pypi.tuna.tsinghua.edu.cn',
+    MANAGED_AUTOWSGR_REQUIREMENT,
+  ];
+}
+
+/** 确保 managed 环境使用 GUI 明确支持的后端版本。 */
 export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps): Promise<string | null> {
   try {
     deps.sendProgress('正在检查 autowsgr 更新…');
 
-    // 单次 Python 调用同时获取本地和 PyPI 版本。
+    // 单次 Python 调用检查本地版本、活动资源和 GUI 运行契约。
     const spFwd = deps.localSitePackages().replace(/\\/g, '\\\\');
     const checkScript = [
       'import json, sys',
@@ -40,11 +57,12 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
       'except:',
       '    result["local"] = None',
       '    result["event20260730"] = False',
+      ...buildBackendRuntimeContractProbeLines(),
       'try:',
-      '    import urllib.request',
-      '    data = json.loads(urllib.request.urlopen("https://pypi.org/pypi/autowsgr/json", timeout=10).read())',
-      '    result["latest"] = data["info"]["version"]',
-      'except: result["latest"] = None',
+      '    _verify_gui_runtime_contract()',
+      '    result["runtime_contract"] = True',
+      'except Exception:',
+      '    result["runtime_contract"] = False',
       'print(json.dumps(result))',
     ].join('\n');
 
@@ -59,27 +77,26 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
 
     const info = JSON.parse(stdout.trim());
     const localVer: string | null = info.local;
-    const latestVer: string | null = info.latest;
     const supportsLatestEvent = info.event20260730 === true;
+    const supportsRuntimeContract = info.runtime_contract === true;
 
-    if (!latestVer) {
-      deps.sendProgress('autowsgr 更新检查跳过（无法获取最新版本信息）');
+    if (
+      localVer
+      && supportsLatestEvent
+      && supportsRuntimeContract
+    ) {
+      deps.sendProgress(`autowsgr ${localVer} 与 GUI 运行契约兼容 ✓`);
       return localVer;
     }
 
-    if (localVer === latestVer && supportsLatestEvent) {
-      deps.sendProgress(`autowsgr ${localVer} 已是最新版 ✓`);
-      return localVer;
-    }
-
-    // PyPI 无更高版本时才使用活动热修复提交。
-    const needsEventHotfix = !supportsLatestEvent && localVer === latestVer;
-    if (!supportsLatestEvent) {
-      deps.sendProgress('当前 autowsgr 缺少 20260730 活动支持，正在安装上游活动热修复…');
-    } else {
-      deps.sendProgress(`发现 autowsgr 更新: ${localVer ?? '未安装'} → ${latestVer}，正在自动升级…`);
-    }
-    const installRequirement = needsEventHotfix ? AUTOWSGR_REQUIREMENT : 'autowsgr';
+    const incompatibilities = [
+      ...(!localVer ? ['未安装'] : []),
+      ...(!supportsLatestEvent ? ['缺少 20260730 活动资源'] : []),
+      ...(!supportsRuntimeContract ? ['缺少 GUI 运行契约'] : []),
+    ];
+    deps.sendProgress(
+      `当前 autowsgr ${incompatibilities.join('、')}，正在安装 GUI 兼容版本…`,
+    );
     const targetDir = deps.localSitePackages();
     if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
 
@@ -108,26 +125,21 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
       proc.on('error', () => resolve(1));
     });
     if (buildDepsCode !== 0) {
-      deps.sendProgress('WARNING 活动热修复构建依赖安装失败');
+      deps.sendProgress('WARNING GUI 兼容后端构建依赖安装失败');
       return localVer;
     }
 
     const exitCode = await new Promise<number>((resolve) => {
-      const proc = spawn(pythonCmd, [
-        '-m', 'pip', 'install',
-        '--upgrade',
-        '--target', targetDir,
-        '--no-build-isolation',
-        '--no-deps',
-        '-i', 'https://pypi.tuna.tsinghua.edu.cn/simple',
-        '--trusted-host', 'pypi.tuna.tsinghua.edu.cn',
-        installRequirement,
-      ], {
+      const proc = spawn(
+        pythonCmd,
+        buildManagedAutowsgrUpdateArgs(targetDir),
+        {
         cwd: deps.appRoot(),
         windowsHide: true,
         stdio: 'pipe',
         env: deps.pipEnv(),
-      });
+        },
+      );
       proc.stdout?.on('data', (d: Buffer) => { for (const l of d.toString().split('\n')) { if (l.trim()) deps.sendProgress(l.trim()); } });
       proc.stderr?.on('data', (d: Buffer) => { for (const l of d.toString().split('\n')) { if (l.trim()) deps.sendProgress(l.trim()); } });
       proc.on('close', (code) => resolve(code ?? 1));
@@ -153,6 +165,12 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
       '    root = Path(autowsgr.__file__).resolve().parent',
       '    r["event20260730"] = (root / "data" / "map" / "event" / "20260730").is_dir()',
       'except: pass',
+      ...buildBackendRuntimeContractProbeLines(),
+      'try:',
+      '    _verify_gui_runtime_contract()',
+      '    r["runtime_contract"] = True',
+      'except Exception:',
+      '    r["runtime_contract"] = False',
       "for m in ['fastapi', 'uvicorn']:",
       '    try: __import__(m)',
       '    except Exception: r["missing"].append(m)',
@@ -169,9 +187,14 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
       const actualVer: string = postResult.version;
       const missing: string[] = postResult.missing;
       const eventReady = postResult.event20260730 === true;
+      const runtimeContractReady = postResult.runtime_contract === true;
 
-      if (needsEventHotfix && !eventReady) {
-        deps.sendProgress('WARNING 活动热修复安装后仍未检测到 20260730 资源');
+      if (!eventReady) {
+        deps.sendProgress('WARNING GUI 兼容后端安装后仍缺少 20260730 活动资源');
+        return localVer;
+      }
+      if (!runtimeContractReady) {
+        deps.sendProgress('WARNING GUI 兼容后端安装后仍不支持运行契约');
         return localVer;
       }
 
@@ -221,27 +244,19 @@ export async function autoUpdateAutowsgr(pythonCmd: string, deps: AutoUpdateDeps
       }
 
       if (actualVer !== 'unknown') {
-        const expectedVersion = needsEventHotfix ? localVer : latestVer;
-        const msg = actualVer === expectedVersion
-          ? needsEventHotfix
-            ? `autowsgr ${actualVer} 活动热修复已安装 ✓`
-            : `autowsgr 已升级至 ${latestVer} ✓`
-          : `autowsgr 已升级至 ${actualVer}（期望 ${expectedVersion}）`;
-        deps.sendProgress(msg);
+        deps.sendProgress(
+          `autowsgr ${actualVer} GUI 兼容版本已安装 ✓`,
+        );
         return actualVer;
       }
     } catch {
       try { fs.unlinkSync(postScript); } catch { /* 忽略清理失败。 */ }
     }
 
-    if (needsEventHotfix) {
-      deps.sendProgress(`autowsgr ${localVer} 活动热修复已安装 ✓`);
-      return localVer;
-    }
-    deps.sendProgress(`autowsgr 已升级至 ${latestVer} ✓`);
-    return latestVer;
+    deps.sendProgress('WARNING 无法验证 GUI 兼容后端安装结果');
+    return localVer;
   } catch {
-    deps.sendProgress('autowsgr 更新检查跳过（网络不可用或超时）');
+    deps.sendProgress('autowsgr 更新检查跳过（环境不可用或检查超时）');
     return null;
   }
 }

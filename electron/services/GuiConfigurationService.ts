@@ -4,11 +4,22 @@
 import { GuiSettingsStore } from './GuiSettingsStore';
 import {
   DEFAULT_LOOT_PLAN_ID,
+  DEFAULT_LOOT_PLANS,
   INTERIM_LOOT_PLAN_IDS,
-  isLootPlanId,
+  findLootAutomationPlan,
   lootPlanIdFromIndex,
-  type LootPlanId,
+  migrateLootPlanId,
+  normalizeLootAutomationPlans,
+  type LootAutomationPlan,
+  type LootPlanSource,
 } from '../../src/shared/lootPlans';
+import type {
+  LegacyDecisiveAutomationSettings,
+} from '../../src/shared/legacyDecisiveAutomation';
+import {
+  normalizeDecisiveAutomationSource,
+  type DecisiveAutomationSource,
+} from '../../src/shared/decisiveAutomation';
 
 export type BackendStartupMode = 'managed' | 'external';
 export type OcrGpuMode = 'auto' | 'cpu' | 'cuda';
@@ -17,8 +28,12 @@ export type UpdateMode = 'auto' | 'manual';
 export interface GuiAutomationSettings {
   expeditionInterval: number;
   battleTimes: number;
+  autoDecisive: boolean;
+  decisiveTemplateId: DecisiveAutomationSource;
   autoLoot: boolean;
-  lootPlanId: LootPlanId;
+  lootPlanSource: LootPlanSource;
+  lootPlanId: string;
+  lootPlans: LootAutomationPlan[];
   lootStopCount: number;
 }
 
@@ -33,6 +48,18 @@ export interface GuiConfigurationDependencies {
   clearPythonCache(): void;
   normalizeCudaPath(candidate: string): string;
   environmentPort?(): string | undefined;
+}
+
+/** 只接受有限数字或非空数字字符串，避免把 null/false 当成 0。 */
+function finiteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 const DEFAULT_DECISIVE_PLAN: DecisivePlanSettings = {
@@ -217,32 +244,88 @@ export class GuiConfigurationService {
     settings: Partial<GuiAutomationSettings>;
   } {
     const raw = this.store.read().automation;
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      return { exists: false, settings: {} };
-    }
-    const value = raw as Record<string, unknown>;
+    const hasAutomation = !!raw
+      && typeof raw === 'object'
+      && !Array.isArray(raw);
+    const value = hasAutomation
+      ? raw as Record<string, unknown>
+      : {};
     const settings: Partial<GuiAutomationSettings> = {};
-    if (Number.isFinite(Number(value.expeditionInterval))) {
-      settings.expeditionInterval = Number(
-        value.expeditionInterval,
-      );
+    const legacyDecisive = this.legacyDecisiveAutomation().settings;
+    let rewritten: Record<string, unknown> | null = null;
+    const expeditionInterval = finiteNumber(value.expeditionInterval);
+    if (expeditionInterval !== null) {
+      settings.expeditionInterval = expeditionInterval;
     }
-    if (Number.isFinite(Number(value.battleTimes))) {
-      settings.battleTimes = Number(value.battleTimes);
+    const battleTimes = finiteNumber(value.battleTimes);
+    if (battleTimes !== null) {
+      settings.battleTimes = battleTimes;
+    }
+    if (typeof value.autoDecisive === 'boolean') {
+      settings.autoDecisive = value.autoDecisive;
+    } else if (typeof legacyDecisive.autoDecisive === 'boolean') {
+      settings.autoDecisive = legacyDecisive.autoDecisive;
+      rewritten = { ...value, autoDecisive: legacyDecisive.autoDecisive };
+    }
+    const storedDecisiveSource = (
+      typeof value.decisiveTemplateId === 'string'
+        ? value.decisiveTemplateId.trim()
+        : legacyDecisive.templateId
+    );
+    if (storedDecisiveSource) {
+      const normalizedSource = normalizeDecisiveAutomationSource(
+        storedDecisiveSource,
+      );
+      settings.decisiveTemplateId = normalizedSource;
+      if (storedDecisiveSource !== normalizedSource) {
+        rewritten = {
+          ...(rewritten ?? value),
+          decisiveTemplateId: normalizedSource,
+        };
+      }
     }
     if (typeof value.autoLoot === 'boolean') {
       settings.autoLoot = value.autoLoot;
     }
-    let rewrittenLootPlanId: LootPlanId | null = null;
-    let invalidLootPlan = false;
+    const hasStoredLootPlans = Array.isArray(value.lootPlans);
+    const lootPlans = normalizeLootAutomationPlans(value.lootPlans);
+    if (hasStoredLootPlans) {
+      settings.lootPlans = lootPlans;
+      if (JSON.stringify(value.lootPlans) !== JSON.stringify(lootPlans)) {
+        rewritten = {
+          ...(rewritten ?? value),
+          lootPlans,
+        };
+      }
+    }
+    const lootPlanSource: LootPlanSource = (
+      value.lootPlanSource === 'user' ? 'user' : 'system'
+    );
     if (typeof value.lootPlanId === 'string') {
-      if (isLootPlanId(value.lootPlanId)) {
-        settings.lootPlanId = value.lootPlanId;
+      const selected = findLootAutomationPlan(
+        lootPlans,
+        lootPlanSource,
+        value.lootPlanId,
+      );
+      if (selected) {
+        settings.lootPlanSource = selected.source;
+        settings.lootPlanId = selected.file;
+        if (
+          selected.source !== value.lootPlanSource
+          || selected.file !== value.lootPlanId
+        ) {
+          rewritten = {
+            ...(rewritten ?? value),
+            lootPlanSource: selected.source,
+            lootPlanId: selected.file,
+          };
+        }
       } else {
-        rewrittenLootPlanId = DEFAULT_LOOT_PLAN_ID;
-        invalidLootPlan = true;
-        settings.lootPlanId = DEFAULT_LOOT_PLAN_ID;
         settings.autoLoot = false;
+        rewritten = {
+          ...(rewritten ?? value),
+          autoLoot: false,
+        };
       }
     } else if (
       Object.prototype.hasOwnProperty.call(value, 'lootPlanIndex')
@@ -251,37 +334,56 @@ export class GuiConfigurationService {
         value.lootPlanIndex,
         INTERIM_LOOT_PLAN_IDS,
       );
-      rewrittenLootPlanId = resolved ?? DEFAULT_LOOT_PLAN_ID;
-      invalidLootPlan = resolved === null;
-      settings.lootPlanId = rewrittenLootPlanId;
-      if (invalidLootPlan) settings.autoLoot = false;
-    }
-    if (settings.autoLoot === true && !settings.lootPlanId) {
-      rewrittenLootPlanId = DEFAULT_LOOT_PLAN_ID;
-      invalidLootPlan = true;
-      settings.lootPlanId = DEFAULT_LOOT_PLAN_ID;
+      rewritten = { ...(rewritten ?? value) };
+      delete rewritten.lootPlanIndex;
+      if (resolved) {
+        settings.lootPlanSource = 'system';
+        settings.lootPlanId = resolved;
+        rewritten.lootPlanSource = 'system';
+        rewritten.lootPlanId = resolved;
+      } else {
+        settings.autoLoot = false;
+        rewritten.autoLoot = false;
+      }
+    } else if (
+      Object.prototype.hasOwnProperty.call(value, 'lootPlanId')
+    ) {
       settings.autoLoot = false;
-    }
-    if (Number.isFinite(Number(value.lootStopCount))) {
-      settings.lootStopCount = Number(value.lootStopCount);
-    }
-    if (rewrittenLootPlanId) {
-      const migrated: Record<string, unknown> = {
-        ...value,
-        lootPlanId: rewrittenLootPlanId,
+      rewritten = {
+        ...(rewritten ?? value),
+        autoLoot: false,
       };
-      delete migrated.lootPlanIndex;
-      if (invalidLootPlan) migrated.autoLoot = false;
-      this.store.write({ automation: migrated });
     }
-    return { exists: true, settings };
+    const lootStopCount = finiteNumber(value.lootStopCount);
+    if (lootStopCount !== null) {
+      settings.lootStopCount = lootStopCount;
+    }
+    if (rewritten) {
+      this.store.write({ automation: rewritten });
+    }
+    return {
+      exists: hasAutomation || Object.keys(settings).length > 0,
+      settings,
+    };
   }
 
   /** 归一化并保存 GUI 自动化字段。 */
   setAutomation(
     settings: GuiAutomationSettings,
   ): GuiAutomationSettings {
-    const validLootPlan = isLootPlanId(settings?.lootPlanId);
+    const lootPlans = normalizeLootAutomationPlans(settings?.lootPlans);
+    const requestedSource: LootPlanSource = (
+      settings?.lootPlanSource === 'user' ? 'user' : 'system'
+    );
+    const selected = findLootAutomationPlan(
+      lootPlans,
+      requestedSource,
+      settings?.lootPlanId,
+    );
+    const fallback = lootPlans[0] ?? DEFAULT_LOOT_PLANS[0];
+    const decisiveTemplateId = normalizeDecisiveAutomationSource(
+      settings?.decisiveTemplateId,
+    );
     const normalized: GuiAutomationSettings = {
       expeditionInterval: Math.max(
         1,
@@ -294,10 +396,12 @@ export class GuiConfigurationService {
         1,
         Math.trunc(Number(settings?.battleTimes) || 3),
       ),
-      autoLoot: settings?.autoLoot === true && validLootPlan,
-      lootPlanId: validLootPlan
-        ? settings.lootPlanId
-        : DEFAULT_LOOT_PLAN_ID,
+      autoDecisive: settings?.autoDecisive === true,
+      decisiveTemplateId,
+      autoLoot: settings?.autoLoot === true && selected !== null,
+      lootPlanSource: selected?.source ?? fallback?.source ?? 'system',
+      lootPlanId: selected?.file ?? fallback?.file ?? DEFAULT_LOOT_PLAN_ID,
+      lootPlans,
       lootStopCount: Math.max(
         1,
         Math.min(
@@ -306,8 +410,116 @@ export class GuiConfigurationService {
         ),
       ),
     };
-    this.store.write({ automation: normalized });
+    const raw = this.store.read().automation;
+    const output: Record<string, unknown> = (
+      raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? { ...raw as Record<string, unknown>, ...normalized }
+      : { ...normalized }
+    );
+    delete output.lootPlanIndex;
+    this.store.write({ automation: output });
     return normalized;
+  }
+
+  /** 读取已经保留到 GUI JSON 的旧版决战自动化原值。 */
+  legacyDecisiveAutomation(): {
+    exists: boolean;
+    settings: LegacyDecisiveAutomationSettings;
+  } {
+    const raw = this.store.read().legacy_decisive_automation;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return { exists: false, settings: {} };
+    }
+    const value = raw as Record<string, unknown>;
+    const settings: LegacyDecisiveAutomationSettings = {};
+    if (typeof value.auto_decisive === 'boolean') {
+      settings.autoDecisive = value.auto_decisive;
+    }
+    if (
+      typeof value.decisive_ticket_reserve === 'number'
+      && Number.isFinite(value.decisive_ticket_reserve)
+    ) {
+      settings.ticketReserve = value.decisive_ticket_reserve;
+    }
+    if (
+      typeof value.decisive_template_id === 'string'
+      && value.decisive_template_id.length > 0
+    ) {
+      settings.templateId = value.decisive_template_id;
+    }
+    return { exists: true, settings };
+  }
+
+  /**
+   * 原样归档旧版决战设置；开关和模板由 automation() 升级。
+   * 写入后立即回读并逐字段校验，失败时由调用方保留 YAML 原字段。
+   */
+  migrateLegacyDecisiveAutomation(
+    settings: LegacyDecisiveAutomationSettings,
+  ): LegacyDecisiveAutomationSettings {
+    const fields = [
+      'autoDecisive',
+      'ticketReserve',
+      'templateId',
+    ] as const;
+    const supplied = fields.filter(field => (
+      Object.prototype.hasOwnProperty.call(settings, field)
+    ));
+    if (supplied.length === 0) {
+      throw new Error('没有可迁移的旧版决战配置');
+    }
+    if (
+      supplied.includes('autoDecisive')
+      && typeof settings.autoDecisive !== 'boolean'
+    ) {
+      throw new Error('auto_decisive 必须是布尔值');
+    }
+    if (
+      supplied.includes('ticketReserve')
+      && (
+        typeof settings.ticketReserve !== 'number'
+        || !Number.isFinite(settings.ticketReserve)
+      )
+    ) {
+      throw new Error('decisive_ticket_reserve 必须是有限数字');
+    }
+    if (
+      supplied.includes('templateId')
+      && (
+        typeof settings.templateId !== 'string'
+        || settings.templateId.length === 0
+      )
+    ) {
+      throw new Error('decisive_template_id 必须是非空文字');
+    }
+
+    const current = this.store.read().legacy_decisive_automation;
+    const output = current
+      && typeof current === 'object'
+      && !Array.isArray(current)
+      ? { ...current as Record<string, unknown> }
+      : {};
+    if (supplied.includes('autoDecisive')) {
+      output.auto_decisive = settings.autoDecisive;
+    }
+    if (supplied.includes('ticketReserve')) {
+      output.decisive_ticket_reserve = settings.ticketReserve;
+    }
+    if (supplied.includes('templateId')) {
+      output.decisive_template_id = settings.templateId;
+    }
+    this.store.write({ legacy_decisive_automation: output });
+
+    const verified = this.legacyDecisiveAutomation();
+    for (const field of supplied) {
+      if (
+        !verified.exists
+        || verified.settings[field] !== settings[field]
+      ) {
+        throw new Error(`旧版决战配置回读校验失败: ${field}`);
+      }
+    }
+    return verified.settings;
   }
 
   /** 读取决战计划，并在发现旧字段时原地迁移。 */

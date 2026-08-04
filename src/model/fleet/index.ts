@@ -2,6 +2,7 @@
 export * from './ShipCatalog.js';
 export * from './ShipNameNormalizer.js';
 export * from './ShipMatcher.js';
+export * from './FleetPresetIdentity.js';
 export * from './FleetRuleMapper.js';
 export * from './FleetDraft.js';
 export * from './DecisiveFleetDraft.js';

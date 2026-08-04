@@ -8,14 +8,45 @@ import type { ConfigView } from '../../view/config/ConfigView';
 import type { SetupWizardView } from '../../view/setup/SetupWizardView';
 import type { MainView } from '../../view/main/MainView';
 import type { Scheduler, CronScheduler } from '../../model/scheduler';
-import type { TemplateController } from '../template/TemplateController';
 import type { StartupController } from '../startup/StartupController';
-import type { EmulatorConfig } from '../../types/model.js';
+import type {
+  EmulatorConfig,
+  GuiAutomationSettings,
+} from '../../types/model.js';
 import type { ConfigViewObject } from '../../types/view.js';
+import type {
+  LegacyDecisiveAutomationSettings,
+} from '../../shared/legacyDecisiveAutomation.js';
+import {
+  normalizeDecisiveAutomationSource,
+} from '../../shared/decisiveAutomation.js';
 import { yamlCodec } from '../../adapter/YamlAdapter';
 import { Logger } from '../../utils/Logger';
 import { getThemeMode, getAccentColor, applyTheme } from './theme';
 import { showAlert, showSaveSuccess } from '../shared/DialogHelper';
+
+const GUI_AUTOMATION_FIELDS = [
+  'expeditionInterval',
+  'battleTimes',
+  'autoDecisive',
+  'decisiveTemplateId',
+  'autoLoot',
+  'lootPlanSource',
+  'lootPlanId',
+  'lootPlans',
+  'lootStopCount',
+] as const satisfies readonly (keyof GuiAutomationSettings)[];
+
+function guiAutomationFieldMatches(
+  left: GuiAutomationSettings,
+  right: GuiAutomationSettings,
+  field: typeof GUI_AUTOMATION_FIELDS[number],
+): boolean {
+  if (field === 'lootPlans') {
+    return JSON.stringify(left.lootPlans) === JSON.stringify(right.lootPlans);
+  }
+  return left[field] === right[field];
+}
 
 export interface ConfigControllerHost {
   readonly configModel: ConfigModel;
@@ -24,7 +55,6 @@ export interface ConfigControllerHost {
   readonly mainView: MainView;
   readonly scheduler: Scheduler;
   readonly cronScheduler: CronScheduler;
-  templateCtrl: TemplateController;
   startupCtrl: StartupController | null;
   configDir: string;
 }
@@ -64,20 +94,191 @@ export class ConfigController {
 
     const stored = await bridge.getGuiAutomationSettings?.();
     const migrated = this.host.configModel.migratedGuiAutomation;
-    if (stored?.exists) {
-      this.host.configModel.updateGuiAutomation(stored.settings);
-    } else {
-      this.host.configModel.updateGuiAutomation(migrated);
-      if (Object.keys(migrated).length > 0) {
-        await bridge.setGuiAutomationSettings?.(
+    const migratedDecisive =
+      this.host.configModel.migratedLegacyDecisiveAutomation;
+    const decisiveAutomation: Partial<GuiAutomationSettings> = {};
+    if (typeof migratedDecisive.autoDecisive === 'boolean') {
+      decisiveAutomation.autoDecisive =
+        migratedDecisive.autoDecisive;
+    }
+    if (migratedDecisive.templateId) {
+      decisiveAutomation.decisiveTemplateId =
+        normalizeDecisiveAutomationSource(
+          migratedDecisive.templateId,
+        );
+    }
+    const storedSettings = stored?.exists ? stored.settings : {};
+    const merged = {
+      ...migrated,
+      ...decisiveAutomation,
+      ...storedSettings,
+    };
+    if (
+      storedSettings.autoLoot === true
+      && !Object.prototype.hasOwnProperty.call(
+        storedSettings,
+        'lootPlanId',
+      )
+      && !Object.prototype.hasOwnProperty.call(migrated, 'lootPlanId')
+    ) {
+      merged.autoLoot = false;
+    }
+    this.host.configModel.replaceGuiAutomation(merged);
+
+    const hasLegacyGuiAutomation = Object.keys(migrated).length > 0;
+    const hasLegacyDecisiveAutomation =
+      Object.keys(decisiveAutomation).length > 0;
+    const storedIsPartial = stored?.exists === true
+      && GUI_AUTOMATION_FIELDS.some(field => (
+        !Object.prototype.hasOwnProperty.call(storedSettings, field)
+      ));
+    let guiAutomationMigrated = false;
+    if (
+      hasLegacyGuiAutomation
+      || hasLegacyDecisiveAutomation
+      || storedIsPartial
+    ) {
+      if (typeof bridge.setGuiAutomationSettings !== 'function') {
+        Logger.warn(
+          'GUI 自动化配置迁移接口不可用，旧 YAML 字段已保留',
+        );
+      } else {
+        const expected = structuredClone(
           this.host.configModel.currentGuiAutomation,
         );
-        Logger.info('已将旧版 GUI 调度字段迁移到 gui_settings.json');
+        const saved = await bridge.setGuiAutomationSettings(expected);
+        for (const field of GUI_AUTOMATION_FIELDS) {
+          if (!guiAutomationFieldMatches(saved, expected, field)) {
+            throw new Error(`GUI 自动化配置回读字段不一致: ${field}`);
+          }
+        }
+        this.host.configModel.replaceGuiAutomation(saved);
+        if (hasLegacyGuiAutomation) {
+          this.host.configModel.markLegacyGuiAutomationMigrated();
+          guiAutomationMigrated = true;
+          Logger.info(
+            '已按字段优先级将旧版 GUI 调度字段迁移到 gui_settings.json',
+          );
+        }
       }
     }
-    if (Object.keys(migrated).length > 0) {
+    const decisiveMigrated =
+      await this.migrateLegacyDecisiveAutomation();
+    if (
+      guiAutomationMigrated
+      || decisiveMigrated
+    ) {
       await bridge.saveFile('usersettings.yaml', this.host.configModel.toYaml());
     }
+  }
+
+  /**
+   * 将旧版决战开关和模板升级为正式配置，并归档票数保留原值。
+   * 只有主进程写入、回读和用户提示全部完成后才允许清理 YAML。
+   */
+  private async migrateLegacyDecisiveAutomation():
+    Promise<boolean> {
+    const settings =
+      this.host.configModel.migratedLegacyDecisiveAutomation;
+    const invalidFields =
+      this.host.configModel.unmigratedLegacyDecisiveFields;
+    const suppliedFields = [
+      'autoDecisive',
+      'ticketReserve',
+      'templateId',
+    ] as const;
+    const supplied = suppliedFields.filter(field => (
+      Object.prototype.hasOwnProperty.call(settings, field)
+    ));
+    if (supplied.length === 0) {
+      if (invalidFields.length > 0) {
+        await showAlert(
+          '旧版决战配置暂未迁移',
+          `以下字段格式无法识别，已继续保留在 usersettings.yaml：\n${
+            invalidFields.join('、')
+          }`,
+        );
+      }
+      return false;
+    }
+
+    const bridge = window.electronBridge;
+    if (
+      typeof bridge?.migrateLegacyDecisiveAutomation !== 'function'
+    ) {
+      await showAlert(
+        '旧版决战配置暂未迁移',
+        '当前配置迁移接口不可用，原字段仍保留在 usersettings.yaml。'
+          + '请完整重启 GUI 后重试。',
+      );
+      return false;
+    }
+
+    try {
+      const verified =
+        await bridge.migrateLegacyDecisiveAutomation(settings);
+      for (const field of supplied) {
+        if (verified[field] !== settings[field]) {
+          throw new Error(`回读字段不一致: ${field}`);
+        }
+      }
+      const summary = this.legacyDecisiveMigrationSummary(settings);
+      if (invalidFields.length > 0) {
+        summary.push(
+          `格式无法识别并继续保留在 usersettings.yaml：${
+            invalidFields.join('、')
+          }`,
+        );
+      }
+      summary.push(
+        '',
+        '自动决战开关和模板已升级为正式 GUI 自动化设置；'
+          + '决战票保留仅无损保存，不参与执行轮数。'
+          + '迁移不会覆盖当前决战计划。',
+      );
+      await showAlert('旧版决战配置已升级', summary.join('\n'));
+      this.host.configModel.markLegacyDecisiveAutomationMigrated(
+        settings,
+      );
+      Logger.info('已将旧版决战自动化原值迁移到 gui_settings.json');
+      return true;
+    } catch (error) {
+      Logger.warn(
+        `旧版决战配置迁移失败: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      await showAlert(
+        '旧版决战配置迁移失败',
+        '原字段仍保留在 usersettings.yaml，将在下次启动时重试。',
+      );
+      return false;
+    }
+  }
+
+  /** 生成人能直接核对的逐字段迁移结果。 */
+  private legacyDecisiveMigrationSummary(
+    settings: LegacyDecisiveAutomationSettings,
+  ): string[] {
+    const summary: string[] = [];
+    if (
+      Object.prototype.hasOwnProperty.call(settings, 'autoDecisive')
+    ) {
+      summary.push(
+        `自动决战：${settings.autoDecisive ? '开启' : '关闭'}`,
+      );
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(settings, 'ticketReserve')
+    ) {
+      summary.push(`决战票保留：${settings.ticketReserve}`);
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(settings, 'templateId')
+    ) {
+      summary.push(`决战模板：${settings.templateId}`);
+    }
+    return summary;
   }
 
   /** 渲染配置视图 */
@@ -105,8 +306,12 @@ export class ConfigController {
       battleTimes: gui.battleTimes,
       autoNormalFight: cfg.daily_automation.auto_normal_fight,
       normalFightTasks: cfg.daily_automation.normal_fight_tasks,
+      autoDecisive: gui.autoDecisive,
+      decisiveTemplateId: gui.decisiveTemplateId,
       autoLoot: gui.autoLoot,
+      lootPlanSource: gui.lootPlanSource,
       lootPlanId: gui.lootPlanId,
+      lootPlans: structuredClone(gui.lootPlans),
       lootStopCount: gui.lootStopCount,
       logLevel: cfg.log.level,
       logRoot: cfg.log.root,
@@ -281,13 +486,28 @@ export class ConfigController {
     this.host.configModel.updateGuiAutomation({
       expeditionInterval: collected.expeditionInterval,
       battleTimes: collected.battleTimes,
+      autoDecisive: collected.autoDecisive,
+      decisiveTemplateId: collected.decisiveTemplateId,
       autoLoot: collected.autoLoot,
+      lootPlanSource: collected.lootPlanSource,
       lootPlanId: collected.lootPlanId,
+      lootPlans: collected.lootPlans,
       lootStopCount: collected.lootStopCount,
     });
-    await bridge?.setGuiAutomationSettings?.(
+    const savedGuiAutomation = await bridge.setGuiAutomationSettings(
       this.host.configModel.currentGuiAutomation,
     );
+    for (const field of GUI_AUTOMATION_FIELDS) {
+      if (!guiAutomationFieldMatches(
+        savedGuiAutomation,
+        this.host.configModel.currentGuiAutomation,
+        field,
+      )) {
+        throw new Error(`GUI 自动化配置回读字段不一致: ${field}`);
+      }
+    }
+    this.host.configModel.replaceGuiAutomation(savedGuiAutomation);
+    this.host.configModel.markLegacyGuiAutomationMigrated();
 
     // 同步 CronScheduler
     const da = this.host.configModel.current.daily_automation;
@@ -299,7 +519,10 @@ export class ConfigController {
       battleType: da.battle_type,
       battleTimes: gui.battleTimes,
       autoNormalFight: da.auto_normal_fight,
+      autoDecisive: gui.autoDecisive,
+      decisiveTemplateId: gui.decisiveTemplateId,
       autoLoot: gui.autoLoot,
+      lootPlanSource: gui.lootPlanSource,
       lootPlanId: gui.lootPlanId,
       lootStopCount: gui.lootStopCount,
     });

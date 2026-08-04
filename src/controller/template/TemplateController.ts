@@ -185,14 +185,6 @@ export class TemplateController {
       isBuiltin: !!tpl.builtin,
     }));
     this.libraryView.render(items);
-    this.populateDecisiveSelect();
-  }
-
-  populateDecisiveSelect(selectedId?: string): void {
-    const decisiveTemplates = this.templateModel.getAll()
-      .filter(t => t.type === 'decisive')
-      .map(t => ({ id: t.id, name: t.name }));
-    this.libraryView.populateDecisiveSelect(decisiveTemplates, selectedId);
   }
 
   // ════════════════════════════════════════

@@ -49,33 +49,8 @@ DATABASE_MODULE = "模块:数据库/舰娘"
 PATCH_MODULE = "模块:特殊数据/舰娘"
 USER_AGENT = "AutoWSGR-GUI ship-library-updater/1.0 (local incremental cache)"
 
-NATIVE_TYPE_LABELS_ZH = {
-    "aadg": "防空导弹驱逐舰",
-    "ap": "补给舰",
-    "asdg": "反舰导弹驱逐舰",
-    "av": "装甲航空母舰",
-    "bb": "战列舰",
-    "bbg": "导弹战列舰",
-    "bbv": "航空战列舰",
-    "bc": "战列巡洋舰",
-    "bm": "浅水重炮舰",
-    "ca": "重巡洋舰",
-    "cav": "航空巡洋舰",
-    "bg": "导弹大型巡洋舰",
-    "cg": "防空导弹巡洋舰",
-    "cl": "轻巡洋舰",
-    "clt": "重雷装巡洋舰",
-    "cv": "航空母舰",
-    "cvl": "轻型航空母舰",
-    "dd": "驱逐舰",
-    "kp": "反舰导弹巡洋舰",
-    "sc": "重炮潜艇",
-    "ss": "潜水艇",
-    "ssg": "导弹潜艇",
-}
-if set(NATIVE_TYPE_LABELS_ZH) != set(NATIVE_FLEET_TYPE_LABELS):
-    raise RuntimeError("Wiki 中文舰种标签未覆盖 autowsgr_native 普通舰种")
-TYPE_LABELS_ZH = NATIVE_TYPE_LABELS_ZH
+# GUI 直接使用后端中文名称，避免舰种契约更新后显示文本再次分叉。
+TYPE_LABELS_ZH = dict(NATIVE_FLEET_TYPE_LABELS)
 LEGACY_WIKI_TYPE_TO_CANONICAL_CODE = {
     "CBG": "bg",
     "CG": "kp",

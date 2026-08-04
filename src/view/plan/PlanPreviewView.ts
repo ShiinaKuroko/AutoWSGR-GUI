@@ -5,7 +5,11 @@
  * 对外 API 保持不变，Controller 无需感知内部拆分。
  */
 import type { PlanPreviewViewObject, MapNodeType, FleetPresetVO, PresetDetailVO, PresetFormValues } from '../../types/view.js';
-import type { BathRepairConfig } from '../../types/model.js';
+import type {
+  BathRepairConfig,
+  EventChapter,
+  EventMapCatalogEntry,
+} from '../../types/model.js';
 import { MapView } from './MapView';
 import {
   NodeEditorView,
@@ -28,7 +32,6 @@ const MAP_COUNT_BY_CHAPTER: Record<string, number> = {
   '8': 5,
   '9': 5,
   '10': 1,
-  Ex: 12,
 };
 
 export class PlanPreviewView {
@@ -47,13 +50,14 @@ export class PlanPreviewView {
   private shipEnabledInput: HTMLInputElement;
   private shipGeInput: HTMLInputElement;
   private shipFieldsEl: HTMLElement;
+  private eventMapCatalog: EventMapCatalogEntry[] = [];
 
   private mapView: MapView;
   private nodeEditor: NodeEditorView;
   private fleetPresetView: FleetPresetView;
 
   onNodeClick?: (nodeId: string) => void;
-  onMapChange?: (chapter: string, map: number) => void;
+  onMapChange?: (chapter: string, map: number | string) => void;
   onPresetNameChange?: (name: string) => void;
   onPlanFieldChange?: (field: 'repair_mode' | 'fight_condition' | 'fleet_id' | 'times' | 'gap' | 'loot_count_ge' | 'ship_count_ge', value: number | undefined) => void;
 
@@ -94,18 +98,11 @@ export class PlanPreviewView {
     this.mapView.onNodeClick = (nodeId) => this.onNodeClick?.(nodeId);
 
     this.chapterSelect.addEventListener('change', () => {
-      this.mapSelect.disabled = false;
       this.updateMapOptions(this.chapterSelect.value);
-      this.onMapChange?.(
-        this.chapterSelect.value,
-        Number(this.mapSelect.value),
-      );
+      this.emitMapChange();
     });
     this.mapSelect.addEventListener('change', () => {
-      this.onMapChange?.(
-        this.chapterSelect.value,
-        Number(this.mapSelect.value),
-      );
+      this.emitMapChange();
     });
     this.presetNameInput.addEventListener('input', () => {
       this.onPresetNameChange?.(this.presetNameInput.value);
@@ -251,7 +248,106 @@ export class PlanPreviewView {
     this.presetNameInput.focus();
   }
 
-  private updateMapOptions(chapter: string, selectedMap = 1): void {
+  private eventChapterValue(
+    event: string,
+    chapter: EventChapter,
+  ): string {
+    return `event:${event}:${chapter}`;
+  }
+
+  private parseEventChapter(
+    value: string,
+  ): { event: string; chapter: EventChapter } | null {
+    const match = value.match(/^event:([^:]+):(E|H)$/);
+    if (!match) return null;
+    return {
+      event: match[1],
+      chapter: match[2] === 'E' ? 'E' : 'H',
+    };
+  }
+
+  private eventMapsFor(chapterValue: string): string[] {
+    const selection = this.parseEventChapter(chapterValue);
+    if (!selection) return [];
+    const event = this.eventMapCatalog.find(
+      entry => entry.event === selection.event,
+    );
+    return event?.chapters[selection.chapter] ?? [];
+  }
+
+  private emitMapChange(): void {
+    if (this.mapSelect.disabled || !this.mapSelect.value) return;
+    const chapter = this.chapterSelect.value;
+    const map = this.parseEventChapter(chapter)
+      ? this.mapSelect.value
+      : Number(this.mapSelect.value);
+    this.onMapChange?.(chapter, map);
+  }
+
+  private eventMapLabel(map: string): string {
+    const match = map.match(/^(\d+)([ab])$/);
+    if (!match) return map;
+    return `${match[1]} ${match[2] === 'a' ? 'α' : 'β'}`;
+  }
+
+  private renderEventChapterOptions(vo: PlanPreviewViewObject): void {
+    this.chapterSelect
+      .querySelectorAll('option[data-event-map]')
+      .forEach(option => option.remove());
+
+    const entries = [...this.eventMapCatalog];
+    if (
+      vo.event
+      && !entries.some(entry => entry.event === vo.event)
+    ) {
+      const chapter = String(vo.chapter).toUpperCase();
+      entries.push({
+        event: vo.event,
+        chapters: {
+          E: chapter === 'E' ? [String(vo.map)] : [],
+          H: chapter === 'H' ? [String(vo.map)] : [],
+        },
+      });
+    }
+
+    for (const entry of entries) {
+      const chapters: EventChapter[] = ['E', 'H'];
+      for (const chapter of chapters) {
+        if (entry.chapters[chapter].length === 0) continue;
+        const option = document.createElement('option');
+        option.value = this.eventChapterValue(entry.event, chapter);
+        option.textContent = `${entry.event} ${chapter}`;
+        option.title =
+          `活动 ${entry.event} ${chapter === 'E' ? '简单' : '困难'}`;
+        option.dataset.eventMap = 'true';
+        this.chapterSelect.appendChild(option);
+      }
+    }
+  }
+
+  private updateMapOptions(
+    chapter: string,
+    selectedMap?: number | string,
+  ): void {
+    const eventMaps = this.eventMapsFor(chapter);
+    if (this.parseEventChapter(chapter)) {
+      const selected = selectedMap === undefined
+        ? eventMaps[0] ?? ''
+        : String(selectedMap);
+      const maps = !selected || eventMaps.includes(selected)
+        ? eventMaps
+        : [...eventMaps, selected];
+      this.mapSelect.replaceChildren(...maps.map((map) => {
+        const option = document.createElement('option');
+        option.value = map;
+        option.textContent = this.eventMapLabel(map);
+        return option;
+      }));
+      this.mapSelect.value = selected;
+      this.mapSelect.disabled = maps.length === 0;
+      return;
+    }
+
     const count = MAP_COUNT_BY_CHAPTER[chapter] ?? 1;
     this.mapSelect.replaceChildren(...Array.from({ length: count }, (_, index) => {
       const option = document.createElement('option');
@@ -259,30 +355,38 @@ export class PlanPreviewView {
       option.textContent = String(index + 1);
       return option;
     }));
-    this.mapSelect.value = String(Math.min(Math.max(selectedMap, 1), count));
+    const selected = Number(selectedMap ?? 1);
+    this.mapSelect.value = String(
+      Math.min(Math.max(Number.isFinite(selected) ? selected : 1, 1), count),
+    );
+    this.mapSelect.disabled = false;
   }
 
   private renderMapSelection(vo: PlanPreviewViewObject): void {
-    this.chapterSelect.querySelector('option[data-current-map]')?.remove();
-    const chapter = vo.chapter === 99 ? 'Ex' : String(vo.chapter);
-    if (chapter in MAP_COUNT_BY_CHAPTER) {
-      this.chapterSelect.value = chapter;
-      this.mapSelect.disabled = false;
-      this.updateMapOptions(chapter, Number(vo.map));
+    this.eventMapCatalog = vo.eventMaps;
+    this.renderEventChapterOptions(vo);
+    const activityChapter = String(vo.chapter).toUpperCase();
+    if (
+      vo.event
+      && (activityChapter === 'E' || activityChapter === 'H')
+    ) {
+      const chapter: EventChapter =
+        activityChapter === 'E' ? 'E' : 'H';
+      const chapterValue = this.eventChapterValue(vo.event, chapter);
+      this.chapterSelect.value = chapterValue;
+      this.updateMapOptions(chapterValue, vo.map);
       return;
     }
 
-    const currentOption = document.createElement('option');
-    currentOption.value = chapter;
-    currentOption.textContent = `${vo.mapName}（活动）`;
-    currentOption.dataset.currentMap = 'true';
-    this.chapterSelect.appendChild(currentOption);
-    this.chapterSelect.value = chapter;
-    this.mapSelect.replaceChildren();
-    const mapOption = document.createElement('option');
-    mapOption.value = String(vo.map);
-    mapOption.textContent = String(vo.map);
-    this.mapSelect.appendChild(mapOption);
+    const chapter = String(vo.chapter);
+    if (chapter in MAP_COUNT_BY_CHAPTER) {
+      this.chapterSelect.value = chapter;
+      this.updateMapOptions(chapter, vo.map);
+      return;
+    }
+
+    this.chapterSelect.value = '1';
+    this.updateMapOptions('1', 1);
     this.mapSelect.disabled = true;
   }
 

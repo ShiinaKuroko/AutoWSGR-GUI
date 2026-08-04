@@ -74,6 +74,19 @@ export interface SchedulerTask {
 
 export type SchedulerStatus = 'idle' | 'running' | 'stopping' | 'not_connected';
 
+/** 逻辑任务被取消的来源，用于区分用户放弃和系统关闭。 */
+export type LogicalTaskCancelReason =
+  | 'removed'
+  | 'queue_cleared'
+  | 'system_stopped';
+
+/** 尚未回到就绪队列的任务，例如轮次间隔或失败重试。 */
+export interface SchedulerWaitingTask {
+  task: SchedulerTask;
+  reason: 'gap' | 'retry';
+  readyAt: number;
+}
+
 // ════════════════════════════════════════
 // 事件回调
 // ════════════════════════════════════════
@@ -87,6 +100,11 @@ export interface SchedulerCallbacks {
   onTaskCompleted?: (taskId: string, success: boolean, result?: TaskResult | null, error?: string | null) => void;
   /** Emitted only when the logical task has no follow-up round. */
   onLogicalTaskCompleted?: (logicalId: string, success: boolean, error?: string | null) => void;
+  /** 逻辑任务被删除、清空或随系统停止，不等同于完成或失败。 */
+  onLogicalTaskCanceled?: (
+    logicalId: string,
+    reason: LogicalTaskCancelReason,
+  ) => void;
   /** 新日志消息 */
   onLog?: (msg: WsLogMessage) => void;
   /** 队列变化 */

@@ -46,7 +46,11 @@ export class MainView {
   render(vo: MainViewObject): void {
     this.statusBar.render(vo);
     this.taskQueueView.render(vo);
-    this.fleetPreviewView.render(vo.currentFleet, vo.currentTask !== null);
+    this.fleetPreviewView.render(
+      vo.currentFleet,
+      vo.currentTask !== null,
+      vo.dailySortieStats,
+    );
   }
 
   appendLog(entry: LogEntryVO): void {

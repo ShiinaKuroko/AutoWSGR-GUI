@@ -165,6 +165,35 @@ function testCombatPlanServices() {
     name: '测试舰队',
   }]);
 
+  // 旧 renderer 即使继续多传 system，也只能保存为用户计划。
+  const readonlyBoundary = management.saveManaged(
+    '只读边界',
+    'chapter: 1\nmap: 1\n',
+    false,
+    undefined,
+    'system',
+  );
+  assert.equal(readonlyBoundary.success, true);
+  assert.equal(readonlyBoundary.source, 'user');
+  assert.equal(
+    readonlyBoundary.path,
+    path.join(
+      appPaths.userBattlePlansDir(),
+      'bettle-只读边界.yaml',
+    ),
+  );
+  assert.equal(
+    fs.existsSync(path.join(
+      appPaths.systemBattlePlansDir(),
+      'bettle-只读边界.yaml',
+    )),
+    false,
+  );
+  assert.deepEqual(
+    management.deleteUserCombat('bettle-只读边界.yaml'),
+    { success: true },
+  );
+
   const prepared = management.readManaged(
     'user',
     'bettle-测试计划.yaml',
@@ -230,9 +259,11 @@ function testCombatPlanServices() {
     [
       { name: 'U-47' },
       {
-        name: 'U-96',
         ship_type: ['ss'],
-        candidates: [{ name: 'U-81', ship_type: ['ss'] }],
+        candidates: [
+          { name: 'U-96', ship_type: ['ss'] },
+          { name: 'U-81', ship_type: ['ss'] },
+        ],
       },
       {
         ship_type: ['ss'],
@@ -267,7 +298,7 @@ function testCombatPlanServices() {
     'U-505',
   );
 
-  const taskPresetFixtures = [
+  const dailyTaskFixtures = [
     {
       file: '战役.yaml',
       type: 'campaign',
@@ -290,23 +321,40 @@ function testCombatPlanServices() {
       ].join('\n'),
     },
   ];
-  taskPresetFixtures.forEach((fixture) => {
+  dailyTaskFixtures.forEach((fixture) => {
     const sourcePath = path.join(temporaryDirectory, fixture.file);
     fs.writeFileSync(sourcePath, fixture.content, 'utf8');
     const result = management.importLocal(sourcePath);
-    assert.equal(result.success, true);
-    assert.equal(result.kind, 'preset');
-    assert.equal(fs.readFileSync(sourcePath, 'utf8'), fixture.content);
-    const managed = management.readManaged('user', result.file);
-    assert.equal(managed.success, true);
-    assert.equal(managed.kind, 'preset');
-    assert.equal(managed.runtimePath, undefined);
-    assert.equal(yaml.load(managed.content).task_type, fixture.type);
-    assert.deepEqual(
-      management.deleteUserCombat(result.file),
-      { success: true },
+    assert.equal(result.success, false);
+    assert.equal(
+      result.error,
+      '演习、战役和决战配置请使用“加载日常任务”管理',
     );
+    assert.equal(fs.readFileSync(sourcePath, 'utf8'), fixture.content);
   });
+  const normalFightPreset = path.join(
+    temporaryDirectory,
+    '普通出征任务.yaml',
+  );
+  fs.writeFileSync(
+    normalFightPreset,
+    'task_type: normal_fight\nplan_id: 1-1\ntimes: 2\n',
+    'utf8',
+  );
+  const importedPreset = management.importLocal(normalFightPreset);
+  assert.equal(importedPreset.success, true);
+  assert.equal(importedPreset.kind, 'preset');
+  const managedPreset = management.readManaged(
+    'user',
+    importedPreset.file,
+  );
+  assert.equal(managedPreset.success, true);
+  assert.equal(managedPreset.kind, 'preset');
+  assert.equal(managedPreset.runtimePath, undefined);
+  assert.deepEqual(
+    management.deleteUserCombat(importedPreset.file),
+    { success: true },
+  );
 
   assert.deepEqual(
     management.importLocal(path.join(temporaryDirectory, 'plan.txt')),
@@ -484,18 +532,14 @@ function testCombatPlanServices() {
     },
   ];
   legacyEventPlans.forEach((fixture) => {
-    const importedEvent = management.saveManaged(
-      fixture.file,
+    const systemFile = `bettle-${fixture.file}`;
+    combatRepository.write(
+      path.join(appPaths.systemBattlePlansDir(), systemFile),
       fixture.content,
-      false,
-      undefined,
-      'system',
     );
-    assert.equal(importedEvent.success, true);
-    assert.equal(importedEvent.file, `bettle-${fixture.file}`);
     const preparedEvent = management.readManaged(
       'system',
-      importedEvent.file,
+      systemFile,
     );
     assert.equal(preparedEvent.success, true);
     assert.equal(fs.existsSync(preparedEvent.runtimePath), true);

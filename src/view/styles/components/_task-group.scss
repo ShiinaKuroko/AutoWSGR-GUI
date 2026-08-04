@@ -211,6 +211,10 @@
   color: var(--success);
 }
 
+.tg-source.daily {
+  color: var(--accent);
+}
+
 .tg-source.local,
 .tg-source.template {
   color: var(--text-muted);
@@ -328,26 +332,18 @@
   background: transparent;
 }
 
-.task-list-loader-group-row {
+.task-list-loader-group-card {
   display: grid;
+  width: 100%;
+  min-width: 0;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 4px;
-}
-
-.task-list-loader-group-card {
-  display: flex;
-  width: 100%;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 9px;
+  padding-right: 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-card);
   color: var(--text-primary);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
 }
 
 .task-list-loader-group-card:hover,
@@ -356,14 +352,28 @@
   background: var(--accent-subtle);
 }
 
-.task-list-loader-group-card strong {
+.task-list-loader-group-select {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 9px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-list-loader-group-select strong {
   overflow: hidden;
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.task-list-loader-group-card span {
+.task-list-loader-group-select span {
   color: var(--text-muted);
   font-size: 10px;
 }
@@ -424,6 +434,10 @@
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
 }
 
+.task-list-loader-plan-card .tg-label {
+  font-size: 13px;
+}
+
 .tg-fleet-tag {
   min-width: 0;
   max-width: 180px;
@@ -453,6 +467,157 @@
   white-space: nowrap;
 }
 
+.daily-task-loader-dialog {
+  display: flex;
+  width: min(540px, calc(100vw - 40px));
+  height: auto;
+  max-height: min(440px, calc(100vh - 40px));
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.daily-task-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 7px 0;
+  padding: 3px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.daily-task-tab {
+  min-width: 64px;
+  padding: 4px 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: color 0.16s ease, background 0.16s ease;
+}
+
+.daily-task-tab.active {
+  color: #fff;
+  background: var(--accent);
+}
+
+.daily-task-loader-list {
+  display: grid;
+  min-height: 0;
+  max-height: 286px;
+  flex: 0 1 auto;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 4px;
+  padding: 2px;
+  overflow-y: auto;
+}
+
+.daily-task-card {
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.daily-task-card:hover,
+.daily-task-card.selected {
+  border-color: var(--accent);
+}
+
+.daily-task-card.selected {
+  box-shadow: 0 0 0 2px var(--accent-subtle);
+}
+
+.daily-task-card-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.daily-task-card-tag {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  color: var(--accent);
+  background: #fff;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  font-size: 9px;
+}
+
+.daily-task-card-source {
+  flex: 0 0 auto;
+  font-size: 9px;
+}
+
+.daily-task-card-source.system {
+  color: var(--accent);
+}
+
+.daily-task-card-source.user {
+  color: var(--success);
+}
+
+.daily-task-card h4 {
+  min-width: 0;
+  flex: 1 1 auto;
+  margin: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.daily-task-card-controls {
+  display: flex;
+  min-height: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.daily-task-times {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.daily-task-times .input {
+  width: 48px;
+  padding: 2px 5px;
+  text-align: center;
+}
+
+.daily-task-quick-repair {
+  font-size: 11px;
+}
+
+.daily-task-loader-dialog .modal-actions {
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.daily-task-loader-dialog .modal-actions .btn {
+  height: 24px;
+  padding: 3px 8px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.daily-task-loader-empty {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 @media (max-width: 1100px) {
   .task-group-header {
     align-items: flex-start;
@@ -461,6 +626,10 @@
 }
 
 @media (max-width: 700px) {
+  .daily-task-loader-list {
+    grid-template-columns: 1fr;
+  }
+
   .task-list-loader-content {
     grid-template-columns: 1fr;
   }

@@ -157,17 +157,81 @@
   overflow: hidden;
 }
 
-.plan-node-workspace > .node-list {
-  flex: 1 1 56%;
+.plan-node-workspace > .plan-node-preview-frame {
+  display: flex;
+  position: relative;
+  flex: 1 1 auto;
   min-height: 180px;
-  margin-bottom: 8px;
+  flex-direction: column;
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.plan-node-preview-header {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  margin: 0;
+}
+
+.plan-node-preview-title {
+  color: #000;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.plan-node-preview-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.plan-node-preview-body > .node-list {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .plan-node-info-area {
-  flex: 1 1 44%;
-  min-height: 130px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
+  position: absolute;
+  z-index: 12;
+  top: 4px;
+  right: 4px;
+  width: max-content;
+  max-width: calc(100% - 8px);
+  height: max-content;
+  max-height: calc(100% - 8px);
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  visibility: hidden;
+  pointer-events: none;
+  background: var(--bg-card);
+  background: color-mix(in srgb, var(--bg-card-solid) 68%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: -8px 0 20px rgba(0, 0, 0, 0.14);
+  transform: translate3d(calc(100% + 5px), 0, 0);
+  transition:
+    transform 160ms cubic-bezier(0.2, 0.72, 0.2, 1),
+    visibility 0s linear 160ms;
+  contain: layout paint;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.plan-node-info-area.is-open {
+  visibility: visible;
+  pointer-events: auto;
+  transform: translate3d(0, 0, 0);
+  transition-delay: 0s;
+  will-change: transform;
 }
 
 .plan-node-info-area .node-editor-placeholder {
@@ -185,7 +249,22 @@
 }
 
 .plan-node-info-area .node-info {
-  padding: 10px 4px;
+  padding: 14px;
+}
+
+.plan-node-info-area .node-editor {
+  width: max-content;
+  max-width: 100%;
+  min-height: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-node-info-area {
+    transition-duration: 1ms, 0s;
+  }
 }
 
 .plan-right {

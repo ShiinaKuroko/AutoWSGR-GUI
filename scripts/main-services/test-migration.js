@@ -23,6 +23,7 @@ const {
   WindowService,
   UserDataMigrationService,
   LegacyPlanMigration,
+  MigrationConflictService,
   TeamPlanCodec,
   TeamPlanRepository,
   TeamPlanService,
@@ -107,6 +108,12 @@ function testUserDataMigration() {
     JSON.stringify({
       legacy: true,
       nested: { old_value: 2 },
+      decisive_plan: {
+        chapter: 3,
+        use_quick_repair: false,
+        level1: ['U-47', 'U-96'],
+        level2: ['U-505'],
+      },
     }),
     'utf8',
   );
@@ -125,6 +132,24 @@ function testUserDataMigration() {
         items: [{
           path: 'plans/legacy.yaml',
           itemExtension: { preserved: true },
+        }, {
+          path: [
+            'python',
+            'site-packages',
+            'autowsgr',
+            'data',
+            'plan',
+            '自动演习.yaml',
+          ].join(path.sep),
+          label: '旧自动演习',
+          times: 1,
+        }, {
+          path: 'resource/user_battle_plans/bettle-普通驱逐.yaml',
+          managedSource: 'user',
+          managedFile: 'bettle-普通驱逐.yaml',
+          kind: 'preset',
+          label: '旧普通驱逐战役',
+          times: 3,
         }],
       }],
     }),
@@ -192,6 +217,15 @@ function testUserDataMigration() {
     'task_type: exercise\nfleet_id: 4\ntimes: 1\n',
     'utf8',
   );
+  const misplacedCampaign = path.join(
+    appPaths.userBattlePlansDir(),
+    'bettle-普通驱逐.yaml',
+  );
+  fs.writeFileSync(
+    misplacedCampaign,
+    'task_type: campaign\ncampaign_name: 普通驱逐\ntimes: 3\n',
+    'utf8',
+  );
   const unrelatedYaml = path.join(
     projectRoot,
     'python',
@@ -234,6 +268,12 @@ function testUserDataMigration() {
       nested: {
         new_only: 1,
         old_value: 2,
+      },
+      decisive_plan: {
+        chapter: 3,
+        use_quick_repair: false,
+        level1: ['U-47', 'U-96'],
+        level2: ['U-505'],
       },
     },
   );
@@ -308,6 +348,8 @@ function testUserDataMigration() {
       normalizeTaskPreset: root => taskPresetCodec.normalize(root),
     },
   );
+  assert.equal(userDataMigration.migratePresetInventory().failed, 0);
+  assert.equal(userDataMigration.readState().version, 6);
   const planResult = legacyMigration.migrate();
   assert.deepEqual(
     {
@@ -315,7 +357,7 @@ function testUserDataMigration() {
       succeeded: planResult.succeeded,
       failed: planResult.failed,
     },
-    { total: 4, succeeded: 4, failed: 0 },
+    { total: 6, succeeded: 6, failed: 0 },
   );
 
   const migratedPlanPath = path.join(
@@ -340,11 +382,33 @@ function testUserDataMigration() {
   assert.equal(fs.existsSync(referencedTeamPath), true);
   assert.equal(
     fs.existsSync(path.join(
-      appPaths.userBattlePlansDir(),
-      'bettle-自动演习.yaml',
+      appPaths.userDailyPlansDir(),
+      'exercise-队伍4演习.yaml',
     )),
     true,
   );
+  assert.equal(
+    fs.existsSync(path.join(
+      appPaths.userBattlePlansDir(),
+      'bettle-自动演习.yaml',
+    )),
+    false,
+  );
+  const migratedDecisive = yaml.load(fs.readFileSync(path.join(
+    appPaths.userDailyPlansDir(),
+    'decisive-决战第3章.yaml',
+  ), 'utf8'));
+  assert.equal(migratedDecisive.chapter, 3);
+  assert.equal(migratedDecisive.use_quick_repair, false);
+  assert.deepEqual(migratedDecisive.level1, ['U-47', 'U-96']);
+  assert.deepEqual(migratedDecisive.level2, ['U-505']);
+  const migratedCampaign = yaml.load(fs.readFileSync(path.join(
+    appPaths.userDailyPlansDir(),
+    'campaign-普通驱逐.yaml',
+  ), 'utf8'));
+  assert.equal(migratedCampaign.campaign_name, '简单驱逐');
+  assert.equal(migratedCampaign.times, 3);
+  assert.equal(fs.existsSync(misplacedCampaign), true);
   assert.equal(
     fs.existsSync(path.join(
       appPaths.userBattlePlansDir(),
@@ -361,9 +425,11 @@ function testUserDataMigration() {
     [
       { name: 'U-47' },
       {
-        name: 'U-96',
         ship_type: ['ss'],
-        candidates: [{ name: 'U-81', ship_type: ['ss'] }],
+        candidates: [
+          { name: 'U-96', ship_type: ['ss'] },
+          { name: 'U-81', ship_type: ['ss'] },
+        ],
       },
     ],
   );
@@ -387,7 +453,7 @@ function testUserDataMigration() {
   const taskGroups = JSON.parse(
     fs.readFileSync(path.join(userData, 'task_groups.json'), 'utf8'),
   );
-  assert.equal(taskGroups.version, 2);
+  assert.equal(taskGroups.version, 4);
   assert.equal(taskGroups.rootExtension.preserved, true);
   assert.equal(taskGroups.groups[0].groupExtension, 'keep');
   assert.equal(
@@ -400,7 +466,37 @@ function testUserDataMigration() {
     taskGroups.groups[0].items[0].managedFile,
     'bettle-legacy.yaml',
   );
-  assert.equal(userDataMigration.readState().version, 5);
+  assert.equal(taskGroups.groups[0].items[1].kind, 'daily');
+  assert.equal(
+    taskGroups.groups[0].items[1].dailySource,
+    'user',
+  );
+  assert.equal(
+    taskGroups.groups[0].items[1].dailyFile,
+    'exercise-队伍4演习.yaml',
+  );
+  assert.equal(
+    taskGroups.groups[0].items[1].dailyTaskType,
+    'exercise',
+  );
+  assert.equal(taskGroups.groups[0].items[1].managedFile, undefined);
+  assert.equal(taskGroups.groups[0].items[2].kind, 'daily');
+  assert.equal(
+    taskGroups.groups[0].items[2].dailyFile,
+    'campaign-普通驱逐.yaml',
+  );
+  assert.equal(
+    taskGroups.groups[0].items[2].dailyTaskType,
+    'campaign',
+  );
+  assert.equal(taskGroups.groups[0].items[2].managedFile, undefined);
+  assert.equal(userDataMigration.readState().version, 7);
+  assert.equal(
+    userDataMigration.readState().version,
+    7,
+    'v6 库存升级后必须继续执行 v7 日常任务分类迁移',
+  );
+  assert.equal(userDataMigration.migratePresetInventory().total, 0);
 
   const planBeforeSecondRun = fs.readFileSync(migratedPlanPath, 'utf8');
   assert.equal(legacyMigration.migrate().total, 0);
@@ -412,6 +508,8 @@ function testUserDataMigration() {
   testLegacyPlanConflictRetry();
   testExistingUserDataCompatibility();
   testLegacyLootPlanIndexMigration();
+  testPresetInventoryMigration();
+  testMigrationConflictResolution();
 }
 
 /** 验证不同旧版本的数字索引都迁移为原地图的稳定文件名。 */
@@ -427,13 +525,13 @@ function testLegacyLootPlanIndexMigration() {
     {
       name: 'fallback-four-item-layout',
       index: 2,
-      expected: 'bettle-捞胖次-8-5.yaml',
+      expected: 'bettle-old-8-5AI六潜胖次.yaml',
     },
     {
       name: 'installed-five-item-index-zero',
       index: 0,
       planPaths: legacyFivePlanPaths,
-      expected: 'bettle-捞胖次-9-4-6SS.yaml',
+      expected: 'bettle-old-9-4六潜练级.yaml',
     },
     {
       name: 'installed-five-item-index-two',
@@ -678,6 +776,200 @@ function testLegacyLootPlanIndexMigration() {
   );
 }
 
+/** 验证 v6 淘汰预设转为个人计划，并在失败后稳定重试。 */
+function testPresetInventoryMigration() {
+  const root = path.join(temporaryDirectory, 'preset-inventory-v6');
+  const projectRoot = path.join(root, 'project');
+  const userData = path.join(root, 'user-data');
+  const appPaths = new AppPaths({
+    moduleDirectory: path.join(projectRoot, 'dist', 'electron'),
+    isPackaged: () => false,
+    getPath: name => name === 'exe'
+      ? path.join(projectRoot, 'AutoWSGR.exe')
+      : userData,
+    getResourcesPath: () => path.join(projectRoot, 'resources'),
+  });
+  const sourceResources = path.join(
+    __dirname,
+    '..',
+    '..',
+    'resource',
+    'migrations',
+    'v6',
+    'system_battle_plans',
+  );
+  const migrationResources = path.join(
+    appPaths.resourceRoot(),
+    'resource',
+    'migrations',
+    'v6',
+    'system_battle_plans',
+  );
+  fs.mkdirSync(path.dirname(migrationResources), { recursive: true });
+  fs.cpSync(sourceResources, migrationResources, { recursive: true });
+  fs.mkdirSync(path.join(userData, 'templates'), { recursive: true });
+  fs.mkdirSync(appPaths.userBattlePlansDir(), { recursive: true });
+
+  const guiSettings = path.join(userData, 'gui_settings.json');
+  const userSettings = path.join(userData, 'usersettings.yaml');
+  const taskGroups = path.join(userData, 'task_groups.json');
+  const templates = path.join(userData, 'templates', 'templates.json');
+  fs.writeFileSync(guiSettings, JSON.stringify({
+    automation: {
+      autoLoot: true,
+      lootPlanId: 'bettle-捞胖次-8-5.yaml',
+    },
+  }), 'utf8');
+  fs.writeFileSync(userSettings, [
+    'daily_automation:',
+    '  auto_loot: true',
+    '  loot_plan_id: bettle-捞胖次-9-4-6SS.yaml',
+    '',
+  ].join('\n'), 'utf8');
+  fs.writeFileSync(taskGroups, JSON.stringify({
+    version: 3,
+    activeGroup: '旧预设',
+    groups: [{
+      name: '旧预设',
+      items: [
+        {
+          path: 'resource/system_battle_plans/bettle-E1炸鱼.yaml',
+          managedSource: 'system',
+          managedFile: 'bettle-E1炸鱼.yaml',
+          kind: 'plan',
+          times: 1,
+          label: 'E1 炸鱼',
+        },
+        {
+          path: 'resource/builtin_plans/周常3章-3-3.yaml',
+          kind: 'plan',
+          times: 1,
+          label: '旧周常 3-3',
+        },
+        {
+          path: 'resource/system_battle_plans/bettle-周常-2-1.yaml',
+          managedSource: 'system',
+          managedFile: 'bettle-周常-2-1.yaml',
+          kind: 'plan',
+          times: 1,
+          label: '当前周常 2-1',
+        },
+      ],
+    }],
+  }), 'utf8');
+  fs.writeFileSync(templates, JSON.stringify([
+    {
+      id: 'legacy-event',
+      planPath: 'resource/system_battle_plans/bettle-E5夜战.yaml',
+    },
+    {
+      id: 'legacy-weekly',
+      planPaths: [
+        'resource/builtin_plans/周常6章-6-3.yaml',
+        'resource/system_battle_plans/bettle-周常-2-1.yaml',
+      ],
+    },
+  ]), 'utf8');
+
+  const e1Source = path.join(migrationResources, 'bettle-E1炸鱼.yaml');
+  const e5Source = path.join(migrationResources, 'bettle-E5夜战.yaml');
+  const e1Target = path.join(
+    appPaths.userBattlePlansDir(),
+    'bettle-E1炸鱼.yaml',
+  );
+  const e1LegacyTarget = path.join(
+    appPaths.userBattlePlansDir(),
+    'bettle-E1炸鱼（旧版）.yaml',
+  );
+  fs.writeFileSync(e1Target, 'chapter: 99\nmap: 99\n', 'utf8');
+  fs.copyFileSync(
+    e5Source,
+    path.join(appPaths.userBattlePlansDir(), 'bettle-E5夜战.yaml'),
+  );
+
+  const realAtomicFiles = new AtomicFileStore();
+  let failTaskGroupWrite = true;
+  const migration = new UserDataMigrationService(appPaths, {
+    write(file, content) {
+      if (failTaskGroupWrite && file === taskGroups) {
+        failTaskGroupWrite = false;
+        throw new Error('模拟 v6 任务组写入失败');
+      }
+      realAtomicFiles.write(file, content);
+    },
+  });
+  migration.writeState({ version: 5, completed: ['v5-complete'] });
+
+  const originalConsoleError = console.error;
+  let firstResult;
+  console.error = () => {};
+  try {
+    firstResult = migration.migratePresetInventory();
+  } finally {
+    console.error = originalConsoleError;
+  }
+  assert.equal(firstResult.failed, 1);
+  assert.equal(firstResult.failedFiles.includes(taskGroups), true);
+  assert.equal(migration.readState().version, 5);
+  assert.equal(
+    fs.readFileSync(e1LegacyTarget, 'utf8'),
+    fs.readFileSync(e1Source, 'utf8'),
+    '同名不同内容的个人计划必须保留为旧版副本',
+  );
+
+  const retried = migration.migratePresetInventory();
+  assert.deepEqual(
+    {
+      total: retried.total,
+      succeeded: retried.succeeded,
+      failed: retried.failed,
+    },
+    { total: 1, succeeded: 1, failed: 0 },
+  );
+  assert.equal(migration.readState().version, 6);
+  assert.equal(migration.readState().completed.includes('v5-complete'), true);
+
+  const migratedGroups = JSON.parse(fs.readFileSync(taskGroups, 'utf8'));
+  const [eventItem, weeklyItem, currentItem] = (
+    migratedGroups.groups[0].items
+  );
+  assert.equal(eventItem.managedSource, 'user');
+  assert.equal(eventItem.managedFile, 'bettle-E1炸鱼（旧版）.yaml');
+  assert.equal(weeklyItem.managedSource, 'user');
+  assert.equal(weeklyItem.managedFile, 'bettle-周常-3-3-v1.yaml');
+  assert.equal(currentItem.managedSource, 'system');
+  assert.equal(currentItem.managedFile, 'bettle-周常-2-1.yaml');
+
+  const migratedTemplates = JSON.parse(fs.readFileSync(templates, 'utf8'));
+  assert.equal(
+    migratedTemplates[0].planPath,
+    'user_battle_plans/bettle-E5夜战.yaml',
+    '同名同内容的个人计划必须直接复用',
+  );
+  assert.deepEqual(migratedTemplates[1].planPaths, [
+    'user_battle_plans/bettle-周常-6-3-v1.yaml',
+    'resource/system_battle_plans/bettle-周常-2-1.yaml',
+  ]);
+  assert.equal(
+    JSON.parse(fs.readFileSync(guiSettings, 'utf8'))
+      .automation.lootPlanId,
+    'bettle-old-8-5AI六潜胖次.yaml',
+  );
+  assert.equal(
+    yaml.load(fs.readFileSync(userSettings, 'utf8'))
+      .daily_automation.loot_plan_id,
+    'bettle-old-9-4六潜练级.yaml',
+  );
+  assert.equal(migration.migratePresetInventory().total, 0);
+  assert.equal(
+    fs.readdirSync(appPaths.userBattlePlansDir())
+      .filter(file => file.startsWith('bettle-E1炸鱼（旧版'))
+      .length,
+    1,
+    '失败重试不能生成重复旧版副本',
+  );
+}
+
 /** 验证迁移提示展示真实计数、失败文件和源文件保留说明。 */
 function testLegacyMigrationNotice() {
   assert.equal(
@@ -828,10 +1120,10 @@ function testLegacyPlanConflictRetry() {
   assert.equal(fs.readFileSync(target, 'utf8'), 'chapter: 9\nmap: 9\n');
   assert.equal(fs.existsSync(source), true);
   assert.equal(yaml.load(fs.readFileSync(legacyTarget, 'utf8')).chapter, 1);
-  assert.equal(userDataMigration.readState().version, 5);
+  assert.equal(userDataMigration.readState().version, 7);
   assert.equal(
     userDataMigration.readState().completed.some(
-      value => value.startsWith('plan-output-v5:'),
+      value => value.startsWith('plan-output-v7:'),
     ),
     true,
   );
@@ -1011,6 +1303,8 @@ function testExistingUserDataCompatibility() {
       ),
     },
   );
+  userDataMigration.migratePresetInventory();
+  assert.equal(userDataMigration.readState().version, 6);
   migration.migrate();
 
   taskGroups = JSON.parse(fs.readFileSync(targetTaskGroups, 'utf8'));
@@ -1028,12 +1322,219 @@ function testExistingUserDataCompatibility() {
     fs.readFileSync(existingTeam.path, 'utf8'),
     existingTeam.content,
   );
-  assert.equal(userDataMigration.readState().version, 5);
+  assert.equal(userDataMigration.readState().version, 7);
 
   userDataMigration.migrateLegacyUserDataFiles();
   migration.migrate();
   taskGroups = JSON.parse(fs.readFileSync(targetTaskGroups, 'utf8'));
   assert.equal(taskGroups.groups.length, 3);
+}
+
+/** 验证迁移冲突识别、保留、删除和任务列表引用重写。 */
+function testMigrationConflictResolution() {
+  const root = path.join(temporaryDirectory, 'migration-conflicts');
+  const projectRoot = path.join(root, 'project');
+  const userData = path.join(root, 'user-data');
+  const appPaths = new AppPaths({
+    moduleDirectory: path.join(projectRoot, 'dist', 'electron'),
+    isPackaged: () => false,
+    getPath: name => name === 'exe'
+      ? path.join(projectRoot, 'AutoWSGR.exe')
+      : userData,
+    getResourcesPath: () => path.join(projectRoot, 'resources'),
+  });
+  const atomicFiles = new AtomicFileStore();
+  const conflicts = new MigrationConflictService(appPaths, atomicFiles);
+  for (const directory of [
+    appPaths.systemBattlePlansDir(),
+    appPaths.userBattlePlansDir(),
+    appPaths.systemDailyPlansDir(),
+    appPaths.userDailyPlansDir(),
+  ]) {
+    fs.mkdirSync(directory, { recursive: true });
+  }
+
+  const systemBattleFile = 'bettle-系统相同.yaml';
+  const userBattleFile = 'bettle-迁移副本.yaml';
+  fs.writeFileSync(
+    path.join(appPaths.systemBattlePlansDir(), systemBattleFile),
+    'chapter: 1\nmap: 2\nnode_defaults:\n  formation: 2\n',
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(appPaths.userBattlePlansDir(), userBattleFile),
+    'node_defaults: { formation: 2 }\nmap: 2\nchapter: 1\n',
+    'utf8',
+  );
+
+  const dailyFile = 'campaign-普通驱逐.yaml';
+  fs.writeFileSync(
+    path.join(appPaths.systemDailyPlansDir(), dailyFile),
+    'task_type: campaign\ncampaign_name: 简单驱逐\ntimes: 1\n',
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(appPaths.userDailyPlansDir(), dailyFile),
+    'task_type: campaign\ncampaign_name: 简单驱逐\ntimes: 3\n',
+    'utf8',
+  );
+
+  fs.writeFileSync(
+    path.join(appPaths.userBattlePlansDir(), 'bettle-重名.yaml'),
+    'chapter: 2\nmap: 1\n',
+    'utf8',
+  );
+  const legacyCopyFile = 'bettle-重名（旧版）.yaml';
+  fs.writeFileSync(
+    path.join(appPaths.userBattlePlansDir(), legacyCopyFile),
+    'chapter: 3\nmap: 1\n',
+    'utf8',
+  );
+  const taskGroupsPath = path.join(userData, 'task_groups.json');
+  fs.mkdirSync(userData, { recursive: true });
+  fs.writeFileSync(
+    taskGroupsPath,
+    JSON.stringify({
+      version: 4,
+      groups: [{
+        name: '默认',
+        items: [{
+          kind: 'plan',
+          managedSource: 'user',
+          managedFile: userBattleFile,
+          label: '迁移副本',
+        }],
+      }],
+    }),
+    'utf8',
+  );
+  const guiSettingsPath = path.join(userData, 'gui_settings.json');
+  fs.writeFileSync(
+    guiSettingsPath,
+    JSON.stringify({
+      automation: {
+        autoLoot: true,
+        lootPlanSource: 'user',
+        lootPlanId: userBattleFile,
+        lootPlans: [
+          {
+            source: 'system',
+            file: systemBattleFile,
+            name: '系统相同',
+          },
+          {
+            source: 'user',
+            file: userBattleFile,
+            name: '迁移副本',
+          },
+        ],
+      },
+    }),
+    'utf8',
+  );
+
+  conflicts.prepareAfterMigration(false);
+  const pending = conflicts.pending();
+  assert.equal(pending.pending, true);
+  assert.equal(pending.conflicts.length, 3);
+  const sameContent = pending.conflicts.find(conflict => (
+    conflict.file === userBattleFile
+  ));
+  assert.ok(sameContent);
+  assert.equal(
+    sameContent.reasons[0].reasonCode,
+    'same_as_system_preset',
+  );
+  const sameName = pending.conflicts.find(conflict => (
+    conflict.file === dailyFile
+  ));
+  assert.ok(sameName);
+  assert.equal(
+    sameName.reasons[0].reasonCode,
+    'same_name_as_system_preset',
+  );
+  const legacyCopy = pending.conflicts.find(conflict => (
+    conflict.file === legacyCopyFile
+  ));
+  assert.ok(legacyCopy);
+  assert.equal(
+    legacyCopy.reasons[0].reasonCode,
+    'legacy_copy_name_conflict',
+  );
+
+  const result = conflicts.resolve([
+    sameName.id,
+    legacyCopy.id,
+  ]);
+  assert.equal(result.success, true);
+  assert.equal(result.deleted, 1);
+  assert.equal(result.kept, 2);
+  assert.equal(
+    fs.existsSync(path.join(
+      appPaths.userBattlePlansDir(),
+      userBattleFile,
+    )),
+    false,
+  );
+  assert.equal(
+    fs.existsSync(path.join(appPaths.userDailyPlansDir(), dailyFile)),
+    true,
+  );
+  const migratedGroups = JSON.parse(
+    fs.readFileSync(taskGroupsPath, 'utf8'),
+  );
+  assert.equal(
+    migratedGroups.groups[0].items[0].managedSource,
+    'system',
+  );
+  assert.equal(
+    migratedGroups.groups[0].items[0].managedFile,
+    systemBattleFile,
+  );
+  const migratedGuiSettings = JSON.parse(
+    fs.readFileSync(guiSettingsPath, 'utf8'),
+  );
+  assert.equal(
+    migratedGuiSettings.automation.lootPlanSource,
+    'system',
+  );
+  assert.equal(
+    migratedGuiSettings.automation.lootPlanId,
+    systemBattleFile,
+  );
+  assert.deepEqual(
+    migratedGuiSettings.automation.lootPlans,
+    [{
+      source: 'system',
+      file: systemBattleFile,
+      name: '系统相同',
+    }],
+  );
+  assert.equal(conflicts.pending().pending, false);
+
+  conflicts.prepareAfterMigration(true);
+  assert.equal(
+    conflicts.pending().pending,
+    false,
+    '已确认保留且内容未变化的冲突不应重复提示',
+  );
+  const newCopyFile = 'bettle-新增迁移副本.yaml';
+  fs.writeFileSync(
+    path.join(appPaths.userBattlePlansDir(), newCopyFile),
+    'chapter: 1\nmap: 2\nnode_defaults:\n  formation: 2\n',
+    'utf8',
+  );
+  conflicts.prepareAfterMigration(true);
+  const rescanned = conflicts.pending();
+  assert.equal(rescanned.conflicts.length, 1);
+  assert.equal(rescanned.conflicts[0].file, newCopyFile);
+  const keepAll = conflicts.resolve(
+    rescanned.conflicts.map(conflict => conflict.id),
+  );
+  assert.equal(keepAll.success, true);
+  assert.equal(keepAll.deleted, 0);
+  assert.equal(keepAll.kept, 1);
+  assert.equal(conflicts.pending().pending, false);
 }
 
 module.exports = {

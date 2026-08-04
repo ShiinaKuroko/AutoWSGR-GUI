@@ -108,6 +108,9 @@ class WikiShipTypeTest(unittest.TestCase):
         manifest = json.loads(
             (library_root / "manifest.json").read_text(encoding="utf-8"),
         )
+        labels = json.loads(
+            (library_root / "labels.zh-CN.json").read_text(encoding="utf-8"),
+        )
         ships = manifest["ships"]
         allowed_types = set(NATIVE_FLEET_TYPE_LABELS)
         manifest_type_counts = Counter(ship["ship_type"] for ship in ships)
@@ -116,9 +119,10 @@ class WikiShipTypeTest(unittest.TestCase):
         self.assertEqual(len(ships), manifest["counts"]["ships"])
         self.assertEqual(set(manifest_type_counts), allowed_types)
         self.assertEqual(
-            set(manifest["labels"]["ship_types"]),
-            allowed_types,
+            manifest["labels"]["ship_types"],
+            dict(NATIVE_FLEET_TYPE_LABELS),
         )
+        self.assertEqual(labels["ship_types"], dict(NATIVE_FLEET_TYPE_LABELS))
         self.assertEqual(
             next(ship["ship_type"] for ship in ships if ship["name"] == "大淀·改"),
             "cav",

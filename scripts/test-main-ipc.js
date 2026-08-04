@@ -29,11 +29,17 @@ const {
   registerDeviceIpc,
 } = require('../dist/electron/ipc/DeviceIpc.js');
 const {
+  registerDailyPlanIpc,
+} = require('../dist/electron/ipc/DailyPlanIpc.js');
+const {
   registerEnvironmentIpc,
 } = require('../dist/electron/ipc/EnvironmentIpc.js');
 const {
   registerFileIpc,
 } = require('../dist/electron/ipc/FileIpc.js');
+const {
+  registerMigrationConflictIpc,
+} = require('../dist/electron/ipc/MigrationConflictIpc.js');
 const {
   registerShipLibraryIpc,
 } = require('../dist/electron/ipc/ShipLibraryIpc.js');
@@ -89,7 +95,9 @@ function difference(left, right) {
 
 const ipc = new MemoryIpcRegistrar();
 registerFileIpc(ipc, {});
+registerMigrationConflictIpc(ipc, {});
 registerDeviceIpc(ipc, {});
+registerDailyPlanIpc(ipc, {});
 registerConfigurationIpc(ipc, {});
 registerEnvironmentIpc(ipc, {});
 registerTeamPlanIpc(ipc, {});

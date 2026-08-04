@@ -36,15 +36,18 @@ export class NodeEditorView {
   private editorIdEl: HTMLElement;
   private placeholderEl: HTMLElement;
   private infoEl: HTMLElement;
+  private drawerEl: HTMLElement;
   private enabledInput: HTMLInputElement;
   private currentNodeId: string | null = null;
   private disabledDrafts = new Map<string, NodeEditorValues>();
+  private resizeAnimation: Animation | null = null;
 
   constructor() {
     this.editorEl = document.getElementById('node-editor')!;
     this.editorIdEl = document.getElementById('node-editor-id')!;
     this.placeholderEl = document.getElementById('node-editor-placeholder')!;
     this.infoEl = document.getElementById('node-info')!;
+    this.drawerEl = document.getElementById('plan-node-info-drawer')!;
     this.enabledInput = document.getElementById(
       'node-edit-enabled',
     ) as HTMLInputElement;
@@ -52,7 +55,7 @@ export class NodeEditorView {
       if (!this.enabledInput.checked) {
         this.rememberDisabledDraft();
       }
-      this.updateEnabledVisibility();
+      this.updateEnabledVisibility(true);
     });
     (document.getElementById('node-edit-endpoint') as HTMLInputElement)
       .addEventListener('change', () => this.updateEndpointResultVisibility());
@@ -64,6 +67,7 @@ export class NodeEditorView {
     args: NodeEditorArgs,
     mapNight = false,
   ): void {
+    this.cancelResizeAnimation();
     this.rememberDisabledDraft();
     this.currentNodeId = nodeId;
     this.infoEl.style.display = 'none';
@@ -150,9 +154,11 @@ export class NodeEditorView {
     this.editorEl.style.display = '';
     this.updateEnabledVisibility();
     this.updateEndpointResultVisibility();
+    this.openDrawer();
   }
 
   showInfo(nodeId: string, nodeType: MapNodeType, onClose: () => void): void {
+    this.cancelResizeAnimation();
     this.rememberDisabledDraft();
     this.currentNodeId = null;
     this.editorEl.style.display = 'none';
@@ -180,14 +186,19 @@ export class NodeEditorView {
       `<p class="node-info-note">此类型节点没有可配置的战斗设置。</p>`;
 
     this.infoEl.querySelector('#btn-node-info-close')?.addEventListener('click', onClose);
+    this.openDrawer();
   }
 
   hide(): void {
+    this.cancelResizeAnimation();
     this.rememberDisabledDraft();
     this.currentNodeId = null;
-    this.editorEl.style.display = 'none';
-    this.infoEl.style.display = 'none';
-    this.placeholderEl.style.display = '';
+    this.drawerEl.classList.remove('is-open');
+    this.drawerEl.setAttribute('aria-hidden', 'true');
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement && this.drawerEl.contains(activeElement)) {
+      activeElement.blur();
+    }
     const detourHelp = document.getElementById('node-edit-detour-help') as HTMLElement | null;
     if (detourHelp) {
       detourHelp.style.display = 'none';
@@ -241,21 +252,80 @@ export class NodeEditorView {
     );
   }
 
-  private updateEnabledVisibility(): void {
-    const hidden = !this.enabledInput.checked;
-    this.editorEl
-      .querySelectorAll<HTMLElement>(
-        '.node-enable-dependent',
-      )
-      .forEach((element) => {
-        element.hidden = hidden;
+  private updateEnabledVisibility(animate = false): void {
+    const update = (): void => {
+      const hidden = !this.enabledInput.checked;
+      this.editorEl
+        .querySelectorAll<HTMLElement>(
+          '.node-enable-dependent',
+        )
+        .forEach((element) => {
+          element.hidden = hidden;
+        });
+      this.updateEndpointResultVisibility();
+    };
+
+    if (
+      !animate
+      || !this.drawerEl.classList.contains('is-open')
+      || window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      update();
+      return;
+    }
+
+    const before = this.drawerEl.getBoundingClientRect();
+    this.resizeAnimation?.cancel();
+    update();
+    const after = this.drawerEl.getBoundingClientRect();
+    if (
+      Math.abs(before.width - after.width) < 1
+      && Math.abs(before.height - after.height) < 1
+    ) {
+      return;
+    }
+
+    this.drawerEl.style.overflow = 'hidden';
+    const animation = this.drawerEl.animate(
+      [
+        {
+          width: `${before.width}px`,
+          height: `${before.height}px`,
+        },
+        {
+          width: `${after.width}px`,
+          height: `${after.height}px`,
+        },
+      ],
+      {
+        duration: 160,
+        easing: 'cubic-bezier(0.2, 0.72, 0.2, 1)',
+      },
+    );
+    this.resizeAnimation = animation;
+    void animation.finished
+      .catch(() => undefined)
+      .then(() => {
+        if (this.resizeAnimation !== animation) return;
+        this.resizeAnimation = null;
+        this.drawerEl.style.removeProperty('overflow');
       });
-    this.updateEndpointResultVisibility();
   }
 
   private updateEndpointResultVisibility(): void {
     const endpointInput = document.getElementById('node-edit-endpoint') as HTMLInputElement;
     const resultGroup = document.getElementById('node-edit-result-group') as HTMLElement;
     resultGroup.hidden = !this.enabledInput.checked || !endpointInput.checked;
+  }
+
+  private cancelResizeAnimation(): void {
+    this.resizeAnimation?.cancel();
+    this.resizeAnimation = null;
+    this.drawerEl.style.removeProperty('overflow');
+  }
+
+  private openDrawer(): void {
+    this.drawerEl.setAttribute('aria-hidden', 'false');
+    this.drawerEl.classList.add('is-open');
   }
 }

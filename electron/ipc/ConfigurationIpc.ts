@@ -15,6 +15,9 @@ import type {
   WindowPreferences,
   WindowService,
 } from '../services/WindowService';
+import type {
+  LegacyDecisiveAutomationSettings,
+} from '../../src/shared/legacyDecisiveAutomation';
 import type { IpcRegistrar } from './IpcRegistrar';
 
 export interface ConfigurationIpcDependencies {
@@ -80,6 +83,13 @@ export function registerConfigurationIpc(
     'set-gui-automation-settings',
     (_event, settings: GuiAutomationSettings) => {
       return configuration.setAutomation(settings);
+    },
+  );
+
+  ipc.handle(
+    'migrate-legacy-decisive-automation',
+    (_event, settings: LegacyDecisiveAutomationSettings) => {
+      return configuration.migrateLegacyDecisiveAutomation(settings);
     },
   );
 

@@ -1,8 +1,23 @@
 /** 定义 Controller 交给各页面渲染的 ViewObject、表单值和展示状态。 */
 
-import type { PlanPresetSource, ShipLibraryShip } from './ipc.js';
-import type { NormalFightTaskConfig, ShipSlot } from './model.js';
-import type { LootPlanId } from '../shared/lootPlans.js';
+import type {
+  PlanPresetSource,
+  ShipLibraryLabels,
+  ShipLibraryShip,
+} from './ipc.js';
+import type {
+  EventMapCatalogEntry,
+  NormalFightTaskConfig,
+  ShipSlot,
+} from './model.js';
+import type { DailySortieStatsSnapshot } from './statistics.js';
+import type {
+  LootAutomationPlan,
+  LootPlanSource,
+} from '../shared/lootPlans.js';
+import type {
+  DecisiveAutomationSource,
+} from '../shared/decisiveAutomation.js';
 
 export interface ConfigViewObject {
   emulatorType: string;
@@ -19,8 +34,12 @@ export interface ConfigViewObject {
   battleTimes: number;
   autoNormalFight: boolean;
   normalFightTasks: NormalFightTaskConfig[];
+  autoDecisive: boolean;
+  decisiveTemplateId: DecisiveAutomationSource;
   autoLoot: boolean;
-  lootPlanId: LootPlanId;
+  lootPlanSource: LootPlanSource;
+  lootPlanId: string;
+  lootPlans: LootAutomationPlan[];
   lootStopCount: number;
   logLevel: 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
   logRoot: string;
@@ -70,6 +89,7 @@ export interface MainViewObject {
   statusText: string;
   currentTask: TaskViewObject | null;
   currentFleet: CurrentFleetShipVO[];
+  dailySortieStats: DailySortieStatsSnapshot;
   expeditionTimer: string;
   taskQueue: TaskQueueItemVO[];
   wsConnected: boolean;
@@ -96,6 +116,9 @@ export interface TaskQueueItemVO {
   remaining: number;
   totalTimes: number;
   unlimited?: boolean;
+  /** 任务正在轮次间隔或失败重试倒计时中。 */
+  waiting?: boolean;
+  waitingText?: string;
   progress?: string;
   progressPercent?: number;
   acquisitionText?: string;
@@ -128,9 +151,40 @@ export interface FleetSlotDraftViewObject
 
 export interface FleetDraftViewObject {
   name: string;
-  file: string | null;
-  source: PlanPresetSource;
   slots: FleetSlotDraftViewObject[];
+}
+
+export interface FleetShipLibraryViewObject {
+  labels: ShipLibraryLabels;
+  ships: ShipLibraryShip[];
+  colorfulBackgroundUrl: string;
+}
+
+export interface TeamPlanShipRuleViewObject {
+  name: string;
+  searchName?: string;
+  shipTypes: string[];
+  minLevel?: number;
+  maxLevel?: number;
+}
+
+export interface TeamPlanSlotViewObject {
+  primary?: TeamPlanShipRuleViewObject;
+  candidates: TeamPlanShipRuleViewObject[];
+}
+
+export interface TeamPlanViewObject {
+  id: string;
+  name: string;
+  source: PlanPresetSource;
+  modifiedAt?: number;
+  selected: boolean;
+  ships: TeamPlanSlotViewObject[];
+}
+
+export interface TeamPlanListViewObject {
+  plans: TeamPlanViewObject[];
+  errorCount: number;
 }
 
 export type MapNodeType =
@@ -168,6 +222,8 @@ export interface PlanPreviewViewObject {
   chapter: number | string;
   map: number | string;
   mapName: string;
+  event?: string;
+  eventMaps: EventMapCatalogEntry[];
   repairModeValue: number;
   fightConditionValue: number;
   fleetId: number;
@@ -227,8 +283,11 @@ export interface TaskGroupItemViewObject {
   path?: string;
   managedSource?: PlanPresetSource;
   managedFile?: string;
+  dailySource?: PlanPresetSource;
+  dailyFile?: string;
+  dailyTaskType?: 'exercise' | 'campaign' | 'decisive';
   templateId?: string;
-  kind: 'plan' | 'preset' | 'template';
+  kind: 'plan' | 'preset' | 'template' | 'daily';
   times: number;
   label: string;
 }

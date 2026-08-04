@@ -16,4 +16,6 @@ export {
   type SchedulerTask,
   type SchedulerStatus,
   type SchedulerCallbacks,
+  type LogicalTaskCancelReason,
+  type SchedulerWaitingTask,
 } from '../../types/scheduler';

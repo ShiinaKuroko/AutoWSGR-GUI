@@ -86,6 +86,100 @@ function testTeamPlanServices() {
     serializedObject.ships[0].candidates[0].customCandidate,
     true,
   );
+  const legacyCandidateOnly = codec.normalize({
+    name: '旧版纯候选',
+    ships: [
+      {
+        search_name: '契卡洛夫',
+        ship_type: ['CV'],
+        min_level: 90,
+        max_level: 110,
+        candidates: ['85工程', '岛风'],
+      },
+      {
+        priority: ['胡德', '扶桑'],
+      },
+      {
+        search_name: '大凤',
+        ship_type: ['CV'],
+        min_level: 80,
+        max_level: 100,
+        candidates: [
+          '大凤·改',
+          {
+            name: '岛风',
+            search_name: '岛风',
+            ship_type: ['DD'],
+            min_level: 20,
+            max_level: 30,
+          },
+        ],
+      },
+    ],
+  });
+  assert.equal(legacyCandidateOnly.ships[0].name, undefined);
+  assert.equal(legacyCandidateOnly.ships[0].search_name, undefined);
+  assert.deepEqual(
+    legacyCandidateOnly.ships[0].candidates.map(rule => ({
+      name: rule.name,
+      search_name: rule.search_name,
+      ship_type: rule.ship_type,
+      min_level: rule.min_level,
+      max_level: rule.max_level,
+    })),
+    [
+      {
+        name: '85工程',
+        search_name: '契卡洛夫',
+        ship_type: ['cv'],
+        min_level: 90,
+        max_level: 110,
+      },
+      {
+        name: '岛风',
+        search_name: '契卡洛夫',
+        ship_type: ['cv'],
+        min_level: 90,
+        max_level: 110,
+      },
+    ],
+  );
+  assert.equal(legacyCandidateOnly.ships[1].name, undefined);
+  assert.deepEqual(
+    legacyCandidateOnly.ships[1].candidates.map(rule => rule.name),
+    ['胡德', '扶桑'],
+  );
+  assert.equal(legacyCandidateOnly.ships[2].name, undefined);
+  assert.equal(legacyCandidateOnly.ships[2].search_name, undefined);
+  assert.deepEqual(legacyCandidateOnly.ships[2].candidates, [
+    {
+      name: '大凤·改',
+      search_name: '大凤',
+      ship_type: ['cv'],
+      min_level: 80,
+      max_level: 100,
+    },
+    {
+      name: '岛风',
+      search_name: '岛风',
+      ship_type: ['dd'],
+      min_level: 20,
+      max_level: 30,
+    },
+  ]);
+  const serializedLegacy = yaml.load(codec.serialize(legacyCandidateOnly));
+  assert.equal(serializedLegacy.ships[0].name, undefined);
+  assert.equal(serializedLegacy.ships[0].search_name, undefined);
+  assert.equal(serializedLegacy.ships[1].priority, undefined);
+  assert.deepEqual(
+    serializedLegacy.ships[1].candidates.map(rule => rule.name),
+    ['胡德', '扶桑'],
+  );
+  assert.equal(serializedLegacy.ships[2].search_name, undefined);
+  assert.deepEqual(
+    serializedLegacy.ships[2].candidates,
+    legacyCandidateOnly.ships[2].candidates,
+  );
   const nativeShipTypes = [
     'aadg', 'ap', 'asdg', 'av', 'bb', 'bbg', 'bbv', 'bc', 'bg', 'bm',
     'ca', 'cav', 'cg', 'cl', 'clt', 'cv', 'cvl', 'dd', 'kp', 'sc',

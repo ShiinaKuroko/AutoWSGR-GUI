@@ -1,6 +1,12 @@
 /** 定义配置、作战方案、舰队规则、模板和修理等领域数据结构。 */
 
-import type { LootPlanId } from '../shared/lootPlans.js';
+import type {
+  LootAutomationPlan,
+  LootPlanSource,
+} from '../shared/lootPlans.js';
+import type {
+  DecisiveAutomationSource,
+} from '../shared/decisiveAutomation.js';
 
 export interface EmulatorConfig {
   type: string;
@@ -62,9 +68,16 @@ export interface LogConfig {
 export interface GuiAutomationSettings {
   expeditionInterval: number;
   battleTimes: number;
+  autoDecisive: boolean;
+  /** 自动决战使用计划页方案或系统预设。 */
+  decisiveTemplateId: DecisiveAutomationSource;
   autoLoot: boolean;
-  /** 系统战利品计划文件名，不受界面选项顺序影响。 */
-  lootPlanId: LootPlanId;
+  /** 当前自动胖次计划来源。 */
+  lootPlanSource: LootPlanSource;
+  /** 当前自动胖次计划文件名，不受界面选项顺序影响。 */
+  lootPlanId: string;
+  /** 设置页自动胖次下拉列表。 */
+  lootPlans: LootAutomationPlan[];
   lootStopCount: number;
 }
 
@@ -128,6 +141,19 @@ export type ShipSlot = string | ShipFilter | null;
 export interface FleetPreset {
   name: string;
   ships: ShipSlot[];
+}
+
+export type EventChapter = 'E' | 'H';
+
+export interface EventMapCatalogEntry {
+  event: string;
+  chapters: Record<EventChapter, string[]>;
+  files?: Record<EventChapter, Record<string, string>>;
+}
+
+export interface EventMapCatalog {
+  schema_version: number;
+  events: EventMapCatalogEntry[];
 }
 
 export interface PlanData {

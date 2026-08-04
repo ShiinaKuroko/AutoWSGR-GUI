@@ -1,6 +1,6 @@
 # 环境管理
 
-> 涉及文件：`electron/pythonEnv/` · `electron/services/PythonEnvironmentService.ts` · `electron/services/CudaEnvironmentService.ts` · `electron/services/AdbService.ts` · `electron/services/BackendService.ts` · `electron/ipc/EnvironmentIpc.ts` · `electron/ipc/DeviceIpc.ts` · `electron/ipc/BackendIpc.ts` · `electron/emulatorDetect.ts`
+> 涉及文件：`electron/pythonEnv/` · `electron/services/PythonEnvironmentService.ts` · `electron/services/CudaEnvironmentService.ts` · `electron/services/AdbService.ts` · `electron/services/BackendService.ts` · `electron/services/BackendShutdownService.ts` · `electron/ipc/EnvironmentIpc.ts` · `electron/ipc/DeviceIpc.ts` · `electron/ipc/BackendIpc.ts` · `electron/emulatorDetect.ts`
 
 ## 概述
 
@@ -18,7 +18,10 @@ Python 环境管理位于 `electron/pythonEnv/` 子目录，采用依赖注入�
 
 | 文件 | 职责 |
 |------|------|
+| `backendRequirement.ts` | 固定 managed 模式使用的 AutoWSGR 来源，安装和自动更新共用同一契约 |
+| `backendContractProbe.ts` | 在隔离检查进程中验证外部后端是否支持 GUI 所需的正式运行时契约 |
 | `context.ts` | 共享上下文与缓存状态（`PythonEnvContext` 接口、缓存变量） |
+| `dependencies.ts` | 集中声明 GUI 运行时和舰船资料库工具所需的 Python 依赖 |
 | `finder.ts` | Python 可执行文件发现（用户配置 → 便携版 → 系统全局） |
 | `environment.ts` | 统一描述解释器、源码、安装目标和运行路径 |
 | `cuda.ts` | 校验 CUDA 路径并在同一个 Python 环境上叠加 CUDA 变量 |
@@ -253,8 +256,18 @@ sequenceDiagram
 
 ### 停止
 
-`stopBackend()` 先发送 `SIGTERM` 并等待退出，五秒超时后发送 `SIGKILL`。
-应用退出时 (`app.on('before-quit')`) 自动调用。
+`stopBackend()` 与更新安装共用 `BackendShutdownService`，关闭步骤固定为：
+
+1. `POST /api/system/stop`，给运行中的任务最多 35 秒执行正式清理。
+2. 若服务进程仍在，Windows 执行 `taskkill /PID <pid> /T` 终止完整进程树；
+   其他平台发送 `SIGTERM`。
+3. 等待进程 `close` 最多 5 秒，确认操作系统已释放进程资源和文件锁。
+4. 超时后 Windows 执行 `/T /F`，其他平台发送 `SIGKILL`，再等待 5 秒。
+5. 仍无法确认退出时抛出错误，不清空活动进程引用。
+
+后端停止接口失败只会进入进程树终止回退，不会假装关闭成功。应用退出时
+`before-quit` 会阻止立即退出并等待完整流程；失败时应用保持运行并显示错误。
+更新安装也必须等待同一流程，失败时取消 `quitAndInstall()`。
 
 ---
 

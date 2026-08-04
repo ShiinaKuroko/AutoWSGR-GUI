@@ -239,7 +239,7 @@
   border-color: var(--border-strong);
 }
 
-.fleet-preset-item.selected {
+.fleet-preset-item.fleet-team-loader-item.selected {
   border-color: var(--accent);
   background: var(--accent-subtle);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);

@@ -1,9 +1,7 @@
 /* ═══ 配置页布局 ═══ */
 #page-config {
   --config-control-height: 28px;
-  --config-field-width: 220px;
   --config-text-field-width: 320px;
-  --config-inline-field-width: 150px;
   --config-short-field-width: 84px;
   --config-row-width: 460px;
 
@@ -17,6 +15,13 @@
     padding: 0 8px;
     font-size: 11px;
     line-height: 1.2;
+  }
+
+  select.input {
+    width: var(--config-select-width, 124px);
+    min-width: 0;
+    max-width: min(100%, var(--config-select-width, 124px));
+    flex: 0 1 var(--config-select-width, 124px);
   }
 
   textarea.input {
@@ -219,11 +224,6 @@
     max-width: var(--config-text-field-width);
   }
 
-  > select.input {
-    width: min(100%, var(--config-field-width));
-    max-width: var(--config-field-width);
-  }
-
   .input {
     padding: 6px 9px;
     font-size: 12px;
@@ -277,13 +277,33 @@
   }
 }
 
+.config-auto-loot-control {
+  min-width: 0;
+  gap: 6px;
+
+  .config-auto-task-options {
+    min-width: 0;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  #cfg-loot-stop-count {
+    width: 56px !important;
+    flex-basis: 56px;
+  }
+}
+
 .config-adb-controls {
   flex-wrap: wrap;
+  justify-content: flex-end;
 
   .config-adb-input-wrap {
     position: relative;
-    flex: 1 1 180px;
+    width: min(100%, 210px);
     min-width: 180px;
+    max-width: 210px;
+    flex: 0 1 210px;
 
     .input {
       width: 100%;
@@ -303,6 +323,24 @@
   }
 }
 
+.config-setting-control > .config-compact-path-row {
+  width: min(100%, 360px);
+}
+
+.config-setting-control > .config-backend-controls {
+  width: min(100%, 300px);
+  justify-content: flex-end;
+
+  #cfg-backend-port {
+    width: 72px !important;
+    flex-basis: 72px;
+  }
+}
+
+.config-setting-control > .config-update-controls {
+  justify-content: flex-end;
+}
+
 .config-inline-options {
   display: flex;
   align-items: center;
@@ -313,23 +351,10 @@
     font-size: 11px;
     white-space: nowrap;
   }
-
-  select.input {
-    width: var(--config-inline-field-width);
-    min-width: var(--config-inline-field-width);
-    max-width: var(--config-inline-field-width);
-    flex: 0 0 var(--config-inline-field-width);
-  }
 }
 
 .config-auto-task-options {
   min-width: 0;
-
-  select.input {
-    width: var(--config-inline-field-width);
-    min-width: var(--config-inline-field-width);
-    max-width: var(--config-inline-field-width);
-  }
 }
 
 .config-status-badge {
@@ -365,12 +390,14 @@
 }
 
 .config-range-preview {
+  width: min(100%, 345px);
+  justify-self: end;
   flex-direction: column;
   align-items: stretch;
 
   label {
     display: grid;
-    grid-template-columns: 48px minmax(120px, 1fr) var(--config-short-field-width);
+    grid-template-columns: 40px minmax(90px, 1fr) 64px;
     gap: 8px;
     align-items: center;
     color: var(--text-muted);
@@ -378,7 +405,7 @@
   }
 
   input[type='number'] {
-    width: var(--config-short-field-width);
+    width: 64px;
   }
 }
 
@@ -439,9 +466,9 @@
 }
 
 .config-map-editor {
-  width: min(100%, 560px) !important;
-  max-width: 560px !important;
-  min-height: 74px;
+  width: min(100%, 460px) !important;
+  max-width: 460px !important;
+  min-height: 60px;
   resize: vertical;
   font-family: Consolas, monospace;
 }
@@ -666,11 +693,6 @@
 
 .config-theme-accent-row {
   justify-content: flex-end;
-
-  #cfg-theme-mode {
-    flex: 1 1 180px;
-    min-width: 150px;
-  }
 
   .accent-label {
     flex: 0 0 auto;

@@ -2,7 +2,16 @@
  * 通过 contextBridge 向渲染进程安全暴露 IPC 方法。
  */
 import { contextBridge, ipcRenderer } from 'electron';
-import type { LootPlanId } from '../src/shared/lootPlans';
+import type {
+  LootAutomationPlan,
+  LootPlanSource,
+} from '../src/shared/lootPlans';
+import type {
+  LegacyDecisiveAutomationSettings,
+} from '../src/shared/legacyDecisiveAutomation';
+import type {
+  DecisiveAutomationSource,
+} from '../src/shared/decisiveAutomation';
 
 contextBridge.exposeInMainWorld('electronBridge', {
   getAppVersion: () => {
@@ -56,11 +65,24 @@ contextBridge.exposeInMainWorld('electronBridge', {
   setGuiAutomationSettings: (settings: {
     expeditionInterval: number;
     battleTimes: number;
+    autoDecisive: boolean;
+    decisiveTemplateId: DecisiveAutomationSource;
     autoLoot: boolean;
-    lootPlanId: LootPlanId;
+    lootPlanSource: LootPlanSource;
+    lootPlanId: string;
+    lootPlans: LootAutomationPlan[];
     lootStopCount: number;
   }) => {
     return ipcRenderer.invoke('set-gui-automation-settings', settings);
+  },
+
+  migrateLegacyDecisiveAutomation: (
+    settings: LegacyDecisiveAutomationSettings,
+  ) => {
+    return ipcRenderer.invoke(
+      'migrate-legacy-decisive-automation',
+      settings,
+    );
   },
 
   getDecisivePlanSettings: () => {
@@ -155,6 +177,45 @@ contextBridge.exposeInMainWorld('electronBridge', {
     return ipcRenderer.invoke('get-plan-management');
   },
 
+  listDailyPlans: () => {
+    return ipcRenderer.invoke('list-daily-plans');
+  },
+
+  readDailyPlan: (
+    source: 'system' | 'user',
+    file: string,
+  ) => {
+    return ipcRenderer.invoke('read-daily-plan', source, file);
+  },
+
+  getDailyDecisivePlan: (chapter: number) => {
+    return ipcRenderer.invoke('get-daily-decisive-plan', chapter);
+  },
+
+  getSystemDailyDecisivePlan: (chapter: number) => {
+    return ipcRenderer.invoke(
+      'get-system-daily-decisive-plan',
+      chapter,
+    );
+  },
+
+  saveDailyDecisivePlan: (settings: {
+    chapter: number;
+    useQuickRepair: boolean;
+    level1: string[];
+    level2: string[];
+  }) => {
+    return ipcRenderer.invoke('save-daily-decisive-plan', settings);
+  },
+
+  getMigrationConflicts: () => {
+    return ipcRenderer.invoke('get-migration-conflicts');
+  },
+
+  resolveMigrationConflicts: (keepIds: string[]) => {
+    return ipcRenderer.invoke('resolve-migration-conflicts', keepIds);
+  },
+
   exportUserPlans: (
     selections: Array<{
       kind: 'battle' | 'team';
@@ -210,7 +271,6 @@ contextBridge.exposeInMainWorld('electronBridge', {
     content: string,
     overwrite = false,
     currentFile?: string,
-    source: 'system' | 'user' = 'user',
   ) => {
     return ipcRenderer.invoke(
       'save-managed-combat-plan',
@@ -218,7 +278,6 @@ contextBridge.exposeInMainWorld('electronBridge', {
       content,
       overwrite,
       currentFile,
-      source,
     );
   },
 

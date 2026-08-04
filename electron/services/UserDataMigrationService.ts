@@ -11,6 +11,7 @@ import {
   LEGACY_LOOT_PLAN_IDS,
   lootPlanIdFromIndex,
   lootPlanIdFromLegacyPath,
+  migrateLootPlanId,
   parseLootPlanIndex,
   type LootPlanId,
 } from '../../src/shared/lootPlans';
@@ -27,8 +28,46 @@ export interface UserDataMigrationState {
   completed: string[];
 }
 
+/** 旧任务组中的计划路径迁移后所指向的受管配置。 */
+export type LegacyPlanReferenceTarget =
+  | {
+    kind: 'plan';
+    file: string;
+  }
+  | {
+    kind: 'daily';
+    file: string;
+    taskType: 'exercise' | 'campaign' | 'decisive';
+  };
+
 /** 当前旧用户数据迁移版本。 */
-export const USER_DATA_MIGRATION_VERSION = 5;
+export const USER_DATA_MIGRATION_VERSION = 6;
+
+const OBSOLETE_SYSTEM_PLAN_FILES = new Set([
+  'bettle-E1炸鱼.yaml',
+  'bettle-E5夜战.yaml',
+  'bettle-H1炸鱼.yaml',
+  'bettle-H5夜战.yaml',
+  'bettle-捞胖次-8-5.yaml',
+  'bettle-捞胖次-9-4-6SS.yaml',
+  'bettle-周常-1-2-v1.yaml',
+  'bettle-周常-3-3-v1.yaml',
+  'bettle-周常-6-3-v1.yaml',
+]);
+
+const OBSOLETE_SYSTEM_PLAN_ALIASES: Readonly<Record<string, string>> = {
+  '活动20260730-E1炸鱼.yaml': 'bettle-E1炸鱼.yaml',
+  '活动20260730-E5夜战.yaml': 'bettle-E5夜战.yaml',
+  '活动20260730-H1炸鱼.yaml': 'bettle-H1炸鱼.yaml',
+  '活动20260730-H5夜战.yaml': 'bettle-H5夜战.yaml',
+  'E1炸鱼.yaml': 'bettle-E1炸鱼.yaml',
+  'E5夜战.yaml': 'bettle-E5夜战.yaml',
+  'H1炸鱼.yaml': 'bettle-H1炸鱼.yaml',
+  'H5夜战.yaml': 'bettle-H5夜战.yaml',
+  '周常1章-1-2.yaml': 'bettle-周常-1-2-v1.yaml',
+  '周常3章-3-3.yaml': 'bettle-周常-3-3-v1.yaml',
+  '周常6章-6-3.yaml': 'bettle-周常-6-3-v1.yaml',
+};
 
 /** 管理迁移状态、旧配置复制和任务组路径更新。 */
 export class UserDataMigrationService {
@@ -135,9 +174,71 @@ export class UserDataMigrationService {
     return summary;
   }
 
+  /**
+   * 升级 v6 系统预设库存。
+   *
+   * 已删除且没有等价系统方案的引用会复制为个人计划；旧胖次标识按地图
+   * 映射到当前主库计划。迁移只修改 userData，安装资源始终只读。
+   */
+  migratePresetInventory(): LegacyMigrationSummary {
+    const state = this.readState();
+    if (state.version >= USER_DATA_MIGRATION_VERSION) {
+      return emptyLegacyMigrationSummary();
+    }
+
+    const summary = emptyLegacyMigrationSummary();
+    const userRoot = this.appPaths.userDataRoot();
+    const operations: Array<[string, () => boolean]> = [
+      [
+        path.join(userRoot, 'gui_settings.json'),
+        () => this.migrateStoredLootPlanId(
+          path.join(userRoot, 'gui_settings.json'),
+          'json',
+        ),
+      ],
+      [
+        path.join(userRoot, 'usersettings.yaml'),
+        () => this.migrateStoredLootPlanId(
+          path.join(userRoot, 'usersettings.yaml'),
+          'yaml',
+        ),
+      ],
+      [
+        path.join(userRoot, 'task_groups.json'),
+        () => this.migrateObsoleteTaskGroupPlans(
+          path.join(userRoot, 'task_groups.json'),
+        ),
+      ],
+      [
+        path.join(userRoot, 'templates', 'templates.json'),
+        () => this.migrateObsoleteTemplatePlans(
+          path.join(userRoot, 'templates', 'templates.json'),
+        ),
+      ],
+      [
+        path.join(userRoot, 'templates.json'),
+        () => this.migrateObsoleteTemplatePlans(
+          path.join(userRoot, 'templates.json'),
+        ),
+      ],
+    ];
+
+    for (const [source, operation] of operations) {
+      this.recordResult(summary, source, operation);
+    }
+    summary.detected = summary.total > 0;
+    if (summary.failed === 0) {
+      this.writeState({
+        version: USER_DATA_MIGRATION_VERSION,
+        completed: state.completed,
+      });
+    }
+    return summary;
+  }
+
   /** 根据旧计划文件名映射更新任务组的受管计划引用。 */
   migrateLegacyTaskGroupPlanPaths(
-    fileMap: Map<string, string>,
+    fileMap: Map<string, LegacyPlanReferenceTarget>,
   ): void {
     const taskGroupsPath = path.join(
       this.appPaths.userDataRoot(),
@@ -159,15 +260,33 @@ export class UserDataMigrationService {
           if (!this.isPlainObject(item)) return item;
           const oldPath = typeof item.path === 'string' ? item.path : '';
           const oldFile = oldPath.split(/[\\/]/).pop() ?? '';
-          const newFile = fileMap.get(
+          const target = fileMap.get(
             this.planReferenceKey(oldPath),
           ) ?? fileMap.get(this.planReferenceKey(oldFile));
-          if (!newFile) return item;
+          if (!target) return item;
           changed = true;
+          const {
+            managedSource: _managedSource,
+            managedFile: _managedFile,
+            dailySource: _dailySource,
+            dailyFile: _dailyFile,
+            dailyTaskType: _dailyTaskType,
+            ...preserved
+          } = item;
+          if (target.kind === 'daily') {
+            return {
+              ...preserved,
+              kind: 'daily',
+              dailySource: 'user',
+              dailyFile: target.file,
+              dailyTaskType: target.taskType,
+              path: oldPath,
+            };
+          }
           return {
-            ...item,
+            ...preserved,
             managedSource: 'user',
-            managedFile: newFile,
+            managedFile: target.file,
             path: oldPath,
           };
         }),
@@ -178,7 +297,7 @@ export class UserDataMigrationService {
         taskGroupsPath,
         JSON.stringify({
           ...raw,
-          version: 2,
+          version: 4,
           groups,
         }, null, 2),
       );
@@ -340,6 +459,163 @@ export class UserDataMigrationService {
       this.appPaths.userDataRoot(),
       '.migration-state.json',
     );
+  }
+
+  private migrateStoredLootPlanId(
+    target: string,
+    format: 'yaml' | 'json',
+  ): boolean {
+    const root = this.parseStructuredContent(
+      fs.readFileSync(target, 'utf-8'),
+      format,
+      path.basename(target),
+    );
+    const automation = format === 'yaml'
+      ? root.daily_automation
+      : root.automation;
+    if (!this.isPlainObject(automation)) return false;
+    const key = format === 'yaml' ? 'loot_plan_id' : 'lootPlanId';
+    const migrated = migrateLootPlanId(automation[key]);
+    if (!migrated || migrated === automation[key]) return false;
+
+    automation[key] = migrated;
+    const content = format === 'yaml'
+      ? yaml.dump(root, {
+        lineWidth: -1,
+        noCompatMode: true,
+        noRefs: true,
+        sortKeys: false,
+      })
+      : JSON.stringify(root, null, 2);
+    this.atomicFiles.write(target, content);
+    return true;
+  }
+
+  private migrateObsoleteTaskGroupPlans(target: string): boolean {
+    const root = this.parseTaskGroups(
+      fs.readFileSync(target, 'utf-8'),
+      '当前任务组',
+    );
+    let changed = false;
+    const groups = root.groups.map(group => {
+      if (!this.isPlainObject(group) || !Array.isArray(group.items)) {
+        return group;
+      }
+      return {
+        ...group,
+        items: group.items.map(item => {
+          if (!this.isPlainObject(item)) return item;
+          const file = this.obsoleteSystemPlanFile(item);
+          if (!file) return item;
+          const userFile = this.preserveObsoleteSystemPlan(file);
+          changed = true;
+          return {
+            ...item,
+            managedSource: 'user',
+            managedFile: userFile,
+          };
+        }),
+      };
+    });
+    if (!changed) return false;
+    this.atomicFiles.write(
+      target,
+      JSON.stringify({ ...root, groups }, null, 2),
+    );
+    return true;
+  }
+
+  private migrateObsoleteTemplatePlans(target: string): boolean {
+    const parsed = JSON.parse(fs.readFileSync(target, 'utf-8')) as unknown;
+    if (!Array.isArray(parsed)) {
+      throw new Error('用户模板文件根节点必须是数组');
+    }
+    let changed = false;
+    const templates = parsed.map(template => {
+      if (!this.isPlainObject(template)) return template;
+      const output = { ...template };
+      if (typeof output.planPath === 'string') {
+        const migrated = this.migrateObsoleteTemplatePath(output.planPath);
+        if (migrated) {
+          output.planPath = migrated;
+          changed = true;
+        }
+      }
+      if (Array.isArray(output.planPaths)) {
+        output.planPaths = output.planPaths.map(planPath => {
+          const migrated = this.migrateObsoleteTemplatePath(planPath);
+          if (migrated) changed = true;
+          return migrated ?? planPath;
+        });
+      }
+      return output;
+    });
+    if (!changed) return false;
+    this.atomicFiles.write(target, JSON.stringify(templates, null, 2));
+    return true;
+  }
+
+  private migrateObsoleteTemplatePath(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const normalized = value.replace(/\\/g, '/');
+    if (/(?:^|\/)user_battle_plans\//i.test(normalized)) return null;
+    const file = this.obsoletePlanFileName(value);
+    if (!file) return null;
+    return `user_battle_plans/${this.preserveObsoleteSystemPlan(file)}`;
+  }
+
+  private obsoleteSystemPlanFile(
+    item: Record<string, unknown>,
+  ): string | null {
+    if (item.managedSource === 'user') return null;
+    const pathValue = typeof item.path === 'string' ? item.path : '';
+    const isSystemReference = item.managedSource === 'system'
+      || /(?:system_battle_plans|builtin_plans|system[\\/])/i.test(pathValue);
+    if (!isSystemReference) return null;
+    const managedFile = typeof item.managedFile === 'string'
+      ? item.managedFile
+      : '';
+    return this.obsoletePlanFileName(managedFile)
+      ?? this.obsoletePlanFileName(pathValue);
+  }
+
+  private obsoletePlanFileName(value: string): string | null {
+    const file = value.split(/[\\/]/).pop() ?? '';
+    const normalized = OBSOLETE_SYSTEM_PLAN_ALIASES[file] ?? file;
+    return OBSOLETE_SYSTEM_PLAN_FILES.has(normalized)
+      ? normalized
+      : null;
+  }
+
+  private preserveObsoleteSystemPlan(file: string): string {
+    const source = path.join(
+      this.appPaths.resourceRoot(),
+      'resource',
+      'migrations',
+      'v6',
+      'system_battle_plans',
+      file,
+    );
+    if (!fs.existsSync(source)) {
+      throw new Error(`缺少 v6 迁移资源: ${file}`);
+    }
+    const content = fs.readFileSync(source, 'utf-8');
+    const directory = this.appPaths.userBattlePlansDir();
+    fs.mkdirSync(directory, { recursive: true });
+    const extension = path.extname(file);
+    const base = file.slice(0, -extension.length);
+    let suffix = 1;
+    let candidate = path.join(directory, file);
+    while (fs.existsSync(candidate)) {
+      if (fs.readFileSync(candidate, 'utf-8') === content) {
+        return path.basename(candidate);
+      }
+      const label = suffix === 1 ? '（旧版）' : `（旧版 ${suffix}）`;
+      candidate = path.join(directory, `${base}${label}${extension}`);
+      suffix += 1;
+    }
+    this.atomicFiles.write(candidate, content);
+    return path.basename(candidate);
   }
 
   private migrateStructuredFile(

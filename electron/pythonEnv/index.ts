@@ -29,6 +29,7 @@ export {
 export {
   resolveConfiguredCudaRoot,
   buildCudaEnvironment,
+  buildBackendRuntimeEnvironment,
 } from './cuda';
 
 export { checkEnvironment } from './envCheck';
@@ -41,5 +42,10 @@ export {
   installDependencies,
   pullUpdates,
 } from './installer';
+
+export {
+  MANAGED_AUTOWSGR_COMMIT,
+  MANAGED_AUTOWSGR_REQUIREMENT,
+} from './backendRequirement';
 
 export { type AutoUpdateDeps, autoUpdateAutowsgr } from './updater';

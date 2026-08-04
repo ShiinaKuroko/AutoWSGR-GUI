@@ -149,7 +149,7 @@
   display: flex;
   min-height: 0;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .battle-plan-preview-heading {
@@ -174,6 +174,40 @@
   min-height: 62px;
 }
 
+.loot-automation-plan-card {
+  position: relative;
+  padding-right: 60px;
+  cursor: pointer;
+}
+
+.loot-plan-add-button {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  height: 16px;
+  min-height: 16px;
+  padding: 0 5px;
+  color: #fff;
+  background: #2563eb;
+  border-color: #2563eb;
+  border-radius: var(--radius-pill);
+  font-size: 9px;
+  font-weight: 400;
+  line-height: 1;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+  }
+
+  &:disabled {
+    color: var(--text-muted);
+    background: var(--bg-inset);
+    border-color: var(--border);
+  }
+}
+
 .fleet-team-loader-item .battle-plan-loader-item-file,
 .fleet-team-loader-item .battle-plan-loader-item-meta {
   width: 100%;
@@ -193,10 +227,13 @@
 
 .battle-plan-preview-body {
   display: grid;
+  flex: 1 1 auto;
   min-height: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
   gap: 7px;
   padding-top: 8px;
+  overflow-y: auto;
 }
 
 .battle-plan-preview-field {
@@ -343,6 +380,71 @@
   font-size: 11px;
 }
 
+.loot-plan-list-preview {
+  display: flex;
+  min-width: 0;
+  max-height: 150px;
+  min-height: 0;
+  flex-direction: column;
+  grid-column: 1 / -1;
+  overflow: hidden;
+}
+
+.loot-plan-list-preview-heading {
+  flex: 0 0 auto;
+
+  > span {
+    flex: 0 0 auto;
+    color: var(--text-muted);
+    font-size: 9px;
+  }
+}
+
+.loot-plan-list-preview-cards {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: 1fr;
+  gap: 5px;
+  padding-top: 6px;
+  overflow-y: auto;
+}
+
+.loot-plan-list-preview-card {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  padding: 3px 6px;
+  background: var(--bg-card-solid);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+
+  strong {
+    overflow: hidden;
+    color: var(--text);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.loot-plan-delete-button {
+  flex: 0 0 auto;
+  height: 16px;
+  min-height: 16px;
+  padding: 0 4px;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+  font-size: 9px;
+  line-height: 1;
+}
+
 @media (max-width: 620px) {
   .fleet-team-loader-content.battle-plan-loader-content {
     grid-template-columns: 1fr;
@@ -358,6 +460,7 @@
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  animation: floating-backdrop-in 160ms ease-out both;
 }
 
 .fleet-edit-dialog {
@@ -367,6 +470,14 @@
   padding: 20px;
   width: 400px;
   max-width: 90vw;
+  animation: floating-surface-in 160ms cubic-bezier(0.2, 0.72, 0.2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fleet-edit-overlay,
+  .fleet-edit-dialog {
+    animation-duration: 1ms;
+  }
 }
 
 .fleet-edit-dialog h3 {

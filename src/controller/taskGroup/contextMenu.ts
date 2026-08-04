@@ -5,7 +5,7 @@
 import type { TaskGroupModel } from '../../model/TaskGroupModel';
 import type { Scheduler } from '../../model/scheduler';
 import { PlanModel } from '../../model/PlanModel';
-import { loadMapData, loadExMapData, loadEventMapData } from '../../model/MapDataLoader';
+import { loadMapData, loadEventMapData } from '../../model/MapDataLoader';
 import type { MapData } from '../../model/MapDataLoader';
 import type { TaskPreset } from '../../types/model.js';
 import type { PlanPresetSource } from '../../types/ipc.js';
@@ -63,6 +63,14 @@ export async function handleContextMenuEdit(
       Logger.info(`模板「${item.label}」请在模板库中查看和编辑`);
       return;
     }
+    if (item.kind === 'daily') {
+      Logger.info(
+        item.dailyTaskType === 'decisive'
+          ? `决战日常任务「${item.label}」请在决战计划页面编辑`
+          : `日常任务「${item.label}」由日常任务浮窗管理`,
+      );
+      return;
+    }
     if (item.managedSource && item.managedFile) {
       await host.openManagedPlan(item.managedFile, item.managedSource);
       return;
@@ -74,8 +82,7 @@ export async function handleContextMenuEdit(
     await openItemForEdit(item.path!, item.kind, host);
   } else {
     const taskId = target.id as string;
-    const running = host.scheduler.currentRunningTask;
-    const task = (running?.id === taskId) ? running : host.scheduler.taskQueue.find(t => t.id === taskId);
+    const task = host.scheduler.findTask(taskId);
     if (!task) return;
 
     const req = task.request;
@@ -111,9 +118,7 @@ export async function openItemForEdit(
       const { chapter, map } = plan.data;
       const mapData = plan.isEvent
         ? await loadEventMapData(plan.data.event ?? '', chapter, map)
-        : chapter === 99
-          ? await loadExMapData(Number(map))
-          : await loadMapData(Number(chapter), Number(map));
+        : await loadMapData(Number(chapter), Number(map));
       host.setCurrentPlan(plan, mapData);
       host.renderPlanPreview();
     }

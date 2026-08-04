@@ -52,7 +52,7 @@ interface TaskTemplate {
 | 来源 | 文件 | 可写 |
 |------|------|------|
 | **内置** | `resource/builtin_templates.json` | 只读 |
-| **用户** | `templates/templates.json` | 可读写 |
+| **用户** | `userData/templates/templates.json` | 可读写 |
 
 `TemplateModel.init()` 在启动时合并两个来源，内置模板的 `builtin: true` 标识确保不可删除。
 
@@ -87,6 +87,20 @@ flowchart LR
 | `TemplateWizardView` | `TemplateWizardView.ts` | 创建向导多步骤表单（含舰船自动补全） |
 | `SelectorDialog` | `SelectorDialog.ts` | 通用选择器弹窗（单选/多选方案、战役、舰队等） |
 
+### 当前兼容状态
+
+`TemplateModel` 和 `TemplateController` 仍在应用启动时初始化，这是兼容性要求，
+不是可删除的闲置代码：
+
+- 旧任务组的 `kind: "template"` 条目仍通过 `TemplateModel` 解析和执行。
+- 自动决战的 `system_preset` 仍读取内置模板 `builtin_decisive_6`。
+- 用户模板文件仍需加载、保存和迁移，不能在没有数据迁移的情况下删除。
+
+当前计划页没有挂载独立模板库导航和 `template-library-*` 容器，因此
+`TemplateLibraryView` 的列表与创建/导入入口不会作为独立页面显示。模板系统的
+新入口和创建流程由后续界面方案承接；在新方案完成数据与执行迁移前，必须保留
+上述 Model、Controller 和 `kind: "template"` 执行链路。
+
 ---
 
 ## 任务组系统
@@ -107,11 +121,16 @@ interface TaskGroup {
 }
 
 interface TaskGroupItem {
-  kind: 'plan' | 'template';    // 类型
-  path?: string;                 // 方案文件路径（kind=plan）
+  kind: 'plan' | 'preset' | 'template';
+  managedSource?: 'system' | 'user'; // 当前受管计划来源
+  managedFile?: string;          // 当前受管计划文件名
+  path?: string;                 // 只为旧格式兼容保留
   templateId?: string;           // 模板 ID（kind=template）
   times: number;                 // 执行次数
   label: string;                 // 显示标签
+  fleet_id?: number;             // 可选舰队覆盖
+  forceRetry?: boolean;          // 可选强制重试
+  allowPolling?: boolean;        // 可选同优先级轮询
   fleetPresetIndex?: number;     // 可选的编队预设覆盖
 }
 ```

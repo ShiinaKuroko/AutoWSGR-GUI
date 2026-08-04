@@ -46,11 +46,12 @@ Controller 目录 barrel，内部代码使用明确模块路径。
 | 文件 | 职责 |
 |------|------|
 | `AppController.ts` | 根控制器类：初始化子控制器、实现 Host 接口、协调全局状态 |
+| `AutomaticDecisiveTask.ts` | 分别从用户决战计划和系统预设构造自动决战请求 |
 | `ConfigController.ts` | 配置保存逻辑：从表单收集 → 更新 ConfigModel → 同步 CronScheduler/Scheduler → 写文件 |
 | `SettingsController.ts` | 设置页操作：环境与 ADB 检测、舰船库、更新检查和主题交互 |
 | `NavigationController.ts` | 页面和方案标签导航 |
 | `OperationsController.ts` | 远征收取和奖励领取等常用操作 |
-| `SchedulerBinder.ts` | 调度器回调绑定：将 Scheduler/CronScheduler 的回调连接到 UI 更新，管理远征/演习/战役等待中任务的 ID 跟踪 |
+| `SchedulerBinder.ts` | 绑定 Scheduler/CronScheduler 回调，按稳定 `logicalId` 管理等待任务并维护今日出征统计 |
 | `rendering.ts` | 渲染分发：构建 `MainViewObject` → 调用 `MainView.render()` |
 | `theme.ts` | 主题管理：亮色/暗色/自动切换、强调色应用 |
 | `constants.ts` | 常量定义 |
@@ -63,6 +64,7 @@ interface SchedulerBinderHost {
   readonly cronScheduler: CronScheduler;
   readonly api: ApiClient;
   readonly templateModel: TemplateModel;
+  readonly configModel: ConfigModel;
   renderMain(): void;
   updateOpsAvailability(connected: boolean): void;
 }
@@ -137,9 +139,12 @@ flowchart TD
 |------|------|
 | `PlanController.ts` | 方案子控制器类：持有当前方案状态，协调下属模块 |
 | `BattlePlanLoaderController.ts` | 独立持有受管方案选择器状态，加载、筛选并返回最终选择 |
+| `DecisivePlanController.ts` | 持有决战舰队草稿，协调设置读取、编辑和保存 |
+| `FleetPlannerController.ts` | 持有普通舰队草稿，协调舰船库、计划持久化、覆盖冲突和文件 identity |
 | `presetFlow.ts` | 任务预设的导入/查看/关闭/执行流程 |
 | `nodeEditor.ts` | 节点编辑器：从 UI 收集节点阵型/夜战/索敌规则并写回 PlanData |
 | `rendering.ts` | 构建 `PlanPreviewViewObject`，协调地图数据和方案数据的合并 |
+| `selectedNodes.ts` | 规范化节点选择顺序并生成后端需要的节点列表 |
 
 **PlanHost 接口**：
 
@@ -162,6 +167,9 @@ interface PlanHost {
 |------|------|
 | `TaskGroupController.ts` | 任务组子控制器类：绑定视图事件，协调下属模块 |
 | `addItems.ts` | 向任务组添加项目：从当前方案/文件/预设添加 |
+| `DailyTaskLoaderController.ts` | 管理日常任务浮窗的分类、参数和加入列表/队列动作 |
+| `TaskListLoaderController.ts` | 解析外部任务列表并协调批量载入 |
+| `managedPlanReader.ts` | 读取受管作战计划并统一用户/系统来源信息 |
 | `queueLoader.ts` | 加载任务组到调度队列：逐项构建 TaskRequest → `Scheduler.addTask()` |
 | `metaLoader.ts` | 加载任务项的元数据（方案标题、模板名称）用于 UI 显示 |
 | `contextMenu.ts` | 右键上下文菜单：编辑/删除/复制任务项 |
@@ -181,6 +189,8 @@ interface TaskGroupHost {
   closePresetDetail(): void;
   executePreset(): void;
   getCurrentPresetInfo(): { preset: TaskPreset; filePath: string } | null;
+  pickManagedBattlePlan(): Promise<ManagedBattlePlanSelection | null>;
+  openManagedPlan(file: string, source: PlanPresetSource): Promise<boolean>;
 }
 ```
 

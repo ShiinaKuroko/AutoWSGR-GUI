@@ -5,8 +5,18 @@ import type {
   GuiAutomationSettings,
   TaskPreset,
 } from './model.js';
+import type {
+  LegacyDecisiveAutomationSettings,
+} from '../shared/legacyDecisiveAutomation.js';
+import type {
+  MigrationConflictListResult,
+  MigrationConflictResolutionResult,
+} from '../shared/migrationConflicts.js';
 
 export type { GuiAutomationSettings } from './model.js';
+export type {
+  LegacyDecisiveAutomationSettings,
+} from '../shared/legacyDecisiveAutomation.js';
 
 export interface WindowPreferences {
   defaultWidth: number;
@@ -63,6 +73,7 @@ export type GuiUpdateStatus =
     };
 
 export type PlanPresetSource = 'system' | 'user';
+export type DailyPlanType = 'exercise' | 'campaign' | 'decisive';
 
 export interface UserTeamShipRule {
   name: string;
@@ -150,6 +161,33 @@ export interface ManagedBattlePlanSelection {
   fleetPresetIndex?: number;
 }
 
+export interface ManagedDailyPlan {
+  source: PlanPresetSource;
+  file: string;
+  name: string;
+  taskType: DailyPlanType;
+  times: number;
+  fleetId?: number;
+  campaignName?: string;
+  chapter?: number;
+  useQuickRepair?: boolean;
+}
+
+export interface DailyPlanListResult {
+  plans: ManagedDailyPlan[];
+  errors: Array<{
+    source: PlanPresetSource;
+    file: string;
+    message: string;
+  }>;
+}
+
+export interface DailyPlanSelection {
+  plan: ManagedDailyPlan;
+  times: number;
+  useQuickRepair?: boolean;
+}
+
 export interface PlanFileReadError {
   file: string;
   source: PlanPresetSource;
@@ -180,7 +218,7 @@ export interface UserPlanExportResult {
 
 export interface PlanFileOperationResult {
   success: boolean;
-  kind?: 'battle' | 'preset';
+  kind?: 'battle' | 'preset' | 'daily';
   canceled?: boolean;
   exists?: boolean;
   file?: string;
@@ -304,7 +342,10 @@ export interface ElectronBridge {
     success: boolean;
     message?: string;
   }>;
-  installGuiUpdate: () => void;
+  installGuiUpdate: () => Promise<{
+    success: boolean;
+    message?: string;
+  }>;
   onUpdateStatus: (
     callback: (status: GuiUpdateStatus) => void,
   ) => void;
@@ -320,6 +361,9 @@ export interface ElectronBridge {
   setGuiAutomationSettings: (
     settings: GuiAutomationSettings,
   ) => Promise<GuiAutomationSettings>;
+  migrateLegacyDecisiveAutomation: (
+    settings: LegacyDecisiveAutomationSettings,
+  ) => Promise<LegacyDecisiveAutomationSettings>;
   getDecisivePlanSettings: () => Promise<DecisivePlanSettings>;
   setDecisivePlanSettings: (
     settings: DecisivePlanSettings,
@@ -364,6 +408,24 @@ export interface ElectronBridge {
   pickUserTeamPlan: () => Promise<UserTeamPlanResult>;
   listTeamPlans: () => Promise<UserTeamPlanListResult>;
   getPlanManagement: () => Promise<PlanManagementResult>;
+  listDailyPlans: () => Promise<DailyPlanListResult>;
+  readDailyPlan: (
+    source: PlanPresetSource,
+    file: string,
+  ) => Promise<PlanFileOperationResult>;
+  getDailyDecisivePlan: (
+    chapter: number,
+  ) => Promise<DecisivePlanSettings>;
+  getSystemDailyDecisivePlan: (
+    chapter: number,
+  ) => Promise<DecisivePlanSettings>;
+  saveDailyDecisivePlan: (
+    settings: DecisivePlanSettings,
+  ) => Promise<DecisivePlanSettings>;
+  getMigrationConflicts: () => Promise<MigrationConflictListResult>;
+  resolveMigrationConflicts: (
+    keepIds: string[],
+  ) => Promise<MigrationConflictResolutionResult>;
   exportUserPlans: (
     selections: UserPlanExportSelection[],
   ) => Promise<UserPlanExportResult>;
@@ -390,7 +452,6 @@ export interface ElectronBridge {
     content: string,
     overwrite?: boolean,
     currentFile?: string,
-    source?: PlanPresetSource,
   ) => Promise<PlanFileOperationResult>;
   renameUserCombatPlan: (
     file: string,

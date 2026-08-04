@@ -3,10 +3,18 @@ import type {
   ManagedBattlePlan,
   PlanPresetSource,
 } from '../../types/ipc.js';
+import {
+  lootAutomationPlanKey,
+  type LootAutomationPlan,
+} from '../../shared/lootPlans.js';
 import { appendTeamPlanCardContent } from './TeamPlanListUi';
 
 export type BattlePlanLoaderPurpose =
-  'editor' | 'queue' | 'task-list' | 'automation';
+  | 'editor'
+  | 'queue'
+  | 'task-list'
+  | 'automation'
+  | 'loot-automation';
 
 export type BattlePlanSortField = 'name' | 'modifiedAt';
 
@@ -18,6 +26,8 @@ export interface BattlePlanLoaderCallbacks {
   onSortFieldChange(field: BattlePlanSortField): void;
   onSelectPlan(file: string, source: PlanPresetSource): void;
   onSelectFleet(index: number): void;
+  onAddLootPlan(file: string, source: PlanPresetSource): void;
+  onDeleteLootPlan(source: PlanPresetSource, file: string): void;
   onConfirm(): void;
 }
 
@@ -33,6 +43,7 @@ export interface BattlePlanLoaderViewObject {
   selectedPlan: ManagedBattlePlan | null;
   selectedFleetIndex: number | null;
   purpose: BattlePlanLoaderPurpose;
+  lootPlans: LootAutomationPlan[];
 }
 
 export class BattlePlanLoaderView {
@@ -79,6 +90,17 @@ export class BattlePlanLoaderView {
     document.getElementById('battle-plan-loader-list')?.addEventListener(
       'click',
       (event) => {
+        const addButton = (
+          event.target as HTMLElement
+        ).closest<HTMLButtonElement>('[data-loot-plan-add]');
+        if (addButton) {
+          const file = addButton.dataset['lootPlanFile'];
+          const source = addButton.dataset['lootPlanSource'];
+          if (file && (source === 'system' || source === 'user')) {
+            callbacks.onAddLootPlan(file, source);
+          }
+          return;
+        }
         const button = (event.target as HTMLElement).closest<HTMLButtonElement>(
           '[data-battle-plan-file]',
         );
@@ -92,6 +114,18 @@ export class BattlePlanLoaderView {
         }
       },
     );
+    document.getElementById(
+      'battle-plan-loader-preview-body',
+    )?.addEventListener('click', (event) => {
+      const button = (
+        event.target as HTMLElement
+      ).closest<HTMLButtonElement>('[data-loot-plan-delete]');
+      const file = button?.dataset['lootPlanFile'];
+      const source = button?.dataset['lootPlanSource'];
+      if (file && (source === 'system' || source === 'user')) {
+        callbacks.onDeleteLootPlan(source, file);
+      }
+    });
     document.getElementById('btn-confirm-battle-plan-loader')?.addEventListener(
       'click',
       () => callbacks.onConfirm(),
@@ -157,6 +191,7 @@ export class BattlePlanLoaderView {
     const pickingForQueue = purpose === 'queue';
     const pickingForTaskList = purpose === 'task-list';
     const pickingForAutomation = purpose === 'automation';
+    const pickingForLootAutomation = purpose === 'loot-automation';
     const title = document.getElementById('battle-plan-loader-title');
     const description = document.getElementById(
       'battle-plan-loader-description',
@@ -171,6 +206,8 @@ export class BattlePlanLoaderView {
           ? '添加计划到任务列表'
           : pickingForAutomation
             ? '加载自动出征计划'
+            : pickingForLootAutomation
+              ? '加载自动胖次计划'
             : '加载出征配置';
     }
     if (description) {
@@ -180,6 +217,8 @@ export class BattlePlanLoaderView {
           ? '选择作战计划；计划包含编队时需选择本次使用的编队。'
           : pickingForAutomation
             ? '选择自动出征使用的作战计划和队伍。'
+            : pickingForLootAutomation
+              ? '将系统或用户出征计划加入自动胖次下拉列表。'
             : '读取系统与用户作战计划目录中的合法 YAML 配置。';
     }
     if (confirm) {
@@ -187,7 +226,9 @@ export class BattlePlanLoaderView {
         ? '加入队列'
         : pickingForTaskList
           ? '添加到列表'
-          : '加载';
+          : pickingForLootAutomation
+            ? '确认'
+            : '加载';
     }
   }
 
@@ -221,20 +262,28 @@ export class BattlePlanLoaderView {
         ? '未读取到合法的作战配置'
         : '没有符合当前条件的作战配置';
       list.append(empty);
-      this.clearSelection();
+      this.clearSelection(vo.purpose, vo.lootPlans);
       return;
     }
 
+    const lootPlanKeys = new Set(
+      vo.lootPlans.map(plan => lootAutomationPlanKey(plan)),
+    );
     vo.plans.forEach((plan) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'fleet-team-loader-item battle-plan-loader-item';
-      button.dataset['battlePlanFile'] = plan.file;
-      button.dataset['battlePlanSource'] = plan.source;
-      button.classList.toggle(
+      const card = document.createElement(
+        vo.purpose === 'loot-automation' ? 'div' : 'button',
+      );
+      if (card instanceof HTMLButtonElement) card.type = 'button';
+      card.className = 'fleet-team-loader-item battle-plan-loader-item';
+      card.dataset['battlePlanFile'] = plan.file;
+      card.dataset['battlePlanSource'] = plan.source;
+      card.classList.toggle(
         'active',
         this.sameBattlePlan(plan, vo.selectedPlan),
       );
+      if (vo.purpose === 'loot-automation') {
+        card.classList.add('loot-automation-plan-card');
+      }
 
       const heading = document.createElement('div');
       heading.className = 'fleet-team-loader-item-heading';
@@ -256,14 +305,27 @@ export class BattlePlanLoaderView {
         : plan.modifiedAt > 0
           ? `${this.battlePlanMapLabel(plan)} · ${plan.fleetCount} 支关联编队`
           : `${plan.fleetCount} 支关联编队 · 重启后显示完整摘要`;
-      button.append(heading, fileName, meta);
-      list.append(button);
+      card.append(heading, fileName, meta);
+      if (vo.purpose === 'loot-automation') {
+        const addButton = document.createElement('button');
+        const added = lootPlanKeys.has(lootAutomationPlanKey(plan));
+        addButton.type = 'button';
+        addButton.className = 'btn btn-small btn-primary loot-plan-add-button';
+        addButton.dataset['lootPlanAdd'] = 'true';
+        addButton.dataset['lootPlanFile'] = plan.file;
+        addButton.dataset['lootPlanSource'] = plan.source;
+        addButton.textContent = added ? '已加入' : '加入列表';
+        addButton.disabled = added;
+        card.append(addButton);
+      }
+      list.append(card);
     });
     if (vo.selectedPlan) {
       this.renderPreview(
         vo.selectedPlan,
         vo.selectedFleetIndex,
         vo.purpose,
+        vo.lootPlans,
       );
     }
   }
@@ -272,6 +334,7 @@ export class BattlePlanLoaderView {
     plan: ManagedBattlePlan,
     selectedFleetIndex: number | null,
     purpose: BattlePlanLoaderPurpose,
+    lootPlans: LootAutomationPlan[],
   ): void {
     const title = document.getElementById('battle-plan-loader-preview-title');
     const badge = document.getElementById('battle-plan-loader-preview-source');
@@ -303,7 +366,7 @@ export class BattlePlanLoaderView {
           ),
         );
       } else {
-        body.replaceChildren(
+        const children: HTMLElement[] = [
           this.createPreviewField('章节关卡', this.battlePlanMapLabel(plan)),
           this.createPreviewField(
             '执行次数',
@@ -325,16 +388,69 @@ export class BattlePlanLoaderView {
             selectedFleetIndex,
             purpose,
           ),
-          this.createStopPreview(plan, hasDetails),
-        );
+        ];
+        if (purpose === 'loot-automation') {
+          children.push(this.createLootPlanListPreview(plan.name, lootPlans));
+        } else {
+          children.push(this.createStopPreview(plan, hasDetails));
+        }
+        body.replaceChildren(...children);
       }
     }
     if (confirmButton) {
-      confirmButton.disabled = (
+      confirmButton.disabled = purpose === 'loot-automation'
+        ? false
+        : (
         this.requiresFleetSelection(plan, purpose)
         && selectedFleetIndex === null
-      );
+        );
     }
+  }
+
+  private createLootPlanListPreview(
+    selectedName: string,
+    plans: readonly LootAutomationPlan[],
+  ): HTMLElement {
+    const section = document.createElement('section');
+    section.className = (
+      'battle-plan-preview-section wide loot-plan-list-preview'
+    );
+    const heading = document.createElement('div');
+    heading.className = (
+      'battle-plan-preview-heading loot-plan-list-preview-heading'
+    );
+    const title = document.createElement('h3');
+    title.textContent = `列表预览：${selectedName}`;
+    const note = document.createElement('span');
+    note.textContent = '设置自动胖次的下拉列表';
+    heading.append(title, note);
+    const list = document.createElement('div');
+    list.className = 'loot-plan-list-preview-cards';
+    if (plans.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'battle-plan-preview-empty';
+      empty.textContent = '列表为空，请从左侧加入计划';
+      list.append(empty);
+    } else {
+      plans.forEach((plan) => {
+        const card = document.createElement('div');
+        card.className = 'loot-plan-list-preview-card';
+        const name = document.createElement('strong');
+        name.textContent = plan.name;
+        name.title = plan.name;
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'btn btn-small loot-plan-delete-button';
+        remove.dataset['lootPlanDelete'] = 'true';
+        remove.dataset['lootPlanFile'] = plan.file;
+        remove.dataset['lootPlanSource'] = plan.source;
+        remove.textContent = '删除';
+        card.append(name, remove);
+        list.append(card);
+      });
+    }
+    section.append(heading, list);
+    return section;
   }
 
   private createPreviewField(
@@ -453,7 +569,10 @@ export class BattlePlanLoaderView {
     return field;
   }
 
-  private clearSelection(): void {
+  private clearSelection(
+    purpose: BattlePlanLoaderPurpose,
+    lootPlans: readonly LootAutomationPlan[],
+  ): void {
     const title = document.getElementById('battle-plan-loader-preview-title');
     const badge = document.getElementById('battle-plan-loader-preview-source');
     const body = document.getElementById('battle-plan-loader-preview-body');
@@ -463,12 +582,20 @@ export class BattlePlanLoaderView {
     if (title) title.textContent = '配置预览：未选择';
     if (badge) badge.hidden = true;
     if (body) {
-      const empty = document.createElement('div');
-      empty.className = 'fleet-team-loader-preview-empty';
-      empty.textContent = '从左侧选择一个出征配置查看摘要';
-      body.replaceChildren(empty);
+      if (purpose === 'loot-automation') {
+        body.replaceChildren(
+          this.createLootPlanListPreview('未选择', lootPlans),
+        );
+      } else {
+        const empty = document.createElement('div');
+        empty.className = 'fleet-team-loader-preview-empty';
+        empty.textContent = '从左侧选择一个出征配置查看摘要';
+        body.replaceChildren(empty);
+      }
     }
-    if (confirmButton) confirmButton.disabled = true;
+    if (confirmButton) {
+      confirmButton.disabled = purpose !== 'loot-automation';
+    }
   }
 
   private isPickingWithFleet(purpose: BattlePlanLoaderPurpose): boolean {

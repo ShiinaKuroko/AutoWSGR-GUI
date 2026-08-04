@@ -51,8 +51,8 @@ external 后端模式使用用户指定的本地 AutoWSGR 仓库。路径不存�
 
 `main.ts` 只创建 Service 并调用注册函数。通道按领域位于
 `electron/ipc/`：`FileIpc`、`DeviceIpc`、`ConfigurationIpc`、
-`TeamPlanIpc`、`CombatPlanIpc`、`ShipLibraryIpc`、`EnvironmentIpc`、
-`BackendIpc` 和 `UpdaterIpc`。
+`TeamPlanIpc`、`CombatPlanIpc`、`DailyPlanIpc`、`ShipLibraryIpc`、
+`EnvironmentIpc`、`BackendIpc` 和 `UpdaterIpc`。
 
 Adapter 允许处理 Electron 对话框、同步 `event.returnValue` 和边界异常转换，
 但不得实现配置默认值、YAML 解析、路径规则或进程状态。同步 getter 使用
@@ -92,6 +92,19 @@ Adapter 允许处理 Electron 对话框、同步 `event.returnValue` 和边界�
 渲染进程不能提交外部绝对路径；冲突覆盖也由主进程在同一次用户操作中确认。
 `exportUserPlans()` 只接收计划类型和文件名，主进程从用户受管目录重新定位并
 校验文件；系统预设不能导出，ZIP 输出路径由保存对话框授权。
+
+#### 日常计划管理
+
+| 方法 | 说明 |
+|------|------|
+| `listDailyPlans()` | 合并只读系统计划和用户计划，同名时用户版本优先 |
+| `readDailyPlan(source, file)` | 按受管来源和文件名读取日常计划 |
+| `getDailyDecisivePlan(chapter)` | 读取用户优先的指定章节决战计划 |
+| `getSystemDailyDecisivePlan(chapter)` | 读取只读系统决战计划 |
+| `saveDailyDecisivePlan(settings)` | 写入 `userData/user_daily_plans/` 并同步决战设置 |
+
+`DailyPlanService` 只接受演习、战役和决战三类计划。Renderer 只提交受管来源、
+文件名或结构化设置，不能把任意路径传给日常计划 IPC。
 
 #### 路径查询
 
@@ -140,6 +153,24 @@ Adapter 允许处理 Electron 对话框、同步 `event.returnValue` 和边界�
 | `installGuiUpdate()` | 安装更新并重启 |
 | `onUpdateStatus(callback)` | 监听更新状态变化 |
 
+`checkGuiUpdates()` 返回严格三态，不允许把异常当成“最新版”：
+
+```typescript
+type GuiUpdateCheckResult =
+  | { status: 'available'; version: string }
+  | { status: 'up-to-date' }
+  | { status: 'error'; message: string };
+```
+
+`GuiUpdatePolicy` 根据当前应用版本选择并校验频道：稳定版 `X.Y.Z` 使用
+`latest`，预发布版 `X.Y.Z-beta.N` 使用 `beta`，开发版 `X.Y.Z-dev.N` 使用
+`dev`。候选版本不属于当前频道时检查失败，不允许回退读取其他频道清单。
+
+安装更新前，`UpdaterIpc` 必须等待共享的 `stopBackend()` 完成。关闭流程依次
+调用后端 `/api/system/stop`、终止服务进程树、等待 `close`；超时后才强制
+终止并再次等待。任何阶段无法确认进程树退出都会返回错误并阻止
+`quitAndInstall()`，避免任务运行中安装或 Windows 文件锁损坏升级。
+
 #### 事件监听
 
 | 方法 | 事件 | 说明 |
@@ -185,7 +216,7 @@ interface ApiResponse<T = unknown> {
 | 方法 | 端点 | 超时 | 说明 |
 |------|------|------|------|
 | POST | `/api/system/start` | 300s | 连接模拟器 + 启动游戏 |
-| POST | `/api/system/stop` | - | 断开连接 |
+| POST | `/api/system/stop` | - | 优雅停止当前系统任务并释放后端资源 |
 | GET | `/api/system/status` | - | 系统状态查询 |
 | GET | `/api/system/emulator/devices` | 15s | ADB 设备列表 |
 

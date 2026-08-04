@@ -55,16 +55,6 @@ export class TemplateLibraryView {
     }).join('');
   }
 
-  /** 填充决战模板下拉列表（配置页用） */
-  populateDecisiveSelect(options: { id: string; name: string }[], selectedId?: string): void {
-    const sel = document.getElementById('cfg-decisive-template') as HTMLSelectElement | null;
-    if (!sel) return;
-    const desiredVal = selectedId ?? sel.value;
-    sel.innerHTML = '<option value="">未选择</option>' +
-      options.map(o => `<option value="${o.id}">${this.esc(o.name)}</option>`).join('');
-    sel.value = desiredVal;
-  }
-
   private esc(s: string): string {
     const d = document.createElement('span');
     d.textContent = s;

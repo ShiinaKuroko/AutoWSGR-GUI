@@ -182,14 +182,12 @@ export function registerCombatPlanIpc(
       content: string,
       overwrite: boolean,
       currentFile?: string,
-      rawSource?: PlanPresetSource,
     ) => {
       return dependencies.plans.saveManaged(
         rawName,
         content,
         overwrite,
         currentFile,
-        rawSource,
       );
     },
   );

@@ -47,23 +47,40 @@ interface UserSettings {
 
 | 字段 | 类型 | 默认 | 说明 |
 |------|------|------|------|
-| `auto_expedition` | `boolean` | `true` | 自动远征 |
-| `expedition_interval` | `number` | `15` | 远征检查间隔（分钟，1~120） |
+| `auto_expedition` | `boolean` | `false` | 自动远征 |
+| `auto_gain_bonus` | `boolean` | `false` | 自动领取奖励 |
+| `auto_bath_repair` | `boolean` | `false` | 自动浴室修理 |
+| `auto_set_support` | `boolean` | `false` | 自动设置支援 |
+| `bath_repair_blacklist` | `string[]` | `[]` | 浴室修理黑名单 |
 | `auto_exercise` | `boolean` | `false` | 自动演习 |
-| `exercise_fleet_id` | `number` | `1` | 演习舰队 (1~4) |
+| `exercise_fleet_id` | `number?` | `null` | 演习舰队 (1~4) |
 | `auto_battle` | `boolean` | `false` | 自动战役 |
 | `battle_type` | `string` | `"困难潜艇"` | 战役类型 |
-| `battle_times` | `number` | `3` | 战役次数 |
 | `auto_normal_fight` | `boolean` | `false` | 自动常规出击 |
-| `auto_decisive` | `boolean` | `false` | 自动决战 |
-| `decisive_ticket_reserve` | `number` | `0` | 决战票保留数 |
-| `decisive_template_id` | `string` | `""` | 决战模板 ID |
-| `auto_loot` | `boolean` | `false` | 自动刷战利品 |
-| `loot_plan_index` | `number` | `0` | 旧版战利品方案索引，读取后迁移 |
-| `loot_stop_count` | `number` | `50` | 战利品停止数量 |
+| `normal_fight_tasks` | `NormalFightTaskConfig[]` | `[]` | 自动出击任务及顺序 |
+| `quick_repair_limit` | `number?` | `null` | 快修限制 |
+| `stop_max_ship` | `boolean` | `false` | 船坞满时停止 |
+| `stop_max_loot` | `boolean` | `false` | 战利品满时停止 |
 
-当前战利品方案保存在 `gui_settings.json` 的
-`automation.lootPlanId`，值为系统计划文件名，不再依赖模板数组顺序。
+#### GuiAutomationSettings — GUI 自动化
+
+这些字段仅属于 GUI 调度器，保存在 `gui_settings.json.automation`，不会写回
+`usersettings.yaml`：
+
+| 字段 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `expeditionInterval` | `number` | `15` | 远征检查间隔（分钟，1~120） |
+| `battleTimes` | `number` | `3` | 每日战役次数 |
+| `autoDecisive` | `boolean` | `false` | 每日自动决战 |
+| `decisiveTemplateId` | `string` | `"builtin_decisive_6"` | 决战模板 ID |
+| `autoLoot` | `boolean` | `false` | 每日自动刷胖次 |
+| `lootPlanId` | `string` | 内置稳定 ID | 系统出征计划文件名 |
+| `lootStopCount` | `number` | `50` | 胖次停止数量（1~50） |
+
+旧版 YAML 中的 `expedition_interval`、`battle_times`、胖次字段和决战字段会在
+启动时迁移。`auto_decisive` 与 `decisive_template_id` 升级为正式 automation；
+`decisive_ticket_reserve` 只原样归档到 `legacy_decisive_automation`，不参与
+执行轮数。独立的 `decisive_plan` 不会被旧字段覆盖。
 
 ---
 
@@ -108,7 +125,7 @@ flowchart LR
   subgraph Side["副作用"]
     Cron["CronScheduler"]
     Sched["Scheduler"]
-    IPC["Electron IPC"]
+    IPC["Electron IPC / GuiConfigurationService"]
   end
 
   YAML -->|"bridge.readFile()"| AC
@@ -120,6 +137,8 @@ flowchart LR
   CC -->|"update()"| CM
   CM -->|"toYaml()"| CC
   CC -->|"bridge.saveFile()"| YAML
+  CC -->|"setGuiAutomation()"| IPC
+  IPC -->|"顶层浅合并"| GUI
   CC -->|"updateConfig()"| Cron
   CC -->|"setExpeditionInterval()"| Sched
   AC -->|"setBackendPort()"| IPC
@@ -139,7 +158,8 @@ flowchart LR
 3. `ConfigController.saveConfig()` 执行以下操作：
    - 保存 UI 偏好到 `localStorage`（主题、调试模式）
    - 调用 `bridge.setBackendPort()` 更新端口（需重启生效）
-   - 调用 `ConfigModel.update()` 深合并
+   - 调用 `ConfigModel.update()` 深合并后端配置
+   - 调用 `setGuiAutomation()` 保存 GUI 私有自动化字段
    - 同步 `CronScheduler.updateConfig()` 更新定时任务规则
    - 同步 `Scheduler.setExpeditionInterval()` 更新远征检查间隔
    - 序列化写入 `usersettings.yaml`
@@ -191,7 +211,16 @@ flowchart LR
   "backend_repo_path": "",
   "ocr_gpu_mode": "auto",
   "cuda_path": "",
-  "save_backend_screenshots": false
+  "save_backend_screenshots": false,
+  "automation": {
+    "expeditionInterval": 15,
+    "battleTimes": 3,
+    "autoDecisive": false,
+    "decisiveTemplateId": "builtin_decisive_6",
+    "autoLoot": false,
+    "lootPlanId": "bettle-old-8-5AI六潜胖次.yaml",
+    "lootStopCount": 50
+  }
 }
 ```
 
@@ -199,7 +228,9 @@ flowchart LR
 - `python_path`：用户手动指定的 Python 路径（空字符串 = 自动检测）
 - `backend_startup_mode`：`managed` 使用 GUI 管理的环境，`external` 使用指定仓库
 - `ocr_gpu_mode` / `cuda_path`：OCR GPU 模式与 CUDA 路径
-- `automation` / `decisive_plan`：GUI 自动化和决战计划设置
+- `automation`：GUI 私有自动化设置
+- `decisive_plan`：决战计划页单独维护的当前配置
+- `legacy_decisive_automation`：旧决战字段无损归档
 - `window`：窗口位置与尺寸偏好
 
 `GuiSettingsStore` 是唯一 JSON 存储入口，每次写入执行顶层浅合并，因此未参与
@@ -214,7 +245,7 @@ flowchart LR
 
 ## 与其他系统的关系
 
-- **任务调度**：`daily_automation` 字段直接驱动 `CronScheduler` 的触发规则和 `ExpeditionTimer` 的间隔
+- **任务调度**：`daily_automation` 提供后端自动化开关和出击任务；`automation` 提供远征间隔、战役次数、自动决战和胖次参数
 - **环境管理**：`gui_settings.json` 中的 `python_path` 影响 Python 发现优先级
 - **后端通信**：`backend_port` 决定 `ApiClient` 的连接地址
 - **模拟器检测**：初始化时若 `emulator` 字段为空，自动调用 `detectEmulator()` 填充

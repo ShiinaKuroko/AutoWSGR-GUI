@@ -187,12 +187,15 @@ export class DecisiveFleetDraft {
     return targetIndex;
   }
 
-  resetTeams(): void {
+  resetTeams(
+    defaults: Pick<DecisivePlanSettings, 'level1' | 'level2'> =
+      DEFAULT_DECISIVE_PLAN_SETTINGS,
+  ): void {
     this.settings.level1 = [
-      ...DEFAULT_DECISIVE_PLAN_SETTINGS.level1,
+      ...defaults.level1,
     ];
     this.settings.level2 = [
-      ...DEFAULT_DECISIVE_PLAN_SETTINGS.level2,
+      ...defaults.level2,
     ];
   }
 

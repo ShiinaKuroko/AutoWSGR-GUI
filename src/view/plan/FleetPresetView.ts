@@ -28,6 +28,10 @@ import {
 } from '../shared/scrollPosition';
 import { createShipArtwork } from './ShipArtwork';
 import { shipFilterLabel } from '../../model/fleet/ShipMatcher';
+import {
+  fleetPresetIdentityKey,
+  fleetPresetRuleKey,
+} from '../../model/fleet/FleetPresetIdentity';
 
 interface ShipPreviewRule {
   name: string;
@@ -350,30 +354,19 @@ export class FleetPresetView {
 
   private findBoundTeamIndices(): Set<number> {
     const indices = new Set<number>();
-    this.currentPresets.forEach((current) => {
-      const key = this.presetRuleKey(current);
-      const index = this.userTeams.findIndex(plan => (
-        plan.name === current.name
-        && this.presetRuleKey(this.toFleetPreset(plan)) === key
-      ));
-      if (index >= 0) indices.add(index);
+    const boundIdentities = new Set(
+      this.currentPresets.map(fleetPresetIdentityKey),
+    );
+    this.userTeams.forEach((plan, index) => {
+      if (boundIdentities.has(fleetPresetIdentityKey(this.toFleetPreset(plan)))) {
+        indices.add(index);
+      }
     });
     return indices;
   }
 
   private presetRuleKey(preset: FleetPresetVO): string {
-    return JSON.stringify(preset.ships.map(slot => (
-      slot === null || typeof slot === 'string'
-        ? slot
-        : {
-            name: slot.name ?? null,
-            candidates: slot.candidates ?? null,
-            search_name: slot.search_name ?? null,
-            ship_type: slot.ship_type ?? null,
-            min_level: slot.min_level ?? null,
-            max_level: slot.max_level ?? null,
-          }
-    )));
+    return fleetPresetRuleKey(preset);
   }
 
   private toFleetPreset(plan: UserTeamPlan): FleetPresetVO {
@@ -494,9 +487,10 @@ export class FleetPresetView {
       this.restoreTeamListScroll();
       return;
     }
+    const preset = this.toFleetPreset(plan);
     this.currentPresets = [
       ...this.currentPresets,
-      this.toFleetPreset(plan),
+      preset,
     ];
     this.commitTeamPresetChange();
     this.restoreTeamListScroll();

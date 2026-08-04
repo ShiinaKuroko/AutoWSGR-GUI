@@ -1,17 +1,25 @@
 [
   {
-    "id": "builtin_event_20260730",
-    "name": "活动 20260730 激斗漩涡",
-    "type": "event_fight",
+    "id": "builtin_autowsgr_normal_fight",
+    "name": "AutoWSGR 主库出征计划",
+    "type": "normal_fight",
     "builtin": true,
-    "createdAt": "2026-08-04T00:00:00.000Z",
-    "description": "20260730 活动 E/H 难度计划",
-    "forceRetry": true,
+    "createdAt": "2026-08-05T00:00:00.000Z",
+    "description": "AutoWSGR 主库提供的常规出征、练级、炸潜及战利品计划",
     "planPaths": [
-      "resource/system_battle_plans/bettle-E1炸鱼.yaml",
-      "resource/system_battle_plans/bettle-E5夜战.yaml",
-      "resource/system_battle_plans/bettle-H1炸鱼.yaml",
-      "resource/system_battle_plans/bettle-H5夜战.yaml"
+      "resource/system_battle_plans/bettle-old-1-1捞鱼雷.yaml",
+      "resource/system_battle_plans/bettle-old-6-1炸鱼5SS.yaml",
+      "resource/system_battle_plans/bettle-old-8-2B轻巡练级.yaml",
+      "resource/system_battle_plans/bettle-old-8-2BJ低耗胖次.yaml",
+      "resource/system_battle_plans/bettle-old-8-4六潜周常.yaml",
+      "resource/system_battle_plans/bettle-old-8-5AI六潜胖次.yaml",
+      "resource/system_battle_plans/bettle-old-9-1A航空练级.yaml",
+      "resource/system_battle_plans/bettle-old-9-1B炸潜练级.yaml",
+      "resource/system_battle_plans/bettle-old-9-2ADGHM速刷胖次.yaml",
+      "resource/system_battle_plans/bettle-old-9-3AD航空练级.yaml",
+      "resource/system_battle_plans/bettle-old-9-4六潜练级.yaml",
+      "resource/system_battle_plans/bettle-old-9-5B炸潜.yaml",
+      "resource/system_battle_plans/bettle-old-9-5BE炸潜.yaml"
     ],
     "defaultTimes": 1
   },
@@ -23,10 +31,12 @@
     "createdAt": "2026-01-01T00:00:00.000Z",
     "description": "自动刷取战利品（胖次），可选择不同地图方案",
     "planPaths": [
-      "resource/system_battle_plans/bettle-捞胖次-9-4-6SS.yaml",
+      "resource/system_battle_plans/bettle-old-9-2ADGHM速刷胖次.yaml",
+      "resource/system_battle_plans/bettle-old-8-5AI六潜胖次.yaml",
+      "resource/system_battle_plans/bettle-old-8-2BJ低耗胖次.yaml",
+      "resource/system_battle_plans/bettle-old-9-4六潜练级.yaml",
       "resource/system_battle_plans/bettle-周常-9-2.yaml",
       "resource/system_battle_plans/bettle-周常-7-4.yaml",
-      "resource/system_battle_plans/bettle-捞胖次-8-5.yaml",
       "resource/system_battle_plans/bettle-周常-8-2.yaml",
       "resource/system_battle_plans/bettle-周常-2-1.yaml"
     ],
@@ -85,9 +95,39 @@
     "createdAt": "2026-01-01T00:00:00.000Z",
     "description": "自动完成决战",
     "chapter": 6,
-    "level1": [],
-    "level2": [],
+    "level1": [
+      "U-47",
+      "U-1405",
+      "U-1206",
+      "U-2540",
+      "U-81",
+      "U-96"
+    ],
+    "level2": [
+      "U-505",
+      "射水鱼",
+      "大青花鱼",
+      "M-296",
+      "鹦鹉螺",
+      "S-49",
+      "IIIA",
+      "K-21",
+      "U-441",
+      "潜甲",
+      "潜乙",
+      "伊-201",
+      "伊-25",
+      "鲃鱼",
+      "伊-400",
+      "激流",
+      "U-4501",
+      "U-459",
+      "U-14",
+      "U-35",
+      "K1"
+    ],
     "flagship_priority": [],
+    "use_quick_repair": true,
     "defaultTimes": 1
   }
 ]

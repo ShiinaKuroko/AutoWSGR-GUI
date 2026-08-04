@@ -21,6 +21,9 @@ import {
   type PythonEnvironment,
   resolvePythonEnvironment,
 } from './environment';
+import {
+  buildBackendRuntimeContractProbeLines,
+} from './backendContractProbe';
 import { PYTHON_DEPENDENCY_SPECS } from './dependencies';
 
 const execAsync = promisify(exec);
@@ -148,6 +151,7 @@ type CoreDepProbeResult = {
   requests: boolean;
   beautifulSoup: boolean;
   autowsgr: string | null;
+  backendRuntimeContract: boolean;
 };
 
 /** 检查核心依赖及 scipy._lib 是否可导入。 */
@@ -189,11 +193,17 @@ async function probeCoreDependencies(
     '        r[key] = False',
     'try:',
     '    import autowsgr',
-    '    r["autowsgr"] = autowsgr.__version__',
+    '    r["autowsgr"] = getattr(autowsgr, "__version__", "source")',
     '    r["autowsgr_path"] = autowsgr.__file__',
     'except Exception:',
     '    r["autowsgr"] = None',
     '    r["autowsgr_path"] = None',
+    ...buildBackendRuntimeContractProbeLines(),
+    'try:',
+    '    _verify_gui_runtime_contract()',
+    '    r["backend_runtime_contract"] = True',
+    'except Exception:',
+    '    r["backend_runtime_contract"] = False',
     'print(json.dumps(r))',
   ];
   fs.writeFileSync(checkScript, scriptLines.join('\n'), 'utf-8');
@@ -232,6 +242,10 @@ async function probeCoreDependencies(
       autowsgr: depResult.autowsgr == null || !usesExpectedAutowsgr
         ? null
         : String(depResult.autowsgr),
+      backendRuntimeContract: (
+        usesExpectedAutowsgr
+        && depResult.backend_runtime_contract === true
+      ),
     };
   } catch {
     return null;
@@ -267,6 +281,9 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
         }
       }
       if (markerProbe.autowsgr == null) markerBrokenDeps.push('autowsgr');
+      if (!markerProbe.backendRuntimeContract) {
+        markerBrokenDeps.push('autowsgr-runtime-contract');
+      }
     }
 
     if (markerBrokenDeps.length === 0) {
@@ -360,6 +377,14 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
     } else {
       missingPackages.push('autowsgr');
       ctx.sendProgress(`  autowsgr \u2717`);
+    }
+    if (depResult.backendRuntimeContract) {
+      ctx.sendProgress('  AutoWSGR GUI 运行契约 ✓');
+    } else {
+      missingPackages.push('autowsgr-runtime-contract');
+      ctx.sendProgress(
+        '  AutoWSGR GUI 运行契约 ✗  请更新后端版本',
+      );
     }
   } catch {
     missingPackages.push(

@@ -1,10 +1,11 @@
 /** 展示舰船图鉴并管理筛选、排序和选择等 UI 状态。 */
 import type {
-  ElectronBridge,
   ShipLibraryLabels,
-  ShipLibraryManifest,
   ShipLibraryShip,
 } from '../../types/ipc.js';
+import type {
+  FleetShipLibraryViewObject,
+} from '../../types/view.js';
 import {
   SHIP_TYPE_FILTER_ORDER,
   TYPE_LABELS,
@@ -28,10 +29,7 @@ const EMPTY_LABELS: ShipLibraryLabels = {
   variants: {},
 };
 
-export interface FleetGalleryViewHost extends Pick<
-  ElectronBridge,
-  'getShipLibraryManifest'
-> {
+export interface FleetGalleryViewHost {
   getRefitFilter(): boolean;
   setRefitFilter(enabled: boolean): void;
   activeSlotDescription(): string;
@@ -76,14 +74,11 @@ export class FleetGalleryView {
   ) as HTMLInputElement;
   private readonly resizeObserver: ResizeObserver;
 
-  private manifest: ShipLibraryManifest | null = null;
   private labels: ShipLibraryLabels = EMPTY_LABELS;
   private shipItems: ShipLibraryShip[] = [];
   private visibleShips: ShipLibraryShip[] = [];
   private backgroundUrl = '';
   private renderedShipCount = 0;
-  private loading: Promise<void> | null = null;
-
   private groupFilter: string | null = 'all';
   private typeFilters = new Set<string>();
   private countryFilters = new Set<string>();
@@ -101,15 +96,6 @@ export class FleetGalleryView {
       () => this.ensureGalleryFilled(),
     );
     this.resizeObserver.observe(this.gallery);
-  }
-
-  load(force = false): Promise<void> {
-    if (this.loading) return this.loading;
-    if (this.manifest && !force) return Promise.resolve();
-    this.loading = this.loadManifest().finally(() => {
-      this.loading = null;
-    });
-    return this.loading;
   }
 
   ships(): readonly ShipLibraryShip[] {
@@ -150,29 +136,24 @@ export class FleetGalleryView {
       });
   }
 
-  private async loadManifest(): Promise<void> {
+  showLibrary(library: FleetShipLibraryViewObject): void {
+    this.labels = {
+      ...EMPTY_LABELS,
+      ...library.labels,
+    };
+    this.shipItems = [...library.ships];
+    this.backgroundUrl = library.colorfulBackgroundUrl;
+    this.renderFilterOptions();
+    this.applyFilters();
+  }
+
+  showLoading(): void {
     this.countLabel.textContent = '正在读取资料库…';
-    try {
-      this.manifest = await this.host.getShipLibraryManifest();
-      this.labels = {
-        ...EMPTY_LABELS,
-        ...this.manifest.labels,
-      };
-      this.shipItems = this.manifest.ships.filter((ship) => (
-        Number.isFinite(ship.id)
-        && Boolean(ship.name)
-        && Boolean(ship.portraitUrl)
-      ));
-      this.backgroundUrl = this.shipItems.find(
-        ship => ship.rarity === 6 && Boolean(ship.backgroundUrl),
-      )?.backgroundUrl ?? '';
-      this.renderFilterOptions();
-      this.applyFilters();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.countLabel.textContent = '资料库不可用';
-      this.showMessage(message);
-    }
+  }
+
+  showLoadError(message: string): void {
+    this.countLabel.textContent = '资料库不可用';
+    this.showMessage(message);
   }
 
   private bindActions(): void {

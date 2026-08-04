@@ -1,11 +1,21 @@
 /** 渲染编队方案卡片并实现搜索、筛选和排序。 */
 import type {
   PlanPresetSource,
-  UserTeamPlan,
 } from '../../types/ipc.js';
 
 export type TeamPlanSortField = 'name' | 'modifiedAt';
 export type TeamPlanCardSource = PlanPresetSource | 'deleted';
+
+export interface TeamPlanListItem {
+  name: string;
+  source?: PlanPresetSource;
+  modifiedAt?: number;
+  ships: ReadonlyArray<{
+    name?: string;
+    primary?: unknown;
+    candidates?: ReadonlyArray<unknown>;
+  }>;
+}
 
 export interface TeamPlanCardData {
   name: string;
@@ -30,10 +40,10 @@ export function normalizeTeamPlanSearch(value: string): string {
 }
 
 /** 保留原数组索引，避免筛选后点击到错误的编队。 */
-export function filterAndSortTeamPlans(
-  plans: UserTeamPlan[],
+export function filterAndSortTeamPlans<T extends TeamPlanListItem>(
+  plans: T[],
   options: TeamPlanListOptions,
-): Array<{ plan: UserTeamPlan; index: number }> {
+): Array<{ plan: T; index: number }> {
   const search = normalizeTeamPlanSearch(options.search);
   return plans
     .map((plan, index) => ({ plan, index }))
@@ -53,8 +63,8 @@ export function filterAndSortTeamPlans(
 }
 
 export function compareTeamPlans(
-  left: UserTeamPlan,
-  right: UserTeamPlan,
+  left: TeamPlanListItem,
+  right: TeamPlanListItem,
   sortField: TeamPlanSortField,
   ascending: boolean,
 ): number {
@@ -70,13 +80,17 @@ export function compareTeamPlans(
   return ascending ? difference : -difference;
 }
 
-export function teamPlanCardData(plan: UserTeamPlan): TeamPlanCardData {
+export function teamPlanCardData(
+  plan: TeamPlanListItem,
+): TeamPlanCardData {
   return {
     name: plan.name,
     source: plan.source ?? 'user',
-    primaryCount: plan.ships.filter(slot => Boolean(slot?.name)).length,
+    primaryCount: plan.ships.filter(
+      slot => Boolean(slot.primary ?? slot.name),
+    ).length,
     backupCount: plan.ships.reduce(
-      (count, slot) => count + (slot?.candidates?.length ?? 0),
+      (count, slot) => count + (slot.candidates?.length ?? 0),
       0,
     ),
     modifiedAt: plan.modifiedAt,

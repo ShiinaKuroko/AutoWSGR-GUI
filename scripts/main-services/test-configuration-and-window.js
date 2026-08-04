@@ -35,6 +35,9 @@ const {
   PythonEnvironmentService,
   temporaryDirectory,
 } = context;
+const {
+  DEFAULT_LOOT_PLANS,
+} = require('../../dist/src/shared/lootPlans.js');
 
 /** 验证窗口偏好、创建参数和唯一窗口状态。 */
 function testWindowService() {
@@ -196,6 +199,10 @@ function testGuiConfigurationService() {
     environmentPort: () => environmentPort.value,
   });
 
+  assert.deepEqual(service.legacyDecisiveAutomation(), {
+    exists: false,
+    settings: {},
+  });
   assert.equal(service.backendPort(), 8438);
   service.setBackendPort(18438.9);
   assert.equal(service.backendPort(), 18438);
@@ -257,6 +264,17 @@ function testGuiConfigurationService() {
   store.write({
     automation: {
       expeditionInterval: 20,
+    },
+  });
+  assert.deepEqual(service.automation(), {
+    exists: true,
+    settings: {
+      expeditionInterval: 20,
+    },
+  });
+  store.write({
+    automation: {
+      expeditionInterval: 20,
       battleTimes: 4,
       autoLoot: true,
       lootPlanIndex: 2,
@@ -269,6 +287,7 @@ function testGuiConfigurationService() {
       expeditionInterval: 20,
       battleTimes: 4,
       autoLoot: true,
+      lootPlanSource: 'system',
       lootPlanId: 'bettle-周常-8-2.yaml',
       lootStopCount: 16,
     },
@@ -287,12 +306,11 @@ function testGuiConfigurationService() {
     exists: true,
     settings: {
       autoLoot: false,
-      lootPlanId: 'bettle-周常-9-2.yaml',
     },
   });
   assert.deepEqual(store.read().automation, {
     autoLoot: false,
-    lootPlanId: 'bettle-周常-9-2.yaml',
+    lootPlanId: 'bettle-不存在.yaml',
   });
   for (const invalidIndex of [99, null, '', false, 2.5]) {
     store.write({
@@ -305,7 +323,6 @@ function testGuiConfigurationService() {
       exists: true,
       settings: {
         autoLoot: false,
-        lootPlanId: 'bettle-周常-9-2.yaml',
       },
     });
     assert.equal(
@@ -317,21 +334,94 @@ function testGuiConfigurationService() {
   assert.deepEqual(service.automation(), {
     exists: true,
     settings: {
-      autoLoot: false,
-      lootPlanId: 'bettle-周常-9-2.yaml',
+      autoLoot: true,
     },
+  });
+  const userLootPlans = [
+    {
+      source: 'system',
+      file: 'bettle-周常-8-2.yaml',
+      name: '周常 8-2',
+    },
+    {
+      source: 'user',
+      file: 'bettle-用户胖次测试.yaml',
+      name: '用户胖次测试',
+    },
+  ];
+  assert.deepEqual(service.setAutomation({
+    expeditionInterval: 20,
+    battleTimes: 4,
+    autoDecisive: false,
+    decisiveTemplateId: 'user_plan',
+    autoLoot: true,
+    lootPlanSource: 'user',
+    lootPlanId: 'bettle-用户胖次测试.yaml',
+    lootPlans: userLootPlans,
+    lootStopCount: 16,
+  }), {
+    expeditionInterval: 20,
+    battleTimes: 4,
+    autoDecisive: false,
+    decisiveTemplateId: 'user_plan',
+    autoLoot: true,
+    lootPlanSource: 'user',
+    lootPlanId: 'bettle-用户胖次测试.yaml',
+    lootPlans: userLootPlans,
+    lootStopCount: 16,
+  });
+  assert.deepEqual(service.automation(), {
+    exists: true,
+    settings: {
+      expeditionInterval: 20,
+      battleTimes: 4,
+      autoDecisive: false,
+      decisiveTemplateId: 'user_plan',
+      autoLoot: true,
+      lootPlanSource: 'user',
+      lootPlanId: 'bettle-用户胖次测试.yaml',
+      lootPlans: userLootPlans,
+      lootStopCount: 16,
+    },
+  });
+  assert.deepEqual(service.setAutomation({
+    expeditionInterval: 20,
+    battleTimes: 4,
+    autoDecisive: false,
+    decisiveTemplateId: 'user_plan',
+    autoLoot: true,
+    lootPlanSource: 'user',
+    lootPlanId: 'bettle-用户胖次测试.yaml',
+    lootPlans: [],
+    lootStopCount: 16,
+  }), {
+    expeditionInterval: 20,
+    battleTimes: 4,
+    autoDecisive: false,
+    decisiveTemplateId: 'user_plan',
+    autoLoot: false,
+    lootPlanSource: 'system',
+    lootPlanId: 'bettle-old-9-2ADGHM速刷胖次.yaml',
+    lootPlans: [],
+    lootStopCount: 16,
   });
   assert.deepEqual(service.setAutomation({
     expeditionInterval: 999,
     battleTimes: 0,
+    autoDecisive: true,
+    decisiveTemplateId: '  builtin_decisive_6  ',
     autoLoot: true,
     lootPlanId: 'bettle-捞胖次-8-5.yaml',
     lootStopCount: 0,
   }), {
     expeditionInterval: 120,
     battleTimes: 3,
+    autoDecisive: true,
+    decisiveTemplateId: 'system_preset',
     autoLoot: true,
-    lootPlanId: 'bettle-捞胖次-8-5.yaml',
+    lootPlanSource: 'system',
+    lootPlanId: 'bettle-old-8-5AI六潜胖次.yaml',
+    lootPlans: DEFAULT_LOOT_PLANS,
     lootStopCount: 50,
   });
   assert.deepEqual(service.automation(), {
@@ -339,14 +429,27 @@ function testGuiConfigurationService() {
     settings: {
       expeditionInterval: 120,
       battleTimes: 3,
+      autoDecisive: true,
+      decisiveTemplateId: 'system_preset',
       autoLoot: true,
-      lootPlanId: 'bettle-捞胖次-8-5.yaml',
+      lootPlanSource: 'system',
+      lootPlanId: 'bettle-old-8-5AI六潜胖次.yaml',
+      lootPlans: DEFAULT_LOOT_PLANS,
       lootStopCount: 50,
     },
   });
 
+  const automationWithoutLegacyDecisive = {
+    ...store.read().automation,
+  };
+  delete automationWithoutLegacyDecisive.autoDecisive;
+  delete automationWithoutLegacyDecisive.decisiveTemplateId;
+  store.write({ automation: automationWithoutLegacyDecisive });
   store.write({
     preserved: 'keep',
+    legacy_decisive_automation: {
+      preserved_extension: 'keep',
+    },
     decisive_plan: {
       chapter: 9,
       use_quick_repair: false,
@@ -355,6 +458,65 @@ function testGuiConfigurationService() {
       level3: ['I', 'H'],
     },
   });
+  assert.deepEqual(service.legacyDecisiveAutomation(), {
+    exists: true,
+    settings: {},
+  });
+  const decisivePlanBeforeLegacyMigration = structuredClone(
+    store.read().decisive_plan,
+  );
+  const legacyDecisive = {
+    autoDecisive: true,
+    ticketReserve: 0,
+    templateId: 'builtin_decisive_6',
+  };
+  assert.deepEqual(
+    service.migrateLegacyDecisiveAutomation(legacyDecisive),
+    legacyDecisive,
+  );
+  assert.deepEqual(service.legacyDecisiveAutomation(), {
+    exists: true,
+    settings: legacyDecisive,
+  });
+  assert.deepEqual(service.automation(), {
+    exists: true,
+    settings: {
+      expeditionInterval: 120,
+      battleTimes: 3,
+      autoDecisive: true,
+      decisiveTemplateId: 'system_preset',
+      autoLoot: true,
+      lootPlanSource: 'system',
+      lootPlanId: 'bettle-old-8-5AI六潜胖次.yaml',
+      lootPlans: DEFAULT_LOOT_PLANS,
+      lootStopCount: 50,
+    },
+  });
+  assert.deepEqual(
+    store.read().legacy_decisive_automation,
+    {
+      preserved_extension: 'keep',
+      auto_decisive: true,
+      decisive_ticket_reserve: 0,
+      decisive_template_id: 'builtin_decisive_6',
+    },
+  );
+  assert.deepEqual(
+    store.read().decisive_plan,
+    decisivePlanBeforeLegacyMigration,
+    '旧版决战字段不能覆盖当前决战计划',
+  );
+  assert.deepEqual(
+    service.migrateLegacyDecisiveAutomation(legacyDecisive),
+    legacyDecisive,
+    '重复迁移必须保持原值',
+  );
+  assert.throws(
+    () => service.migrateLegacyDecisiveAutomation({
+      ticketReserve: Number.NaN,
+    }),
+    /decisive_ticket_reserve/,
+  );
   assert.deepEqual(service.decisivePlan(), {
     chapter: 6,
     useQuickRepair: false,
@@ -373,11 +535,21 @@ function testGuiConfigurationService() {
     automation: {
       expeditionInterval: 120,
       battleTimes: 3,
+      autoDecisive: true,
+      decisiveTemplateId: 'system_preset',
       autoLoot: true,
-      lootPlanId: 'bettle-捞胖次-8-5.yaml',
+      lootPlanSource: 'system',
+      lootPlanId: 'bettle-old-8-5AI六潜胖次.yaml',
+      lootPlans: DEFAULT_LOOT_PLANS,
       lootStopCount: 50,
     },
     preserved: 'keep',
+    legacy_decisive_automation: {
+      preserved_extension: 'keep',
+      auto_decisive: true,
+      decisive_ticket_reserve: 0,
+      decisive_template_id: 'builtin_decisive_6',
+    },
     decisive_plan: {
       chapter: 6,
       use_quick_repair: false,

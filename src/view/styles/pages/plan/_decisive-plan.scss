@@ -113,6 +113,17 @@
   }
 }
 
+.decisive-automation-note {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--danger);
+  font-size: 10px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 #decisive-level2-count {
   color: var(--text-secondary);
   font-size: 9px;
@@ -153,6 +164,12 @@
   .decisive-plan-status {
     width: 100%;
     margin-left: 0;
+  }
+
+  .decisive-automation-note {
+    width: 100%;
+    margin-left: 0;
+    white-space: normal;
   }
 }
 

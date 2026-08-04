@@ -4,7 +4,7 @@
  * 测试使用旧安装目录中实际保存过的 task_groups.json。
  * 第一步加载无版本号、只有 path 的旧任务组。
  * 第二步检查用户计划和系统计划都生成受管引用。
- * 第三步保存迁移后的 v3 数据。
+ * 第三步保存迁移后的 v4 数据。
  * 第四步把旧绝对路径视为已经删除。
  * 第五步通过正式队列加载函数执行一个旧任务。
  * 第六步确认执行只读取 managedSource 和 managedFile。
@@ -15,8 +15,18 @@
  */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const yaml = require('js-yaml');
+const {
+  AppPaths,
+} = require('../dist/electron/services/AppPaths.js');
+const {
+  AtomicFileStore,
+} = require('../dist/electron/services/AtomicFileStore.js');
+const {
+  UserDataMigrationService,
+} = require('../dist/electron/services/UserDataMigrationService.js');
 const { TaskGroupModel } = require('../dist/src/model/TaskGroupModel.js');
 const { PlanModel } = require('../dist/src/model/PlanModel.js');
 const {
@@ -35,20 +45,20 @@ const executablePlanPath = path.join(
   '..',
   'resource',
   'system_battle_plans',
-  'bettle-E1炸鱼.yaml',
+  'bettle-周常-1-1.yaml',
 );
 const executablePlanContent = fs.readFileSync(executablePlanPath, 'utf8');
 const weeklyPlans = [
-  ['周常1章-1-2.yaml', 'bettle-周常-1-2-v1.yaml'],
-  ['周常2章-2-1.yaml', 'bettle-周常-2-1.yaml'],
-  ['周常3章-3-1.yaml', 'bettle-周常-3-1.yaml'],
-  ['周常4章-4-1.yaml', 'bettle-周常-4-1.yaml'],
-  ['周常5章-5-5.yaml', 'bettle-周常-5-5.yaml'],
-  ['周常6章-6-4.yaml', 'bettle-周常-6-4.yaml'],
-  ['周常7章-7-4.yaml', 'bettle-周常-7-4.yaml'],
-  ['周常8章-8-2.yaml', 'bettle-周常-8-2.yaml'],
-  ['周常9章-9-2.yaml', 'bettle-周常-9-2.yaml'],
-  ['周常10章-10-1.yaml', 'bettle-周常-10-1.yaml'],
+  ['周常1章-1-2.yaml', 'bettle-周常-1-2-v1.yaml', 'user'],
+  ['周常2章-2-1.yaml', 'bettle-周常-2-1.yaml', 'system'],
+  ['周常3章-3-1.yaml', 'bettle-周常-3-1.yaml', 'system'],
+  ['周常4章-4-1.yaml', 'bettle-周常-4-1.yaml', 'system'],
+  ['周常5章-5-5.yaml', 'bettle-周常-5-5.yaml', 'system'],
+  ['周常6章-6-4.yaml', 'bettle-周常-6-4.yaml', 'system'],
+  ['周常7章-7-4.yaml', 'bettle-周常-7-4.yaml', 'system'],
+  ['周常8章-8-2.yaml', 'bettle-周常-8-2.yaml', 'system'],
+  ['周常9章-9-2.yaml', 'bettle-周常-9-2.yaml', 'system'],
+  ['周常10章-10-1.yaml', 'bettle-周常-10-1.yaml', 'system'],
 ];
 const activityPlans = [
   ['活动20260730-E1炸鱼.yaml', 'bettle-E1炸鱼.yaml'],
@@ -68,6 +78,64 @@ const compatibilityPlanResources = [
   ['bettle-捞胖次-8-5.yaml', 8, 5],
   ['bettle-捞胖次-9-4-6SS.yaml', 9, 4],
 ];
+const temporaryRoot = fs.mkdtempSync(
+  path.join(os.tmpdir(), 'autowsgr-task-group-v6-'),
+);
+let fixtureNumber = 0;
+
+process.on('exit', () => {
+  fs.rmSync(temporaryRoot, { recursive: true, force: true });
+});
+
+function migratePresetInventory(content) {
+  fixtureNumber += 1;
+  const root = path.join(temporaryRoot, String(fixtureNumber));
+  const projectRoot = path.join(root, 'project');
+  const userData = path.join(root, 'user-data');
+  const appPaths = new AppPaths({
+    moduleDirectory: path.join(projectRoot, 'dist', 'electron'),
+    isPackaged: () => false,
+    getPath: name => name === 'exe'
+      ? path.join(projectRoot, 'AutoWSGR.exe')
+      : userData,
+    getResourcesPath: () => path.join(projectRoot, 'resources'),
+  });
+  const migrationResources = path.join(
+    appPaths.resourceRoot(),
+    'resource',
+    'migrations',
+    'v6',
+    'system_battle_plans',
+  );
+  fs.mkdirSync(path.dirname(migrationResources), { recursive: true });
+  fs.cpSync(
+    path.join(
+      __dirname,
+      '..',
+      'resource',
+      'migrations',
+      'v6',
+      'system_battle_plans',
+    ),
+    migrationResources,
+    { recursive: true },
+  );
+  fs.mkdirSync(userData, { recursive: true });
+  const taskGroups = path.join(userData, 'task_groups.json');
+  fs.writeFileSync(taskGroups, content, 'utf8');
+  const migration = new UserDataMigrationService(
+    appPaths,
+    new AtomicFileStore(),
+  );
+  migration.writeState({ version: 5, completed: [] });
+  const result = migration.migratePresetInventory();
+  assert.equal(result.failed, 0);
+  assert.equal(migration.readState().version, 6);
+  return {
+    content: fs.readFileSync(taskGroups, 'utf8'),
+    userPlanDir: appPaths.userBattlePlansDir(),
+  };
+}
 
 function installBridge(initialContent) {
   const state = {
@@ -126,14 +194,31 @@ function assertManagedSystemPlan(item, legacyFile, managedFile) {
   );
 }
 
+function assertManagedUserPlan(
+  item,
+  legacyFile,
+  managedFile,
+  userPlanDir,
+) {
+  assert.equal(item.path, `resource/builtin_plans/${legacyFile}`);
+  assert.equal(item.managedSource, 'user');
+  assert.equal(item.managedFile, managedFile);
+  assert.equal(
+    fs.existsSync(path.join(userPlanDir, managedFile)),
+    true,
+    `淘汰计划没有升级为个人计划: ${managedFile}`,
+  );
+}
+
 async function verifyRealLegacyFixtureLifecycle() {
   const legacyFixture = fs.readFileSync(fixturePath, 'utf8');
-  const state = installBridge(legacyFixture);
+  const inventory = migratePresetInventory(legacyFixture);
+  const state = installBridge(inventory.content);
   const model = new TaskGroupModel();
 
   await model.load();
   const migrated = model.toJSON();
-  assert.equal(migrated.version, 3);
+  assert.equal(migrated.version, 4);
   assert.equal(state.saves, 1);
 
   const defaultItem = migrated.groups[0].items[0];
@@ -145,12 +230,21 @@ async function verifyRealLegacyFixtureLifecycle() {
   );
 
   const weeklyItems = migrated.groups[1].items;
-  weeklyPlans.forEach(([legacyFile, managedFile], index) => {
-    assertManagedSystemPlan(
-      weeklyItems[index],
-      legacyFile,
-      managedFile,
-    );
+  weeklyPlans.forEach(([legacyFile, managedFile, source], index) => {
+    if (source === 'user') {
+      assertManagedUserPlan(
+        weeklyItems[index],
+        legacyFile,
+        managedFile,
+        inventory.userPlanDir,
+      );
+    } else {
+      assertManagedSystemPlan(
+        weeklyItems[index],
+        legacyFile,
+        managedFile,
+      );
+    }
   });
   assert.equal(weeklyItems[10].kind, 'template');
   assert.equal(weeklyItems[10].templateId, 'builtin_decisive_6');
@@ -213,7 +307,8 @@ async function verifyActivityAliases() {
       })),
     }],
   });
-  const state = installBridge(legacy);
+  const inventory = migratePresetInventory(legacy);
+  const state = installBridge(inventory.content);
   const model = new TaskGroupModel();
 
   await model.load();
@@ -222,7 +317,12 @@ async function verifyActivityAliases() {
   assert.equal(migrated.groups[0].groupExtension, 'keep');
   migrated.groups[0].items.forEach((item, index) => {
     const [legacyFile, managedFile] = activityPlans[index];
-    assertManagedSystemPlan(item, legacyFile, managedFile);
+    assertManagedUserPlan(
+      item,
+      legacyFile,
+      managedFile,
+      inventory.userPlanDir,
+    );
     assert.equal(item.itemExtension.preserved, true);
     assert.equal(item.forceRetry, true);
     assert.equal(item.autoFleetFallback, true);
@@ -243,7 +343,8 @@ async function verifyLegacyWeeklyMapSemantics() {
       })),
     }],
   });
-  const state = installBridge(legacy);
+  const inventory = migratePresetInventory(legacy);
+  const state = installBridge(inventory.content);
   const model = new TaskGroupModel();
 
   await model.load();
@@ -252,12 +353,14 @@ async function verifyLegacyWeeklyMapSemantics() {
     [legacyFile, managedFile, chapter, map],
     index,
   ) => {
-    assertManagedSystemPlan(items[index], legacyFile, managedFile);
+    assertManagedUserPlan(
+      items[index],
+      legacyFile,
+      managedFile,
+      inventory.userPlanDir,
+    );
     const content = fs.readFileSync(path.join(
-      __dirname,
-      '..',
-      'resource',
-      'system_battle_plans',
+      inventory.userPlanDir,
       managedFile,
     ), 'utf8');
     const plan = yaml.load(content);
@@ -269,15 +372,25 @@ async function verifyLegacyWeeklyMapSemantics() {
 
 function verifyCompatibilityPlanResources() {
   for (const [file, chapter, map] of compatibilityPlanResources) {
-    const filePath = path.join(
+    const migrationFile = path.join(
+      __dirname,
+      '..',
+      'resource',
+      'migrations',
+      'v6',
+      'system_battle_plans',
+      file,
+    );
+    const systemFile = path.join(
       __dirname,
       '..',
       'resource',
       'system_battle_plans',
       file,
     );
-    const content = fs.readFileSync(filePath, 'utf8');
-    const model = PlanModel.fromYaml(content, filePath);
+    assert.equal(fs.existsSync(systemFile), false);
+    const content = fs.readFileSync(migrationFile, 'utf8');
+    const model = PlanModel.fromYaml(content, migrationFile);
     assert.equal(model.data.chapter, chapter);
     assert.equal(model.data.map, map);
 
@@ -301,7 +414,7 @@ function verifyCompatibilityPlanResources() {
 }
 
 async function verifyInterimVersion() {
-  const state = installBridge(JSON.stringify({
+  const inventory = migratePresetInventory(JSON.stringify({
     version: 2,
     activeGroup: '中间版本',
     groups: [{
@@ -316,13 +429,25 @@ async function verifyInterimVersion() {
       }],
     }],
   }));
+  const state = installBridge(inventory.content);
   const model = new TaskGroupModel();
 
   await model.load();
-  assert.equal(model.toJSON().version, 3);
+  assert.equal(model.toJSON().version, 4);
   assert.equal(
     model.toJSON().groups[0].items[0].managedFile,
     'bettle-E1炸鱼.yaml',
+  );
+  assert.equal(
+    model.toJSON().groups[0].items[0].managedSource,
+    'user',
+  );
+  assert.equal(
+    fs.existsSync(path.join(
+      inventory.userPlanDir,
+      'bettle-E1炸鱼.yaml',
+    )),
+    true,
   );
   assert.equal(state.saves, 1);
 }

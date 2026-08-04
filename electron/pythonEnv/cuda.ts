@@ -3,6 +3,10 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  buildPythonProcessEnv,
+  type PythonEnvironment,
+} from './environment';
 
 function normalizeCudaRoot(candidate: string): string {
   const resolved = path.resolve(candidate.trim());
@@ -85,4 +89,16 @@ export function buildCudaEnvironment(
     env[`CUDA_PATH_V${versionMatch[1]}_${versionMatch[2]}`] = cudaRoot;
   }
   return env;
+}
+
+/** 构造 CUDA 检测和后端启动共同使用的完整 Python 运行环境。 */
+export function buildBackendRuntimeEnvironment(
+  environment: PythonEnvironment,
+  configuredCudaRoot: string | null,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  return buildCudaEnvironment(
+    buildPythonProcessEnv(environment, baseEnv),
+    configuredCudaRoot,
+  );
 }

@@ -32,3 +32,50 @@ jobs:
 
       - name: Test old install directory upgrade
         run: npm run test:legacy-config-upgrade
+
+  backend-fleet-contract:
+    name: Backend fleet contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout GUI
+        uses: actions/checkout@v4
+
+      - name: Checkout AutoWSGR
+        uses: actions/checkout@v4
+        with:
+          repository: ShiinaKuroko/AutoWSGR
+          ref: ShiinaKuroko
+          path: AutoWSGR
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install GUI dependencies
+        run: npm ci
+
+      - name: Install AutoWSGR dependencies
+        run: uv sync --project AutoWSGR --no-dev
+
+      - name: Test candidate-only GUI services
+        run: npm run test:main-services
+
+      - name: Test GUI to AutoWSGR fleet contract
+        env:
+          AUTOWSGR_REPO: ${{ github.workspace }}/AutoWSGR
+          AUTOWSGR_PYTHON: ${{ github.workspace }}/AutoWSGR/.venv/bin/python
+        run: npm run test:api-contract

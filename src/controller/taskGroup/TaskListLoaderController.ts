@@ -118,20 +118,22 @@ export class TaskListLoaderController {
     }
 
     for (const group of this.model.groups) {
-      const row = document.createElement('div');
-      row.className = 'task-list-loader-group-row';
-
-      const card = document.createElement('button');
-      card.type = 'button';
+      const card = document.createElement('div');
       card.className = 'task-list-loader-group-card';
       card.classList.toggle('active', group.name === this.selectedGroupName);
 
+      const selectButton = document.createElement('button');
+      selectButton.type = 'button';
+      selectButton.className = 'task-list-loader-group-select';
       const name = document.createElement('strong');
       name.textContent = group.name;
       const count = document.createElement('span');
       count.textContent = `${group.items.length} 个出征计划`;
-      card.append(name, count);
-      card.addEventListener('click', () => this.selectGroup(group.name));
+      selectButton.append(name, count);
+      selectButton.addEventListener(
+        'click',
+        () => this.selectGroup(group.name),
+      );
 
       const deleteButton = document.createElement('button');
       deleteButton.type = 'button';
@@ -142,8 +144,8 @@ export class TaskListLoaderController {
         void this.deleteGroup(group.name);
       });
 
-      row.append(card, deleteButton);
-      this.groupsEl.appendChild(row);
+      card.append(selectButton, deleteButton);
+      this.groupsEl.appendChild(card);
     }
     restoreScrollPosition(this.groupsEl, scrollPosition);
   }
@@ -320,6 +322,7 @@ export class TaskListLoaderController {
   }
 
   private sourceClass(item: TaskGroupItem): string {
+    if (item.kind === 'daily') return 'daily';
     if (item.managedSource === 'system') return 'system';
     if (item.managedSource === 'user') return 'user';
     if (item.kind === 'template') return 'template';
@@ -327,6 +330,7 @@ export class TaskListLoaderController {
   }
 
   private sourceLabel(item: TaskGroupItem): string {
+    if (item.kind === 'daily') return '日常任务';
     if (item.managedSource === 'system') return '系统预设';
     if (item.managedSource === 'user') return '用户预设';
     if (item.kind === 'template') return '任务模板';

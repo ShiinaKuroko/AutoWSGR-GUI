@@ -29,6 +29,7 @@ export interface StartupHost {
   detectAndApplyEmulator(): Promise<void>;
   showSetupWizard(): Promise<void>;
   loadModelsAndRender(bridge: ElectronBridge): Promise<void>;
+  reviewMigrationConflicts(): Promise<void>;
   bindBackendLog(bridge: ElectronBridge): void;
   renderMain(): void;
   startHeartbeat(): void;
@@ -58,6 +59,9 @@ export class StartupController {
     this.host.initLogger(bridge);
     Logger.info(`配置文件目录: ${this.host.configDir}`);
     Logger.info(`方案文件目录: ${this.host.plansDir}`);
+
+    // 在配置和任务组读入内存前处理冲突，避免保存时恢复已删除文件的旧引用。
+    await this.host.reviewMigrationConflicts();
 
     // 1. 加载配置 & 渲染
     await this.host.loadConfigAndSync();

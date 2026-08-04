@@ -36,7 +36,12 @@ npm run dev
 | `npm run build` | 仅编译（`tsc` + `esbuild`），不运行 |
 | `npm run test:main-services` | 构建后验证主进程 Service 的路径、配置、计划、环境和资料库行为 |
 | `npm run test:main-ipc` | 构建后核对 preload 与 IPC Adapter 的通道及同步/异步契约 |
+| `npm run test:legacy-config-upgrade` | 验证旧设置、决战配置和任务组升级 |
+| `npm run test:legacy-plan` | 验证旧计划、舰队拆分和受管引用迁移 |
 | `npm run test:api-contract` | 构建后验证 GUI 与 AutoWSGR API 契约 fixture |
+| `npm run test:fleet-domain` | 验证舰队草稿、候选槽位和持久化 DTO 往返 |
+| `npm run test:scheduler-domain` | 验证逻辑任务身份、后触发、取消和排序 |
+| `npm run test:python-environment` | 验证 managed/external Python、CUDA 和后端环境一致性 |
 | `npm run test:task-group-migration` | 构建后验证任务组迁移和往返兼容 |
 | `npm start` | 等同于 `build` + `electron .`（含 chcp 65001） |
 | `npm run dist` | 完整打包：下载 Python + ADB → 编译 → electron-builder NSIS 安装包 |
@@ -86,12 +91,27 @@ flowchart LR
   "appId": "com.autowsgr.gui",
   "productName": "AutoWSGR-GUI",
   "directories": { "output": "release" },
-  "files": ["dist/**/*", "src/view/**/*", "scripts/**/*"],
+  "files": [
+    "dist/**/*",
+    "src/view/index.html",
+    "src/view/styles/styles.css"
+  ],
   "extraResources": [
-    { "from": "resource", "to": "resource" },
-    { "from": "plans", "to": "plans" },
+    {
+      "from": "resource",
+      "to": "resource",
+      "filter": [
+        "**/*",
+        "!user_battle_plans/**/*",
+        "!user_team_plans/**/*"
+      ]
+    },
     { "from": "setup.bat", "to": "setup.bat" },
+    { "from": "tools/ship_library", "to": "tools/ship_library" }
+  ],
+  "extraFiles": [
     { "from": "python", "to": "python" },
+    { "from": "redist", "to": "redist" },
     { "from": "adb", "to": "adb" }
   ]
 }
@@ -102,7 +122,7 @@ flowchart LR
 **包含内容**：
 - `dist/` — 编译后的 JS
 - `src/view/` — HTML/CSS
-- `resource/` — 内置方案 + 模板 + 地图
+- `resource/` — 内置方案、模板、地图、舰船资料库种子和只读迁移快照
 - `python/` — 便携版 Python
 - `adb/` — ADB 工具
 
@@ -119,8 +139,12 @@ flowchart LR
 | `appRoot()` | 项目根目录 | `%LOCALAPPDATA%/autowsgr-gui/` 或安装目录 |
 | `resourceRoot()` | 同 appRoot | `resources/` (extraResources) |
 | `resource/system_battle_plans/` | 项目根 `resource/system_battle_plans/` | extraResources `resource/system_battle_plans/` |
+| `resource/system_daily_plans/` | 项目根 `resource/system_daily_plans/` | extraResources `resource/system_daily_plans/` |
+| `resource/migrations/v6/` | 项目根 `resource/migrations/v6/`，只读 | extraResources `resource/migrations/v6/`，只读 |
+| `resource/ship-library/` | 打包资料库种子 | extraResources `resource/ship-library/` |
 | `userData/user_battle_plans/` | Electron userData | Electron userData |
 | `userData/user_team_plans/` | Electron userData | Electron userData |
+| `userData/user_daily_plans/` | Electron userData | Electron userData |
 | `python/` | 项目根 `python/` | extraResources `python/` |
 | `adb/` | 项目根 `adb/` | extraResources `adb/` |
 | `userData/usersettings.yaml` | Electron userData | Electron userData |
@@ -136,8 +160,29 @@ flowchart LR
 `userData/.migration-state.json`。源文件不会删除；本次实际执行迁移后会
 弹窗展示总数、成功数、失败数，失败项在下次启动继续尝试。
 
-版本号包含 `-` 的开发/预发布版本自动进入 prerelease 更新频道，不会发布为
-稳定 `latest`。稳定版本必须使用不带预发布后缀的版本号和独立 release tag。
+迁移状态当前为 **v6**。旧计划和舰队的结构迁移由
+`LegacyPlanMigration` 维护 v5 完成项；v6 由 `UserDataMigrationService`
+升级系统预设库存、将已删除但仍被引用的系统计划保存为个人副本，并把旧胖次
+数字索引迁移为稳定计划标识。只有 v6 操作全部成功才写入版本 6；失败项不会
+写成完成状态，下一次启动继续重试。安装目录和迁移资源始终只读。
+
+GUI 发布严格使用三个版本规范和更新频道：
+
+- 稳定版 `X.Y.Z` 使用 `latest.yml`。
+- 预发布版 `X.Y.Z-beta.N` 使用 `beta.yml`。
+- 开发版 `X.Y.Z-dev.N` 使用 `dev.yml`。
+
+发布工作流会拒绝其他格式，并验证产物只能包含当前频道的更新清单。客户端也会
+校验候选版本的频道，禁止开发版或预发布版回退到稳定频道。
+
+完整升级生命周期如下：
+
+1. release workflow 从 tag 解析版本、阶段和频道，覆盖构建时 publish channel。
+2. 打包后验证只生成当前频道的 YAML 清单，再创建对应 stable/prerelease Release。
+3. 客户端检查返回“有更新 / 已是最新 / 检查失败”三态，网络或频道错误不能显示成最新版。
+4. 下载前再次校验候选版本频道；没有已确认版本时拒绝下载和安装。
+5. 安装前调用后端正式停止接口，终止并等待完整进程树退出。
+6. 无法确认后端退出或文件锁释放时取消安装；成功后才调用 `quitAndInstall()`。
 
 ---
 

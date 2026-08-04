@@ -24,6 +24,7 @@ export class TaskGroupView {
   onOpenGroupLoader?: () => void;
   onLoadAll?: () => void;
   onAddManagedPlan?: () => void;
+  onAddDailyPlan?: () => void;
   onRemoveItem?: (index: number) => void;
   onLoadItem?: (index: number) => void;
   onTimesChange?: (index: number, times: number) => void;
@@ -57,6 +58,10 @@ export class TaskGroupView {
       'click',
       () => this.onAddManagedPlan?.(),
     );
+    document.getElementById('btn-tg-add-daily-plan')?.addEventListener(
+      'click',
+      () => this.onAddDailyPlan?.(),
+    );
   }
 
   render(vo: TaskGroupViewObject): void {
@@ -70,7 +75,7 @@ export class TaskGroupView {
     // ── 条目列表 ──
     this.itemsEl.innerHTML = '';
     if (vo.items.length === 0) {
-      this.itemsEl.innerHTML = '<p class="tg-empty">暂无任务，点击「加载计划」从计划管理中添加作战方案。</p>';
+      this.itemsEl.innerHTML = '<p class="tg-empty">暂无任务，可通过「加载计划」或「加载日常任务」添加。</p>';
       restoreScrollPosition(this.itemsEl, scrollPosition);
       return;
     }
@@ -115,7 +120,11 @@ export class TaskGroupView {
     const label = document.createElement('span');
     label.className = 'tg-label';
     label.textContent = item.label;
-    label.title = item.managedFile ?? item.path ?? item.templateId ?? '';
+    label.title = item.dailyFile
+      ?? item.managedFile
+      ?? item.path
+      ?? item.templateId
+      ?? '';
 
     const fleetTag = document.createElement('span');
     fleetTag.className = 'tg-fleet-tag';
@@ -130,7 +139,8 @@ export class TaskGroupView {
 
     const detail = document.createElement('span');
     detail.className = 'tg-detail';
-    const fileName = item.managedFile
+    const fileName = item.dailyFile
+      ?? item.managedFile
       ?? item.path?.split(/[\\/]/).pop()
       ?? item.templateId
       ?? item.label;
@@ -163,6 +173,7 @@ export class TaskGroupView {
     times.max = '9999';
     times.title = '执行次数';
     times.value = String(item.times);
+    times.disabled = item.dailyTaskType === 'exercise';
     times.addEventListener('change', () => {
       this.onTimesChange?.(index, Math.max(1, parseInt(times.value, 10) || 1));
     });
@@ -227,6 +238,7 @@ export class TaskGroupView {
   }
 
   private sourceClass(item: TaskGroupItemViewObject): string {
+    if (item.kind === 'daily') return 'daily';
     if (item.managedSource === 'system') return 'system';
     if (item.managedSource === 'user') return 'user';
     if (item.kind === 'template') return 'template';
@@ -234,6 +246,7 @@ export class TaskGroupView {
   }
 
   private sourceLabel(item: TaskGroupItemViewObject): string {
+    if (item.kind === 'daily') return '日常任务';
     if (item.managedSource === 'system') return '系统预设';
     if (item.managedSource === 'user') return '用户预设';
     if (item.kind === 'template') return '任务模板';

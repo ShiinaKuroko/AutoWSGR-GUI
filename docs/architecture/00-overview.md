@@ -17,14 +17,14 @@ graph TB
   subgraph Renderer["渲染进程 (src/)"]
     View["View 层<br/>MainView(Facade) · PlanPreviewView(Facade)<br/>ConfigView · TaskGroupView<br/>TemplateLibraryView · SetupWizardView"]
     Controller["Controller 层<br/>AppController · StartupController<br/>PlanController · FleetPlannerController<br/>TaskGroupController · TemplateController<br/>── 各功能最小 Host 接口 ──"]
-    Model["Model 层<br/>Scheduler · CronScheduler · TaskQueue<br/>ApiClient · ConfigModel · PlanModel<br/>TemplateModel · TaskGroupModel<br/>RepairManager · StopConditionChecker"]
+    Model["Model 层<br/>Scheduler · CronScheduler · TaskQueue<br/>ApiClient · ConfigModel · PlanModel<br/>TemplateModel · TaskGroupModel · DailySortieStats<br/>RepairManager · StopConditionChecker"]
   end
 
   subgraph Main["Electron 主进程 (electron/)"]
     Root["组合根<br/>main.ts"]
     IPC["IPC Adapter<br/>ipc/*.ts · preload.ts"]
     Service["用例与领域服务<br/>services/*.ts"]
-    PyEnv["Python 环境管理<br/>pythonEnv/ (9 个模块)"]
+    PyEnv["Python 环境管理<br/>pythonEnv/ (12 个模块)"]
     Backend["后端进程管理<br/>services/BackendService.ts"]
     Emulator["模拟器检测<br/>emulatorDetect.ts"]
   end
@@ -55,7 +55,7 @@ graph TB
 | **Controller** | `src/controller/` | 从 Model 提取数据 → 拼装 ViewObject → 调用 View 渲染；处理用户事件 → 调用 Model / Adapter。各功能声明自己的最小 Host |
 | **Model** | `src/model/` | 业务实体 + 领域服务：调度、配置、方案、Fleet 规则、后端通信 |
 | **Adapter** | `src/adapter/` | YAML/JSON、IPC、HTTP/WS 和浏览器存储边界 |
-| **Types** | `src/types/` | API、IPC、Model、View 和 Scheduler 五个领域类型文件 |
+| **Types** | `src/types/` | API、IPC、Model、View、Scheduler 和 Statistics 六个领域类型文件 |
 | **主进程** | `electron/` | `main.ts` 负责装配；`ipc/` 保持通道契约；`services/` 承担窗口、配置、计划、环境和后端用例 |
 | **Python 后端** | 外部 | 游戏自动化核心逻辑：模拟器连接、战斗执行、OCR 识别 |
 
@@ -75,6 +75,7 @@ AutoWSGR-GUI/
 │   │   ├── ConfigurationIpc.ts # 同步 getter 与配置 setter
 │   │   ├── TeamPlanIpc.ts      # 编队计划
 │   │   ├── CombatPlanIpc.ts    # 作战计划
+│   │   ├── DailyPlanIpc.ts     # 演习、战役和决战日常计划
 │   │   ├── ShipLibraryIpc.ts   # 舰船资料库
 │   │   ├── EnvironmentIpc.ts   # Python 环境
 │   │   ├── BackendIpc.ts       # 后端进程
@@ -87,13 +88,18 @@ AutoWSGR-GUI/
 │   │   ├── TeamPlanCodec.ts · TeamPlanRepository.ts · TeamPlanService.ts
 │   │   ├── CombatPlanCodec.ts · CombatPlanRepository.ts
 │   │   ├── RuntimePlanService.ts · PlanManagementService.ts
+│   │   ├── DailyPlanService.ts · TaskPresetCodec.ts
 │   │   ├── ShipLibraryService.ts · ShipLibraryUpdater.ts
 │   │   ├── AdbService.ts · CudaEnvironmentService.ts
 │   │   ├── GuiConfigurationService.ts · PythonEnvironmentService.ts
 │   │   ├── LegacyPlanMigration.ts
-│   │   └── BackendService.ts   # Python 后端启动/停止
+│   │   ├── BackendService.ts · BackendShutdownService.ts
+│   │   └── GuiUpdatePolicy.ts  # 更新版本和频道策略
 │   └── pythonEnv/              # Python 环境管理子模块
+│       ├── backendRequirement.ts # 支持的后端版本范围
+│       ├── backendContractProbe.ts # 外部后端能力探测
 │       ├── context.ts          # 共享上下文与缓存状态
+│       ├── dependencies.ts     # Python 依赖声明
 │       ├── finder.ts           # Python 可执行文件发现
 │       ├── environment.ts      # 统一安装、检查和启动环境
 │       ├── cuda.ts             # CUDA 路径与环境变量
@@ -104,16 +110,17 @@ AutoWSGR-GUI/
 │       └── index.ts            # 聚合导出
 ├── src/                        # 渲染进程 (MVC)
 │   ├── controller/             # 控制器（6 个子目录）
-│   │   ├── app/                # 应用控制器：AppController · ConfigController · SettingsController · SchedulerBinder
+│   │   ├── app/                # 应用控制器：AppController · ConfigController · SchedulerBinder · AutomaticDecisiveTask
 │   │   ├── startup/            # 启动流程：StartupController · connection · envAndUpdates
 │   │   ├── plan/               # 方案控制器：PlanController · BattlePlanLoaderController · FleetPlannerController · DecisivePlanController
-│   │   ├── taskGroup/          # 任务组：TaskGroupController · addItems · contextMenu · metaLoader · queueLoader
+│   │   ├── taskGroup/          # 任务组：TaskGroupController · DailyTaskLoaderController · queueLoader
 │   │   ├── template/           # 模板：TemplateController · crud · selectors · useTemplate · wizard
 │   │   └── shared/             # 共享 UI 边界：DialogHelper
 │   ├── adapter/                # YAML/JSON · IPC · HTTP/WS · Storage
 │   ├── model/                  # 数据模型 + 业务服务
-│   │   ├── fleet/              # FleetDraft · DecisiveFleetDraft · ShipMatcher · FleetRuleMapper
+│   │   ├── fleet/              # FleetDraft · DecisiveFleetDraft · FleetPresetIdentity · FleetRuleMapper
 │   │   ├── scheduler/          # 调度子模块：Scheduler · CronScheduler · TaskQueue · ExpeditionTimer · StopConditionChecker · RepairManager
+│   │   ├── statistics/         # 今日出征统计
 │   │   ├── ApiClient.ts        # HTTP/WebSocket 后端通信
 │   │   ├── ConfigModel.ts      # 配置数据模型
 │   │   ├── PlanModel.ts        # 方案解析/序列化
@@ -127,39 +134,47 @@ AutoWSGR-GUI/
 │   │   ├── taskGroup/          # 任务组：TaskGroupView
 │   │   ├── template/           # 模板：TemplateLibraryView · TemplateWizardView · SelectorDialog
 │   │   ├── setup/              # 初始化向导：SetupWizardView
-│   │   ├── shared/             # 共享组件：ShipAutocomplete
+│   │   ├── shared/             # 共享组件：ShipAutocomplete · AnimatedSelect
 │   │   └── styles/             # SCSS 样式（base/ · components/ · pages/）
-│   ├── types/                  # 5 个按完整领域合并的类型文件
+│   ├── types/                  # 6 个按完整领域合并的类型文件
 │   │   ├── api.ts              # API / WebSocket DTO
 │   │   ├── ipc.ts              # IPC DTO、ElectronBridge 和 Window 声明
 │   │   ├── model.ts            # Plan、Config、Template、Repair 领域类型
 │   │   ├── view.ts             # 页面 ViewObject 和表单值
-│   │   └── scheduler.ts        # 调度器公共类型
+│   │   ├── scheduler.ts        # 调度器公共类型
+│   │   └── statistics.ts       # 今日出征统计类型
+│   ├── shared/                 # 决战、胖次和舰种等跨层稳定契约
 │   ├── data/                   # 舰船静态 JSON；运行时规则位于 model/fleet
 │   └── utils/                  # 工具类（Logger）
 ├── resource/                   # 只读资源
 │   ├── system_battle_plans/    # 系统作战计划 (.yaml)
 │   ├── system_team_plans/      # 系统编队计划 (.yaml)
+│   ├── system_daily_plans/     # 演习、战役和决战日常计划
 │   ├── user_battle_plans/      # 兼容旧目录，运行时不写入
 │   ├── user_team_plans/        # 兼容旧目录，运行时不写入
+│   ├── migrations/v6/          # 已下架系统计划的只读迁移快照
+│   ├── ship-library/           # 打包舰船资料库种子
 │   ├── builtin_templates.json  # 内置模板
 │   ├── maps/                   # 地图 JSON（节点坐标、连线）
 │   └── images/                 # 图片资源
 ├── templates/                  # 用户自定义模板（历史兼容来源）
 ├── scripts/                    # 构建脚本
 ├── build/                      # electron-builder 配置
-├── usersettings.yaml           # 用户配置文件
-├── gui_settings.json           # GUI 级配置（端口等）
-├── task_groups.json            # 任务组持久化
+├── usersettings.yaml           # 历史兼容来源，运行时写入 userData
+├── gui_settings.json           # 历史兼容来源，运行时写入 userData
+├── task_groups.json            # 历史兼容来源，运行时写入 userData
 └── package.json                # 项目配置
 ```
 
-用户可变计划、舰队、设置和迁移状态写入 Electron `userData`：
-`user_battle_plans/`、`user_team_plans/`、`gui_settings.json` 和
+用户可变计划、舰队、日常计划、设置和迁移状态写入 Electron `userData`：
+`user_battle_plans/`、`user_team_plans/`、`user_daily_plans/`、`gui_settings.json` 和
 `.migration-state.json`。安装目录和 `resource/` 只读；v5 迁移会合并当前
 安装目录的旧设置、任务组和模板，递归识别有效计划 YAML，并按新规范重命名
 后纳入 GUI 管理。不同内容的同名配置保存为“（旧版）”副本，源文件始终保留。
-本次存在实际迁移项时，主窗口创建后会显示成功、失败数量和失败文件说明。
+当前迁移状态版本为 v6：在 v5 计划迁移完成项之上，继续升级系统预设库存、
+旧系统计划引用和胖次稳定计划标识。只有 v6 操作全部成功才写入版本 6；失败项
+在下次启动重试。本次存在实际迁移项时，主窗口创建后会显示成功、失败数量和
+失败文件说明。
 
 ### 主进程依赖方向
 
@@ -264,7 +279,9 @@ Model → Controller.extractViewObject() → ViewObject → View.render(vo)
 `PlanPreviewView` 组合地图和节点编辑；`FleetPlannerView` 组合舰队编辑、规则、
 图鉴、计划管理和方案选择。普通舰队草稿只由 `FleetPlannerController` 的单个
 `FleetDraft` 持有，决战草稿由 `DecisivePlanController` 的
-`DecisiveFleetDraft` 独立持有。
+`DecisiveFleetDraft` 独立持有。舰船库读取、编队计划 DTO 转换、保存覆盖和
+`file/source` identity 都在 Controller/Model；Fleet View 只接收 ViewObject 和
+不透明计划 ID，并上报用户意图。
 
 ### 优先级任务队列
 
@@ -276,9 +293,15 @@ Model → Controller.extractViewObject() → ViewObject → View.render(vo)
 | `USER_TASK` | 10 | 用户手动添加的战斗任务 |
 | `DAILY` | 20 | 定时触发的日常任务 |
 
+每个队列轮次使用独立 `id`，同一有限或无限任务的后触发轮次共享稳定
+`logicalId`。单轮完成、逻辑任务完成和逻辑取消是三个不同事件，cron/pending
+状态只在逻辑任务结束或明确取消时清理。
+
 ### 本地 Python 隔离
 
-所有 Python 包安装到 `{appRoot}/python/site-packages/`，不污染全局 Python 环境。通过 `.env_ready` 标记文件缓存环境状态，实现 < 100ms 的后续启动检查。
+managed 模式和内置 Python 使用 `{appRoot}/python/site-packages/`；external
+模式使用用户选定解释器时，依赖安装到该解释器自身环境。安装、依赖检查、
+CUDA 检测和后端启动复用同一环境描述。通过 `.env_ready` 标记缓存已验证环境。
 
 ### 双层通信
 
@@ -297,6 +320,7 @@ Model → Controller.extractViewObject() → ViewObject → View.render(vo)
 | `ipc.ts` | IPC DTO、`ElectronBridge` 与全局 Window 声明 | Adapter、Controller |
 | `model.ts` | Plan、Config、Template、Repair 领域类型 | Model、Controller |
 | `scheduler.ts` | 调度器：TaskPriority、SchedulerTask、SchedulerCallbacks | Scheduler、SchedulerBinder |
+| `statistics.ts` | 今日出征次数、评级和掉落提示 | DailySortieStats、SchedulerBinder、View |
 | `view.ts` | Main、Plan、Config、Template、TaskGroup ViewObject | Controller → View |
 
 ---
@@ -313,4 +337,5 @@ Model → Controller.extractViewObject() → ViewObject → View.render(vo)
 | [后端通信](06-backend-communication.md) | IPC Bridge · ApiClient · REST API · WebSocket 事件 |
 | [环境管理](07-environment-management.md) | Python 发现/安装 (pythonEnv/) · 模拟器检测 · 后端生命周期 |
 | [开发环境搭建](08-dev-setup.md) | 依赖安装 · 开发/构建/打包命令 · SCSS 架构 · 调试技巧 |
-| [`src` TypeScript 模块目录](09-src-typescript-catalog.md) | 当前 97 个 TS 文件和逐文件职责 |
+| [`src` TypeScript 模块目录](09-src-typescript-catalog.md) | 当前 107 个 TS 文件和逐文件职责 |
+| [当前运行时边界 ADR](10-runtime-boundaries-adr.md) | 存储 · IPC 权限 · 迁移 · 调度身份 · 更新安装决策 |

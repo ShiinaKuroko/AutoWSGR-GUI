@@ -16,75 +16,83 @@ fleet_presets:
     ships:
       - name: 岛风(岛风型驱逐舰)·改
         candidates:
-          - {name: 绫波·改, search_name: 绫波, ship_type: [dd]}
-          - {name: 吹雪·改, search_name: 吹雪, ship_type: [dd]}
-          - {name: 早春·改, search_name: 早春, ship_type: [dd]}
-          - {name: 敷波·改, search_name: 敷波, ship_type: [dd]}
-          - {name: 黑潮·改, search_name: 黑潮, ship_type: [dd]}
+          - {name: 绫波·改, search_name: 绫波, ship_type: [dd], min_level: 100}
+          - {name: 吹雪·改, search_name: 吹雪, ship_type: [dd], min_level: 100}
+          - {name: 早春·改, search_name: 早春, ship_type: [dd], min_level: 100}
+          - {name: 敷波·改, search_name: 敷波, ship_type: [dd], min_level: 100}
+          - {name: 黑潮·改, search_name: 黑潮, ship_type: [dd], min_level: 100}
         search_name: 岛风
         ship_type: [dd]
+        min_level: 100
       - name: 初夏·改
         candidates:
-          - {name: 绫波·改, search_name: 绫波, ship_type: [dd]}
-          - {name: 吹雪·改, search_name: 吹雪, ship_type: [dd]}
-          - {name: 早春·改, search_name: 早春, ship_type: [dd]}
-          - {name: 敷波·改, search_name: 敷波, ship_type: [dd]}
-          - {name: 黑潮·改, search_name: 黑潮, ship_type: [dd]}
+          - {name: 绫波·改, search_name: 绫波, ship_type: [dd], min_level: 100}
+          - {name: 吹雪·改, search_name: 吹雪, ship_type: [dd], min_level: 100}
+          - {name: 早春·改, search_name: 早春, ship_type: [dd], min_level: 100}
+          - {name: 敷波·改, search_name: 敷波, ship_type: [dd], min_level: 100}
+          - {name: 黑潮·改, search_name: 黑潮, ship_type: [dd], min_level: 100}
         search_name: 初夏
         ship_type: [dd]
+        min_level: 100
       - name: 高波·改
         candidates:
-          - {name: 绫波·改, search_name: 绫波, ship_type: [dd]}
-          - {name: 吹雪·改, search_name: 吹雪, ship_type: [dd]}
-          - {name: 早春·改, search_name: 早春, ship_type: [dd]}
-          - {name: 敷波·改, search_name: 敷波, ship_type: [dd]}
-          - {name: 黑潮·改, search_name: 黑潮, ship_type: [dd]}
+          - {name: 绫波·改, search_name: 绫波, ship_type: [dd], min_level: 100}
+          - {name: 吹雪·改, search_name: 吹雪, ship_type: [dd], min_level: 100}
+          - {name: 早春·改, search_name: 早春, ship_type: [dd], min_level: 100}
+          - {name: 敷波·改, search_name: 敷波, ship_type: [dd], min_level: 100}
+          - {name: 黑潮·改, search_name: 黑潮, ship_type: [dd], min_level: 100}
         search_name: 高波
         ship_type: [dd]
+        min_level: 100
       - name: 阳炎·改
         candidates:
-          - {name: 绫波·改, search_name: 绫波, ship_type: [dd]}
-          - {name: 吹雪·改, search_name: 吹雪, ship_type: [dd]}
-          - {name: 早春·改, search_name: 早春, ship_type: [dd]}
-          - {name: 敷波·改, search_name: 敷波, ship_type: [dd]}
-          - {name: 黑潮·改, search_name: 黑潮, ship_type: [dd]}
+          - {name: 绫波·改, search_name: 绫波, ship_type: [dd], min_level: 100}
+          - {name: 吹雪·改, search_name: 吹雪, ship_type: [dd], min_level: 100}
+          - {name: 早春·改, search_name: 早春, ship_type: [dd], min_level: 100}
+          - {name: 敷波·改, search_name: 敷波, ship_type: [dd], min_level: 100}
+          - {name: 黑潮·改, search_name: 黑潮, ship_type: [dd], min_level: 100}
         search_name: 阳炎
         ship_type: [dd]
+        min_level: 100
   - name: 4德驱周常队
     ships:
       - name: Z28·改
         candidates:
-          - {name: Z1·改, search_name: Z1, ship_type: [dd]}
-          - {name: Z16·改, search_name: Z16, ship_type: [dd]}
-          - {name: Z21·改, search_name: Z21, ship_type: [dd]}
-          - {name: Z22·改, search_name: Z22, ship_type: [dd]}
-          - {name: Z31·改, search_name: Z31, ship_type: [dd]}
+          - {name: Z1·改, search_name: Z1, ship_type: [dd], min_level: 100}
+          - {name: Z16·改, search_name: Z16, ship_type: [dd], min_level: 100}
+          - {name: Z21·改, search_name: Z21, ship_type: [dd], min_level: 100}
+          - {name: Z22·改, search_name: Z22, ship_type: [dd], min_level: 100}
+          - {name: Z31·改, search_name: Z31, ship_type: [dd], min_level: 100}
         search_name: Z28
         ship_type: [dd]
+        min_level: 100
       - name: T-23·改
         candidates:
-          - {name: Z1·改, search_name: Z1, ship_type: [dd]}
-          - {name: Z16·改, search_name: Z16, ship_type: [dd]}
-          - {name: Z21·改, search_name: Z21, ship_type: [dd]}
-          - {name: Z22·改, search_name: Z22, ship_type: [dd]}
-          - {name: Z31·改, search_name: Z31, ship_type: [dd]}
+          - {name: Z1·改, search_name: Z1, ship_type: [dd], min_level: 100}
+          - {name: Z16·改, search_name: Z16, ship_type: [dd], min_level: 100}
+          - {name: Z21·改, search_name: Z21, ship_type: [dd], min_level: 100}
+          - {name: Z22·改, search_name: Z22, ship_type: [dd], min_level: 100}
+          - {name: Z31·改, search_name: Z31, ship_type: [dd], min_level: 100}
         search_name: T-23
         ship_type: [dd]
+        min_level: 100
       - name: 吕贝克·改
         candidates:
-          - {name: Z1·改, search_name: Z1, ship_type: [dd]}
-          - {name: Z16·改, search_name: Z16, ship_type: [dd]}
-          - {name: Z21·改, search_name: Z21, ship_type: [dd]}
-          - {name: Z22·改, search_name: Z22, ship_type: [dd]}
-          - {name: Z31·改, search_name: Z31, ship_type: [dd]}
+          - {name: Z1·改, search_name: Z1, ship_type: [dd], min_level: 100}
+          - {name: Z16·改, search_name: Z16, ship_type: [dd], min_level: 100}
+          - {name: Z21·改, search_name: Z21, ship_type: [dd], min_level: 100}
+          - {name: Z22·改, search_name: Z22, ship_type: [dd], min_level: 100}
+          - {name: Z31·改, search_name: Z31, ship_type: [dd], min_level: 100}
         search_name: 吕贝克
         ship_type: [dd]
+        min_level: 100
       - name: Z46·改
         candidates:
-          - {name: Z1·改, search_name: Z1, ship_type: [dd]}
-          - {name: Z16·改, search_name: Z16, ship_type: [dd]}
-          - {name: Z21·改, search_name: Z21, ship_type: [dd]}
-          - {name: Z22·改, search_name: Z22, ship_type: [dd]}
-          - {name: Z31·改, search_name: Z31, ship_type: [dd]}
+          - {name: Z1·改, search_name: Z1, ship_type: [dd], min_level: 100}
+          - {name: Z16·改, search_name: Z16, ship_type: [dd], min_level: 100}
+          - {name: Z21·改, search_name: Z21, ship_type: [dd], min_level: 100}
+          - {name: Z22·改, search_name: Z22, ship_type: [dd], min_level: 100}
+          - {name: Z31·改, search_name: Z31, ship_type: [dd], min_level: 100}
         search_name: Z46
         ship_type: [dd]
+        min_level: 100

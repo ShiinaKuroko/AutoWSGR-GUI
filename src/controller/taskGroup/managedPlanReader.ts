@@ -16,6 +16,23 @@ export async function readTaskGroupItemFile(
   const bridge = window.electronBridge;
   if (!bridge) throw new Error('Electron bridge is unavailable');
 
+  if (item.dailySource && item.dailyFile) {
+    if (!bridge.readDailyPlan) {
+      throw new Error('当前 GUI 不支持读取日常任务目录');
+    }
+    const result = await bridge.readDailyPlan(
+      item.dailySource,
+      item.dailyFile,
+    );
+    if (!result.success || result.content === undefined || !result.path) {
+      throw new Error(result.error || `无法读取 ${item.dailyFile}`);
+    }
+    return {
+      content: result.content,
+      path: result.path,
+    };
+  }
+
   if (item.managedSource && item.managedFile) {
     if (!bridge.readManagedCombatPlan) {
       throw new Error('当前 GUI 不支持读取计划管理目录');

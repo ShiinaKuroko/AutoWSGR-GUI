@@ -23,20 +23,6 @@
   overflow: hidden;
 }
 
-.node-list.map-canvas::before {
-  content: "节点路线";
-  position: absolute;
-  top: 9px;
-  left: 11px;
-  z-index: 0;
-  color: var(--text-muted);
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  opacity: 0.22;
-  pointer-events: none;
-}
-
 .map-stage {
   position: relative;
   flex: 0 0 auto;

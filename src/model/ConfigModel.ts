@@ -11,11 +11,21 @@ import type {
 } from '../types/model.js';
 import {
   DEFAULT_LOOT_PLAN_ID,
+  DEFAULT_LOOT_PLANS,
   LEGACY_LOOT_PLAN_IDS,
-  isLootPlanId,
+  findLootAutomationPlan,
   lootPlanIdFromIndex,
-  normalizeLootPlanId,
+  migrateLootPlanId,
+  normalizeLootAutomationPlans,
 } from '../shared/lootPlans.js';
+import type {
+  LegacyDecisiveAutomationSettings,
+  LegacyDecisiveYamlKey,
+} from '../shared/legacyDecisiveAutomation.js';
+import {
+  SYSTEM_DECISIVE_PRESET_ID,
+  normalizeDecisiveAutomationSource,
+} from '../shared/decisiveAutomation.js';
 import { Logger } from '../utils/Logger';
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -65,17 +75,18 @@ const DEFAULT_SETTINGS: UserSettings = {
 const DEFAULT_GUI_AUTOMATION: GuiAutomationSettings = {
   expeditionInterval: 15,
   battleTimes: 3,
+  autoDecisive: false,
+  decisiveTemplateId: SYSTEM_DECISIVE_PRESET_ID,
   autoLoot: false,
+  lootPlanSource: 'system',
   lootPlanId: DEFAULT_LOOT_PLAN_ID,
+  lootPlans: DEFAULT_LOOT_PLANS.map(plan => ({ ...plan })),
   lootStopCount: 50,
 };
 
 const LEGACY_DAILY_KEYS = [
   'expedition_interval',
   'battle_times',
-  'auto_decisive',
-  'decisive_ticket_reserve',
-  'decisive_template_id',
   'auto_loot',
   'loot_plan_id',
   'loot_plan_index',
@@ -86,6 +97,10 @@ export class ConfigModel {
   private settings: UserSettings;
   private guiAutomation: GuiAutomationSettings;
   private legacyGuiAutomation: Partial<GuiAutomationSettings> = {};
+  private legacyDecisiveAutomation:
+    LegacyDecisiveAutomationSettings = {};
+  private invalidLegacyDecisiveFields:
+    LegacyDecisiveYamlKey[] = [];
   /** 原始 YAML 根对象，用于保留 GUI 尚未建模的后端配置 */
   private rawRoot: Record<string, unknown> = {};
 
@@ -107,6 +122,18 @@ export class ConfigModel {
   /** 旧版 usersettings.yaml 中可迁移的 GUI 私有字段。 */
   get migratedGuiAutomation(): Partial<GuiAutomationSettings> {
     return structuredClone(this.legacyGuiAutomation);
+  }
+
+  /** 等待迁入 gui_settings.json 的旧版决战自动化原值。 */
+  get migratedLegacyDecisiveAutomation():
+    LegacyDecisiveAutomationSettings {
+    return structuredClone(this.legacyDecisiveAutomation);
+  }
+
+  /** 格式无法识别且必须继续留在 YAML 中的旧版决战字段。 */
+  get unmigratedLegacyDecisiveFields():
+    readonly LegacyDecisiveYamlKey[] {
+    return [...this.invalidLegacyDecisiveFields];
   }
 
   /** 从 YAML 字符串加载配置，缺失字段保留默认值 */
@@ -212,8 +239,12 @@ export class ConfigModel {
           : Math.max(0, Math.trunc(Number(daily.quick_repair_limit)));
       }
       this.legacyGuiAutomation = this.readLegacyGuiAutomation(daily);
+      this.legacyDecisiveAutomation =
+        this.readLegacyDecisiveAutomation(daily);
     } else {
       this.legacyGuiAutomation = {};
+      this.legacyDecisiveAutomation = {};
+      this.invalidLegacyDecisiveFields = [];
     }
 
     base.operation_delay_min = this.clampNumber(
@@ -270,7 +301,6 @@ export class ConfigModel {
       this.rawRoot.daily_automation,
       this.settings.daily_automation,
     );
-    for (const key of LEGACY_DAILY_KEYS) delete daily[key];
     if (daily.exercise_fleet_id === null) delete daily.exercise_fleet_id;
     if (daily.quick_repair_limit === null) delete daily.quick_repair_limit;
     output.daily_automation = daily;
@@ -326,7 +356,15 @@ export class ConfigModel {
 
   updateGuiAutomation(partial: Partial<GuiAutomationSettings>): void {
     Object.assign(this.guiAutomation, partial);
-    const validLootPlan = isLootPlanId(this.guiAutomation.lootPlanId);
+    const lootPlans = normalizeLootAutomationPlans(
+      this.guiAutomation.lootPlans,
+    );
+    const selectedLootPlan = findLootAutomationPlan(
+      lootPlans,
+      this.guiAutomation.lootPlanSource,
+      this.guiAutomation.lootPlanId,
+    );
+    const fallbackLootPlan = lootPlans[0] ?? DEFAULT_LOOT_PLANS[0];
     this.guiAutomation.expeditionInterval = Math.max(
       1,
       Math.min(120, Math.trunc(this.guiAutomation.expeditionInterval || 15)),
@@ -335,14 +373,64 @@ export class ConfigModel {
       1,
       Math.trunc(this.guiAutomation.battleTimes || 3),
     );
-    this.guiAutomation.lootPlanId = normalizeLootPlanId(
-      this.guiAutomation.lootPlanId,
-    );
-    if (!validLootPlan) this.guiAutomation.autoLoot = false;
+    this.guiAutomation.autoDecisive =
+      this.guiAutomation.autoDecisive === true;
+    this.guiAutomation.decisiveTemplateId =
+      normalizeDecisiveAutomationSource(
+        this.guiAutomation.decisiveTemplateId,
+      );
+    this.guiAutomation.lootPlans = lootPlans;
+    this.guiAutomation.lootPlanSource =
+      selectedLootPlan?.source ?? fallbackLootPlan?.source ?? 'system';
+    this.guiAutomation.lootPlanId =
+      selectedLootPlan?.file ?? fallbackLootPlan?.file ?? DEFAULT_LOOT_PLAN_ID;
+    if (!selectedLootPlan) this.guiAutomation.autoLoot = false;
     this.guiAutomation.lootStopCount = Math.max(
       1,
       Math.min(50, Math.trunc(this.guiAutomation.lootStopCount || 50)),
     );
+  }
+
+  /** 用默认值重置后再应用迁移结果，避免上一次加载状态参与字段优先级。 */
+  replaceGuiAutomation(partial: Partial<GuiAutomationSettings>): void {
+    this.guiAutomation = structuredClone(DEFAULT_GUI_AUTOMATION);
+    this.updateGuiAutomation(partial);
+  }
+
+  /** 仅在完整 GUI 自动化配置持久化成功后清理旧 YAML 字段。 */
+  markLegacyGuiAutomationMigrated(): void {
+    const daily = this.asRecord(this.rawRoot.daily_automation);
+    if (!daily) return;
+    for (const key of LEGACY_DAILY_KEYS) delete daily[key];
+    this.legacyGuiAutomation = this.readLegacyGuiAutomation(daily);
+  }
+
+  /**
+   * 仅清理已经由主进程写入并回读确认的旧版决战字段。
+   * 未迁移或格式异常的字段继续由 rawRoot 原样写回 YAML。
+   */
+  markLegacyDecisiveAutomationMigrated(
+    settings: LegacyDecisiveAutomationSettings,
+  ): void {
+    const daily = this.asRecord(this.rawRoot.daily_automation);
+    if (!daily) return;
+    if (
+      Object.prototype.hasOwnProperty.call(settings, 'autoDecisive')
+    ) {
+      delete daily.auto_decisive;
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(settings, 'ticketReserve')
+    ) {
+      delete daily.decisive_ticket_reserve;
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(settings, 'templateId')
+    ) {
+      delete daily.decisive_template_id;
+    }
+    this.legacyDecisiveAutomation =
+      this.readLegacyDecisiveAutomation(daily);
   }
 
   private asRecord(value: unknown): Record<string, unknown> | null {
@@ -485,10 +573,11 @@ export class ConfigModel {
     }
     if (typeof daily.auto_loot === 'boolean') output.autoLoot = daily.auto_loot;
     if (typeof daily.loot_plan_id === 'string') {
-      if (isLootPlanId(daily.loot_plan_id)) {
-        output.lootPlanId = daily.loot_plan_id;
+      const migrated = migrateLootPlanId(daily.loot_plan_id);
+      if (migrated) {
+        output.lootPlanSource = 'system';
+        output.lootPlanId = migrated;
       } else {
-        output.lootPlanId = DEFAULT_LOOT_PLAN_ID;
         output.autoLoot = false;
       }
     } else if (
@@ -498,16 +587,72 @@ export class ConfigModel {
         daily.loot_plan_index,
         LEGACY_LOOT_PLAN_IDS,
       );
-      output.lootPlanId = resolved ?? DEFAULT_LOOT_PLAN_ID;
-      if (!resolved) output.autoLoot = false;
+      if (resolved) {
+        output.lootPlanSource = 'system';
+        output.lootPlanId = resolved;
+      }
+      else output.autoLoot = false;
     }
     if (output.autoLoot === true && !output.lootPlanId) {
-      output.lootPlanId = DEFAULT_LOOT_PLAN_ID;
       output.autoLoot = false;
     }
     if (Number.isFinite(Number(daily.loot_stop_count))) {
       output.lootStopCount = Number(daily.loot_stop_count);
     }
+    return output;
+  }
+
+  /** 读取可安全迁移的旧决战值，并记录必须原样保留的异常字段。 */
+  private readLegacyDecisiveAutomation(
+    daily: Record<string, unknown>,
+  ): LegacyDecisiveAutomationSettings {
+    const output: LegacyDecisiveAutomationSettings = {};
+    const invalid: LegacyDecisiveYamlKey[] = [];
+    if (
+      Object.prototype.hasOwnProperty.call(daily, 'auto_decisive')
+    ) {
+      if (typeof daily.auto_decisive === 'boolean') {
+        output.autoDecisive = daily.auto_decisive;
+      } else {
+        invalid.push('auto_decisive');
+      }
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(
+        daily,
+        'decisive_ticket_reserve',
+      )
+    ) {
+      const raw = daily.decisive_ticket_reserve;
+      const numericString = typeof raw === 'string' && raw.trim();
+      if (
+        (typeof raw === 'number' && Number.isFinite(raw))
+        || (
+          numericString
+          && Number.isFinite(Number(raw))
+        )
+      ) {
+        output.ticketReserve = Number(raw);
+      } else {
+        invalid.push('decisive_ticket_reserve');
+      }
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(
+        daily,
+        'decisive_template_id',
+      )
+    ) {
+      if (
+        typeof daily.decisive_template_id === 'string'
+        && daily.decisive_template_id.length > 0
+      ) {
+        output.templateId = daily.decisive_template_id;
+      } else {
+        invalid.push('decisive_template_id');
+      }
+    }
+    this.invalidLegacyDecisiveFields = invalid;
     return output;
   }
 

@@ -194,27 +194,16 @@ export class TeamPlanCodec {
     const rawCandidates = (
       raw.candidates ?? raw.priority
     ) as unknown[] | undefined;
-    const legacyNames = rawCandidates?.every(
-      value => typeof value === 'string',
-    ) === true
-      ? rawCandidates.map(value => String(value).trim())
-      : null;
-
-    let primaryRaw: Record<string, unknown> | null = (
+    const primaryRaw: Record<string, unknown> | null = (
       typeof raw.name === 'string' && raw.name.trim()
     )
       ? raw
       : null;
-    let candidatesRaw = rawCandidates ?? [];
-    if (
+    const candidatesRaw = rawCandidates ?? [];
+    const candidateOnlyWithLegacyNames = (
       primaryRaw === null
-      && legacyNames
-      && legacyNames.length > 0
-      && legacyNames.every(Boolean)
-    ) {
-      primaryRaw = { ...raw, name: legacyNames[0] };
-      candidatesRaw = legacyNames.slice(1);
-    }
+      && candidatesRaw.some(value => typeof value === 'string')
+    );
 
     const candidates = candidatesRaw.map((candidate, index) => {
       if (typeof candidate === 'string') {
@@ -237,7 +226,10 @@ export class TeamPlanCodec {
         || raw.min_level !== undefined
         || raw.max_level !== undefined
       );
-      if (raw.search_name !== undefined) {
+      if (
+        raw.search_name !== undefined
+        && !candidateOnlyWithLegacyNames
+      ) {
         throw new Error('没有主选 name 时不能填写 search_name');
       }
       if (!hasAnonymousFilter && candidates.length === 0) {
@@ -264,8 +256,16 @@ export class TeamPlanCodec {
           '无固定舰名位置.max_level 必须大于或等于 min_level',
         );
       }
-      return {
+      const {
+        priority: _legacyPriority,
+        search_name: _legacySearchName,
+        ...candidateOnlyFields
+      } = candidateOnlyWithLegacyNames ? raw : {
         ...raw,
+        priority: undefined,
+      };
+      return {
+        ...candidateOnlyFields,
         ...(shipTypes === undefined ? {} : { ship_type: shipTypes }),
         ...(minLevel === undefined ? {} : { min_level: minLevel }),
         ...(maxLevel === undefined ? {} : { max_level: maxLevel }),
@@ -346,6 +346,7 @@ export class TeamPlanCodec {
   ): UserTeamShipRule {
     return this.normalizeShipRule({
       name,
+      search_name: raw.search_name,
       ship_type: raw.ship_type,
       min_level: raw.min_level,
       max_level: raw.max_level,

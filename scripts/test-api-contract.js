@@ -1,4 +1,7 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { PlanModel } = require('../dist/src/model/PlanModel.js');
 const { TaskQueue } = require('../dist/src/model/scheduler/TaskQueue.js');
 const { ALL_SHIPS } = require('../dist/src/model/fleet/ShipCatalog.js');
@@ -10,6 +13,77 @@ const {
   SHIP_TYPE_FILTER_ORDER,
   TYPE_LABELS,
 } = require('../dist/src/shared/fleetShipTypes.js');
+
+function buildFleetContractCase(name, sourceYaml) {
+  const contractPlan = PlanModel.fromYaml(sourceYaml, `${name}.yaml`);
+  const contractRequest = {
+    type: 'normal_fight',
+    times: 1,
+    plan: {
+      chapter: contractPlan.data.chapter,
+      map: contractPlan.data.map,
+      fleet_id: 1,
+    },
+  };
+  new TaskQueue().switchTaskPreset({
+    request: contractRequest,
+    fleetId: 1,
+    fleetPresets: contractPlan.data.fleet_presets,
+    currentPresetIndex: -1,
+  }, 0);
+  return {
+    name,
+    source_yaml: sourceYaml,
+    gui_yaml: contractPlan.toYaml(),
+    request: contractRequest,
+  };
+}
+
+function runBackendFleetContract(cases) {
+  const projectRoot = path.resolve(__dirname, '..');
+  const backendRoot = path.resolve(
+    process.env.AUTOWSGR_REPO
+      || path.join(projectRoot, '..', 'AutoWSGR'),
+  );
+  const venvPython = process.platform === 'win32'
+    ? path.join(backendRoot, '.venv', 'Scripts', 'python.exe')
+    : path.join(backendRoot, '.venv', 'bin', 'python');
+  const python = process.env.AUTOWSGR_PYTHON
+    || (fs.existsSync(venvPython)
+      ? venvPython
+      : process.platform === 'win32' ? 'python' : 'python3');
+  const helper = path.join(__dirname, 'backend-fleet-contract.py');
+
+  assert.equal(
+    fs.existsSync(path.join(
+      backendRoot,
+      'autowsgr',
+      'server',
+      'schemas.py',
+    )),
+    true,
+    `找不到本地 AutoWSGR 后端仓库: ${backendRoot}`,
+  );
+  const result = spawnSync(python, [helper, backendRoot], {
+    cwd: backendRoot,
+    input: JSON.stringify(cases),
+    encoding: 'utf8',
+    env: { ...process.env, PYTHONUTF8: '1' },
+    maxBuffer: 10 * 1024 * 1024,
+    windowsHide: true,
+  });
+  assert.equal(
+    result.status,
+    0,
+    [
+      '本地 AutoWSGR 跨仓契约测试失败',
+      result.error?.message,
+      result.stdout,
+      result.stderr,
+    ].filter(Boolean).join('\n'),
+  );
+  return JSON.parse(result.stdout);
+}
 
 const plan = PlanModel.fromYaml([
   'chapter: 1',
@@ -113,4 +187,172 @@ for (const shipType of ['cg', 'bg', 'asdg', 'kp']) {
 for (const shipType of ['cgaa', 'cbg', 'ddg', 'ddgaa', 'cf']) {
   assert.equal(normalizeFleetShipTypeCode(shipType), null);
 }
+
+const crossRepoCases = [
+  buildFleetContractCase('structured-candidate-only', [
+    'chapter: 1',
+    'map: 1',
+    'fleet_presets:',
+    '  - name: 结构化纯候选',
+    '    ships:',
+    '      - candidates:',
+    '          - name: 胡德',
+    '            ship_type: [bc]',
+    '            min_level: 20',
+    '          - name: 扶桑',
+    '            ship_type: [bb]',
+    '            max_level: 90',
+    '      - candidates:',
+    '          - name: 胡德',
+    '',
+  ].join('\n')),
+  buildFleetContractCase('legacy-string-candidate-only', [
+    'chapter: 1',
+    'map: 1',
+    'fleet_presets:',
+    '  - name: 旧字符串纯候选',
+    '    ships:',
+    '      - search_name: 契卡洛夫',
+    '        ship_type: [cv]',
+    '        min_level: 90',
+    '        max_level: 110',
+    '        candidates: [85工程, 岛风]',
+    '      - candidates: [胡德, 扶桑]',
+    '      - candidates: [胡德]',
+    '',
+  ].join('\n')),
+  buildFleetContractCase('mixed-candidate-only', [
+    'chapter: 1',
+    'map: 1',
+    'fleet_presets:',
+    '  - name: 混合纯候选',
+    '    ships:',
+    '      - search_name: 大凤',
+    '        ship_type: [cv]',
+    '        min_level: 80',
+    '        max_level: 100',
+    '        candidates:',
+    '          - 大凤·改',
+    '          - name: 岛风',
+    '            search_name: 岛风',
+    '            ship_type: [dd]',
+    '            min_level: 20',
+    '            max_level: 30',
+    '',
+  ].join('\n')),
+  buildFleetContractCase('strict-primary', [
+    'chapter: 1',
+    'map: 1',
+    'fleet_presets:',
+    '  - name: 严格主选',
+    '    ships:',
+    '      - name: 胡德',
+    '        search_name: 胡德',
+    '        ship_type: [bc]',
+    '        min_level: 20',
+    '        candidates:',
+    '          - name: 扶桑',
+    '            ship_type: [bb]',
+    '            max_level: 90',
+    '',
+  ].join('\n')),
+];
+
+const legacyApiRules = crossRepoCases[1].request.plan.fleet_rules;
+assert.equal(legacyApiRules.length, 3);
+for (const rule of legacyApiRules) {
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(rule, 'name'),
+    false,
+  );
+}
+assert.equal(
+  Object.prototype.hasOwnProperty.call(legacyApiRules[0], 'search_name'),
+  false,
+);
+assert.deepEqual(
+  legacyApiRules[0].candidates.map(rule => ({
+    name: rule.name,
+    search_name: rule.search_name,
+    ship_type: rule.ship_type,
+    min_level: rule.min_level,
+    max_level: rule.max_level,
+  })),
+  [
+    {
+      name: '85工程',
+      search_name: '契卡洛夫',
+      ship_type: ['cv'],
+      min_level: 90,
+      max_level: 110,
+    },
+    {
+      name: '岛风',
+      search_name: '契卡洛夫',
+      ship_type: ['cv'],
+      min_level: 90,
+      max_level: 110,
+    },
+  ],
+);
+const mixedApiRule = crossRepoCases[2].request.plan.fleet_rules[0];
+assert.equal(
+  Object.prototype.hasOwnProperty.call(mixedApiRule, 'name'),
+  false,
+);
+assert.equal(
+  Object.prototype.hasOwnProperty.call(mixedApiRule, 'search_name'),
+  false,
+);
+assert.deepEqual(mixedApiRule.candidates, [
+  {
+    name: '大凤·改',
+    search_name: '大凤',
+    ship_type: ['cv'],
+    min_level: 80,
+    max_level: 100,
+  },
+  {
+    name: '岛风',
+    search_name: '岛风',
+    ship_type: ['dd'],
+    min_level: 20,
+    max_level: 30,
+  },
+]);
+
+const backendContracts = runBackendFleetContract(crossRepoCases);
+assert.equal(backendContracts.length, crossRepoCases.length);
+for (const contract of backendContracts) {
+  assert.deepEqual(
+    contract.api,
+    contract.source_yaml,
+    `${contract.name}: GUI API 与后端原始 YAML 语义不一致`,
+  );
+  assert.deepEqual(
+    contract.gui_yaml,
+    contract.source_yaml,
+    `${contract.name}: GUI 保存 YAML 改变了后端语义`,
+  );
+}
+for (const contract of backendContracts.slice(0, 3)) {
+  for (const slot of contract.api) {
+    assert.equal(slot.primary, null);
+  }
+}
+assert.equal(backendContracts[3].api[0].primary.name, '胡德');
+assert.equal(backendContracts[3].api[0].primary.search_name, '胡德');
+assert.equal(backendContracts[3].api[0].primary.min_level, 20);
+assert.deepEqual(
+  backendContracts[3].api[0].candidates.map(rule => rule.name),
+  ['扶桑'],
+);
+assert.deepEqual(
+  backendContracts[1].api[1].candidates.map(rule => rule.name),
+  ['胡德', '扶桑'],
+);
+assert.deepEqual(
+  backendContracts[1].api[2].candidates.map(rule => rule.name),
+  ['胡德'],
+);
 console.log('GUI/AutoWSGR API contract tests passed');

@@ -1,18 +1,18 @@
 # `src` TypeScript 模块目录
 
-当前 `src` 共有 97 个 TypeScript 文件。每个文件第一行均为不超过三行的职责注释；
-本目录由这些文件头汇总，用于快速定位功能所有者。
+当前 `src` 共有 107 个 TypeScript 文件。每个模块均有文件头职责说明；本目录由
+这些说明汇总，用于快速定位功能所有者。
 
 ## 当前结构
 
 ```text
 src/
 ├─ adapter/     6 个：API、IPC、JSON、YAML、Storage 边界
-├─ controller/ 33 个：页面和用例编排
-├─ model/      22 个：领域状态、Fleet 和 Scheduler 规则
-├─ view/       28 个：DOM 渲染、表单输入和 UI 意图
-├─ types/       5 个：API、IPC、Model、View、Scheduler 类型
-├─ shared/      2 个：无状态舰种契约
+├─ controller/ 35 个：页面和用例编排
+├─ model/      24 个：领域状态、Fleet、Scheduler 和统计规则
+├─ view/       30 个：DOM 渲染、表单输入和 UI 意图
+├─ types/       6 个：API、IPC、Model、View、Scheduler、统计类型
+├─ shared/      5 个：跨层无状态业务契约
 ├─ data/           舰船静态 JSON
 └─ utils/       1 个：统一日志
 ```
@@ -28,11 +28,12 @@ src/
 | `src/adapter/StorageAdapter.ts` | 定义键值存储契约，并封装浏览器 localStorage 实现。 |
 | `src/adapter/YamlAdapter.ts` | 统一 YAML 编解码及作战方案元数据读取。 |
 
-## Controller（33）
+## Controller（35）
 
 | 文件 | 职责 |
 |---|---|
 | `src/controller/app/AppController.ts` | 作为 Renderer 组合根，初始化并协调页面、模型和功能控制器。 |
+| `src/controller/app/AutomaticDecisiveTask.ts` | 分别从用户决战计划和系统预设构造自动决战请求。 |
 | `src/controller/app/ConfigController.ts` | 编排设置加载、环境检测、表单保存和配置持久化。 |
 | `src/controller/app/constants.ts` | 维护任务优先级、状态文案和修理模式等界面常量。 |
 | `src/controller/app/NavigationController.ts` | 处理主页面导航、标签切换和当前页面状态。 |
@@ -55,6 +56,7 @@ src/
 | `src/controller/startup/StartupController.ts` | 统一协调应用启动、后端连接、环境检查和资源释放。 |
 | `src/controller/taskGroup/addItems.ts` | 将方案、模板和预设添加为任务组条目。 |
 | `src/controller/taskGroup/contextMenu.ts` | 处理任务组条目的右键菜单、编辑、复制和删除。 |
+| `src/controller/taskGroup/DailyTaskLoaderController.ts` | 管理日常任务浮窗的加载、分类、参数和提交动作。 |
 | `src/controller/taskGroup/managedPlanReader.ts` | 读取受管作战方案并统一返回内容和来源信息。 |
 | `src/controller/taskGroup/metaLoader.ts` | 批量读取任务条目元数据并生成界面展示摘要。 |
 | `src/controller/taskGroup/queueLoader.ts` | 把任务组条目解析为 Scheduler 可执行任务并加入队列。 |
@@ -66,7 +68,7 @@ src/
 | `src/controller/template/useTemplate.ts` | 把模板参数实例化为可加入任务组的任务条目。 |
 | `src/controller/template/wizard.ts` | 维护模板向导步骤、预填数据和表单提交。 |
 
-## Model（22）
+## Model（24）
 
 | 文件 | 职责 |
 |---|---|
@@ -74,6 +76,7 @@ src/
 | `src/model/ConfigModel.ts` | 持有用户配置状态并负责默认值、迁移和 YAML 转换。 |
 | `src/model/fleet/DecisiveFleetDraft.ts` | 维护决战舰队独立草稿及决战配置转换规则。 |
 | `src/model/fleet/FleetDraft.ts` | 维护普通舰队槽位、候选舰和拖拽编辑的唯一草稿。 |
+| `src/model/fleet/FleetPresetIdentity.ts` | 统一编队规则格式并生成稳定的预设身份标识。 |
 | `src/model/fleet/FleetRuleMapper.ts` | 在舰队槽位规则和后端 fleet_rules 请求之间转换。 |
 | `src/model/fleet/index.ts` | 导出舰队草稿、匹配、名称和规则映射等领域能力。 |
 | `src/model/fleet/ShipCatalog.ts` | 加载静态舰船资料并提供舰名和国籍只读目录。 |
@@ -90,10 +93,11 @@ src/
 | `src/model/scheduler/SchedulerTaskPolicy.ts` | 提供任务完成、重试、轮询和后续任务构造的纯规则。 |
 | `src/model/scheduler/StopConditionChecker.ts` | 读取游戏统计并判断掉落、舰船上限等停止条件。 |
 | `src/model/scheduler/TaskQueue.ts` | 唯一持有就绪与延迟队列，并实现优先级和轮询排序。 |
+| `src/model/statistics/DailySortieStats.ts` | 从后端成功日志维护可持久化的今日出征统计。 |
 | `src/model/TaskGroupModel.ts` | 持有任务组及条目状态，并负责 JSON 迁移和持久化。 |
 | `src/model/TemplateModel.ts` | 管理内置与用户模板，负责校验、CRUD 和持久化。 |
 
-## View（28）
+## View（30）
 
 | 文件 | 职责 |
 |---|---|
@@ -119,14 +123,16 @@ src/
 | `src/view/plan/TeamPlanListUi.ts` | 渲染编队方案卡片并实现搜索、筛选和排序。 |
 | `src/view/plan/TeamPlanLoaderView.ts` | 展示编队方案选择器并发出加载方案意图。 |
 | `src/view/setup/SetupWizardView.ts` | 渲染首次启动向导并收集模拟器和 Python 配置。 |
+| `src/view/shared/AnimatedSelect.ts` | 在不改变原生表单数据源的前提下提供统一动画下拉面板。 |
 | `src/view/shared/scrollPosition.ts` | 保存和恢复可滚动容器的界面位置。 |
 | `src/view/shared/ShipAutocomplete.ts` | 为舰名输入框提供搜索建议、键盘选择和补全。 |
+| `src/view/taskGroup/DailyTaskLoaderView.ts` | 渲染日常任务浮窗并上报页签、参数和提交意图。 |
 | `src/view/taskGroup/TaskGroupView.ts` | 渲染任务组和任务条目，并发出选择、排序和菜单意图。 |
 | `src/view/template/SelectorDialog.ts` | 渲染通用选项对话框并返回用户选择。 |
 | `src/view/template/TemplateLibraryView.ts` | 渲染模板库卡片并发出使用、编辑和删除意图。 |
 | `src/view/template/TemplateWizardView.ts` | 渲染模板创建向导、计划列表和分步表单。 |
 
-## Types（5）
+## Types（6）
 
 | 文件 | 职责 |
 |---|---|
@@ -134,13 +140,17 @@ src/
 | `src/types/ipc.ts` | 定义 Renderer 与 Electron 主进程之间的桥接方法、文件结果和资源契约。 |
 | `src/types/model.ts` | 定义配置、作战方案、舰队规则、模板和修理等领域数据结构。 |
 | `src/types/scheduler.ts` | 定义任务队列、调度状态及 Scheduler 对外回调契约。 |
+| `src/types/statistics.ts` | 定义今日出征统计、战斗评级和掉落提示结构。 |
 | `src/types/view.ts` | 定义 Controller 交给各页面渲染的 ViewObject、表单值和展示状态。 |
 
-## Shared（2）
+## Shared（5）
 
 | 文件 | 职责 |
 |---|---|
+| `src/shared/decisiveAutomation.ts` | 定义自动决战的用户计划、系统预设来源和稳定标识。 |
 | `src/shared/fleetShipTypes.ts` | 提供 22 种规范舰种代码、标签、映射和契约校验。 |
+| `src/shared/legacyDecisiveAutomation.ts` | 定义旧决战自动化配置的无损迁移结构。 |
+| `src/shared/lootPlans.ts` | 定义刷胖次稳定计划标识、来源和旧数字索引映射。 |
 | `src/shared/nativeFleetShipTypes.generated.ts` | 保存由 autowsgr_native 生成的舰种代码，供前端漂移检查。 |
 
 ## Utils（1）

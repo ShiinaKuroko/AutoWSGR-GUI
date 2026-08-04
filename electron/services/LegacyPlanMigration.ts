@@ -12,9 +12,14 @@ import {
   type LegacyMigrationSummary,
 } from './LegacyMigrationSummary';
 import {
-  USER_DATA_MIGRATION_VERSION,
   UserDataMigrationService,
+  type LegacyPlanReferenceTarget,
 } from './UserDataMigrationService';
+
+/** v7 将演习、战役和决战从普通出征计划迁移到独立日常目录。 */
+const LEGACY_PLAN_MIGRATION_VERSION = 7;
+
+type DailyPlanType = 'exercise' | 'campaign' | 'decisive';
 
 /** 编队 Codec 为迁移生成的单个原子写入。 */
 export interface LegacyTeamWrite {
@@ -67,30 +72,46 @@ export class LegacyPlanMigration<TTeam> {
 
   /** 扫描旧安装中的有效 YAML，并返回本次实际迁移结果。 */
   migrate(): LegacyMigrationSummary {
-    const detected = this.userDataMigration.hasLegacyInstallation();
+    const legacyDetected = this.userDataMigration.hasLegacyInstallation();
+    const misplacedDailyPlans = this.misplacedDailyPlanFiles();
+    const detected = legacyDetected || misplacedDailyPlans.length > 0;
     const summary = emptyLegacyMigrationSummary(detected);
     if (!detected) return summary;
 
     const state = this.userDataMigration.readState();
     const completed = new Set(state.completed);
-    const fileMap = new Map<string, string>();
-    const teamsFailed = this.migrateLegacyTeams(completed, summary);
-    const plansFailed = this.migrateLegacyPlans(
+    const fileMap = new Map<string, LegacyPlanReferenceTarget>();
+    const decisiveFailed = legacyDetected
+      ? this.migrateLegacyDecisiveSettings(completed, summary)
+      : false;
+    const teamsFailed = legacyDetected
+      ? this.migrateLegacyTeams(completed, summary)
+      : false;
+    const plansFailed = legacyDetected
+      ? this.migrateLegacyPlans(completed, fileMap, summary)
+      : false;
+    const misplacedFailed = this.migrateMisplacedDailyPlans(
+      misplacedDailyPlans,
       completed,
       fileMap,
       summary,
     );
-    const additionalFailed = this.migrateAdditionalYaml(
-      completed,
-      fileMap,
-      summary,
-    );
+    const additionalFailed = legacyDetected
+      ? this.migrateAdditionalYaml(completed, fileMap, summary)
+      : false;
 
     this.userDataMigration.migrateLegacyTaskGroupPlanPaths(fileMap);
+    const failed = (
+      decisiveFailed
+      || teamsFailed
+      || plansFailed
+      || misplacedFailed
+      || additionalFailed
+    );
     const nextState = {
-      version: teamsFailed || plansFailed || additionalFailed
-        ? 0
-        : USER_DATA_MIGRATION_VERSION,
+      version: failed
+        ? state.version
+        : Math.max(state.version, LEGACY_PLAN_MIGRATION_VERSION),
       completed: [...completed].sort(),
     };
     const currentCompleted = [...state.completed].sort();
@@ -156,7 +177,7 @@ export class LegacyPlanMigration<TTeam> {
   /** 升级旧计划并写入 GUI 管理的用户计划目录。 */
   private migrateLegacyPlans(
     completed: Set<string>,
-    fileMap: Map<string, string>,
+    fileMap: Map<string, LegacyPlanReferenceTarget>,
     summary: LegacyMigrationSummary,
   ): boolean {
     const targetDirectory = this.appPaths.userBattlePlansDir();
@@ -193,25 +214,19 @@ export class LegacyPlanMigration<TTeam> {
           const standalone = (
             this.dependencies.isStandaloneTaskPreset?.(parsed) === true
           );
-          const split = standalone
-            ? {
-              mapRoot: this.dependencies.normalizeTaskPreset?.(parsed)
-                ?? parsed,
-              teams: [],
-            }
-            : this.dependencies.normalizeCombatPlanFleetPresets(
-              parsed,
-              'user',
-              false,
+          const target = standalone
+            ? this.migrateTaskPreset(file, content, parsed)
+            : this.migrateCombatPlan(
+              file,
+              content,
+              this.dependencies.normalizeCombatPlanFleetPresets(
+                parsed,
+                'user',
+                false,
+              ),
             );
-          const targetFile = this.writeMigratedPlan(
-            file,
-            content,
-            split.mapRoot,
-            split.teams,
-          );
-          this.registerFileMapping(fileMap, source, targetFile);
-          this.rememberPlanTarget(completed, key, targetFile);
+          this.registerFileMapping(fileMap, source, target);
+          this.rememberPlanTarget(completed, key, target);
           completed.add(key);
           summary.succeeded += 1;
         } catch (error) {
@@ -225,10 +240,118 @@ export class LegacyPlanMigration<TTeam> {
     return failed;
   }
 
+  /** 把已被旧升级器放入普通计划目录的日常任务重新归类。 */
+  private migrateMisplacedDailyPlans(
+    sources: string[],
+    completed: Set<string>,
+    fileMap: Map<string, LegacyPlanReferenceTarget>,
+    summary: LegacyMigrationSummary,
+  ): boolean {
+    let failed = false;
+    for (const source of sources) {
+      const file = path.basename(source);
+      const content = fs.readFileSync(source, 'utf-8');
+      const key = this.migrationKey('plan', source, content);
+      if (completed.has(key)) {
+        this.registerFileMapping(
+          fileMap,
+          source,
+          this.completedPlanTarget(completed, key, file),
+        );
+        continue;
+      }
+      summary.total += 1;
+      try {
+        const parsed = yaml.load(content);
+        if (!this.isPlainObject(parsed)) {
+          throw new Error('旧日常任务根节点必须是对象');
+        }
+        const target = this.migrateTaskPreset(file, content, parsed);
+        if (target.kind !== 'daily') {
+          throw new Error('目标文件不是日常任务');
+        }
+        this.registerFileMapping(fileMap, source, target);
+        this.rememberPlanTarget(completed, key, target);
+        completed.add(key);
+        summary.succeeded += 1;
+      } catch (error) {
+        failed = true;
+        summary.failed += 1;
+        summary.failedFiles.push(source);
+        console.error(`[Migration] ${source} failed:`, error);
+      }
+    }
+    return failed;
+  }
+
+  /** 把旧决战页面最后保存的配置写入对应章节日常 YAML。 */
+  private migrateLegacyDecisiveSettings(
+    completed: Set<string>,
+    summary: LegacyMigrationSummary,
+  ): boolean {
+    const source = path.join(this.appPaths.appRoot(), 'gui_settings.json');
+    if (!fs.existsSync(source)) return false;
+    const content = fs.readFileSync(source, 'utf-8');
+    let root: unknown;
+    try {
+      root = JSON.parse(content);
+    } catch {
+      return false;
+    }
+    if (!this.isPlainObject(root) || !this.isPlainObject(root.decisive_plan)) {
+      return false;
+    }
+
+    const decisive = root.decisive_plan;
+    const decisiveContent = JSON.stringify(decisive);
+    const key = this.migrationKey('plan', source, decisiveContent);
+    if (completed.has(key)) return false;
+    summary.total += 1;
+    try {
+      const level1 = Array.isArray(decisive.level1)
+        ? decisive.level1
+        : [];
+      const level2 = Array.isArray(decisive.level2)
+        ? decisive.level2
+        : [];
+      const level3 = Array.isArray(decisive.level3)
+        ? decisive.level3
+        : [];
+      const chapter = Number(decisive.chapter);
+      const preset = {
+        task_type: 'decisive',
+        chapter,
+        times: 1,
+        use_quick_repair: typeof decisive.use_quick_repair === 'boolean'
+          ? decisive.use_quick_repair
+          : decisive.useQuickRepair,
+        level1: level1.slice(0, 6),
+        level2: [
+          ...level1.slice(6),
+          ...level2,
+          ...level3,
+        ],
+      };
+      this.migrateTaskPreset(
+        `决战第${chapter}章.yaml`,
+        '',
+        preset,
+      );
+      completed.add(key);
+      summary.succeeded += 1;
+      return false;
+    } catch (error) {
+      summary.failed += 1;
+      summary.failedFiles.push(source);
+      console.error(`[Migration] ${source} failed:`, error);
+      return true;
+    }
+  }
+
   /** 递归扫描旧安装其余目录，只迁移能明确识别的计划 YAML。 */
   private migrateAdditionalYaml(
     completed: Set<string>,
-    fileMap: Map<string, string>,
+    fileMap: Map<string, LegacyPlanReferenceTarget>,
     summary: LegacyMigrationSummary,
   ): boolean {
     let failed = false;
@@ -273,14 +396,14 @@ export class LegacyPlanMigration<TTeam> {
         if (isTeam) {
           this.migrateAdditionalTeam(parsed);
         } else {
-          const targetFile = this.migrateAdditionalPlan(
+          const target = this.migrateAdditionalPlan(
             file,
             content,
             parsed,
             isPreset,
           );
-          this.registerFileMapping(fileMap, source, targetFile);
-          this.rememberPlanTarget(completed, key, targetFile);
+          this.registerFileMapping(fileMap, source, target);
+          this.rememberPlanTarget(completed, key, target);
         }
         completed.add(key);
         summary.succeeded += 1;
@@ -313,23 +436,146 @@ export class LegacyPlanMigration<TTeam> {
     content: string,
     parsed: Record<string, unknown>,
     standalone: boolean,
-  ): string {
-    const split = standalone
-      ? {
-        mapRoot: this.dependencies.normalizeTaskPreset?.(parsed)
-          ?? parsed,
-        teams: [],
-      }
-      : this.dependencies.normalizeCombatPlanFleetPresets(
+  ): LegacyPlanReferenceTarget {
+    if (standalone) {
+      return this.migrateTaskPreset(file, content, parsed);
+    }
+    return this.migrateCombatPlan(
+      file,
+      content,
+      this.dependencies.normalizeCombatPlanFleetPresets(
         parsed,
         'user',
         false,
+      ),
+    );
+  }
+
+  private migrateCombatPlan(
+    file: string,
+    content: string,
+    split: {
+      mapRoot: Record<string, unknown>;
+      teams: TTeam[];
+    },
+  ): LegacyPlanReferenceTarget {
+    return {
+      kind: 'plan',
+      file: this.writeMigratedPlan(
+        file,
+        content,
+        split.mapRoot,
+        split.teams,
+      ),
+    };
+  }
+
+  /** 按预设类型选择普通计划目录或日常任务目录。 */
+  private migrateTaskPreset(
+    file: string,
+    content: string,
+    parsed: Record<string, unknown>,
+  ): LegacyPlanReferenceTarget {
+    const normalized = this.dependencies.normalizeTaskPreset?.(parsed);
+    if (!normalized) {
+      throw new Error('缺少任务预设迁移规则');
+    }
+    const taskType = normalized.task_type;
+    if (!this.isDailyTaskType(taskType)) {
+      return {
+        kind: 'plan',
+        file: this.writeMigratedPlan(
+          file,
+          content,
+          normalized,
+          [],
+        ),
+      };
+    }
+    const dailyPreset: Record<string, unknown> & {
+      task_type: DailyPlanType;
+    } = {
+      ...normalized,
+      task_type: taskType,
+    };
+    if (
+      dailyPreset.task_type === 'campaign'
+      && typeof dailyPreset.campaign_name === 'string'
+      && dailyPreset.campaign_name.startsWith('普通')
+    ) {
+      dailyPreset.campaign_name = dailyPreset.campaign_name.replace(
+        /^普通/,
+        '简单',
       );
-    return this.writeMigratedPlan(
-      file,
+    }
+    return {
+      kind: 'daily',
+      taskType,
+      file: this.writeMigratedDailyPlan(file, content, dailyPreset),
+    };
+  }
+
+  private writeMigratedDailyPlan(
+    file: string,
+    content: string,
+    preset: Record<string, unknown> & { task_type: DailyPlanType },
+  ): string {
+    const serialized = this.dependencies.serializeCombatPlan(
+      preset,
       content,
-      split.mapRoot,
-      split.teams,
+    );
+    const target = this.resolveDailyPlanTarget(
+      this.migratedDailyPlanFileName(file, preset),
+      serialized,
+    );
+    if (!target.matches) {
+      fs.mkdirSync(this.appPaths.userDailyPlansDir(), { recursive: true });
+      this.atomicFiles.write(target.path, serialized);
+    }
+    return target.file;
+  }
+
+  private resolveDailyPlanTarget(
+    defaultFile: string,
+    content: string,
+  ): { file: string; path: string; matches: boolean } {
+    for (let suffix = 0; ; suffix += 1) {
+      const file = this.legacyPlanFileName(defaultFile, suffix);
+      const target = path.join(this.appPaths.userDailyPlansDir(), file);
+      if (!fs.existsSync(target)) {
+        return { file, path: target, matches: false };
+      }
+      if (fs.readFileSync(target, 'utf-8') === content) {
+        return { file, path: target, matches: true };
+      }
+    }
+  }
+
+  private migratedDailyPlanFileName(
+    file: string,
+    preset: Record<string, unknown> & { task_type: DailyPlanType },
+  ): string {
+    if (preset.task_type === 'decisive') {
+      const chapter = Number(preset.chapter);
+      if (!Number.isInteger(chapter) || chapter < 1 || chapter > 6) {
+        throw new Error('决战章节必须是 1 到 6');
+      }
+      return `decisive-决战第${chapter}章.yaml`;
+    }
+    if (preset.task_type === 'exercise') {
+      return `exercise-队伍${String(preset.fleet_id)}演习.yaml`;
+    }
+    const campaignName = typeof preset.campaign_name === 'string'
+      ? preset.campaign_name.replace(/^简单/, '普通')
+      : this.dependencies.safePlanBaseName(file);
+    return `campaign-${campaignName}.yaml`;
+  }
+
+  private isDailyTaskType(value: unknown): value is DailyPlanType {
+    return (
+      value === 'exercise'
+      || value === 'campaign'
+      || value === 'decisive'
     );
   }
 
@@ -528,6 +774,26 @@ export class LegacyPlanMigration<TTeam> {
     ));
   }
 
+  /** 查找旧版升级后仍滞留在普通计划目录的三类日常任务。 */
+  private misplacedDailyPlanFiles(): string[] {
+    const directory = this.appPaths.userBattlePlansDir();
+    return this.dependencies.yamlFiles(directory).flatMap(file => {
+      const source = path.join(directory, file);
+      try {
+        const parsed = yaml.load(fs.readFileSync(source, 'utf-8'));
+        return (
+          this.isPlainObject(parsed)
+          && this.dependencies.isStandaloneTaskPreset?.(parsed) === true
+          && this.isDailyTaskType(parsed.task_type)
+        )
+          ? [source]
+          : [];
+      } catch {
+        return [];
+      }
+    });
+  }
+
   private recursiveLegacyYamlFiles(): string[] {
     const files: string[] = [];
     this.collectYamlFiles(this.appPaths.appRoot(), files);
@@ -566,8 +832,10 @@ export class LegacyPlanMigration<TTeam> {
     }
     return [
       this.appPaths.userBattlePlansDir(),
+      this.appPaths.userDailyPlansDir(),
       this.appPaths.userTeamPlansDir(),
       this.appPaths.systemBattlePlansDir(),
+      this.appPaths.systemDailyPlansDir(),
       this.appPaths.systemTeamPlansDir(),
     ].some(excluded => this.pathWithin(directory, excluded));
   }
@@ -614,26 +882,26 @@ export class LegacyPlanMigration<TTeam> {
       .createHash('sha256')
       .update(content)
       .digest('hex');
-    return `${kind}-v5:${this.pathKey(source)}:${hash}`;
+    return `${kind}-v7:${this.pathKey(source)}:${hash}`;
   }
 
   private rememberPlanTarget(
     completed: Set<string>,
     migrationKey: string,
-    targetFile: string,
+    target: LegacyPlanReferenceTarget,
   ): void {
     const prefix = this.planTargetMarkerPrefix(migrationKey);
     for (const value of completed) {
       if (value.startsWith(prefix)) completed.delete(value);
     }
-    completed.add(`${prefix}${encodeURIComponent(targetFile)}`);
+    completed.add(`${prefix}${encodeURIComponent(target.file)}`);
   }
 
   private completedPlanTarget(
     completed: Set<string>,
     migrationKey: string,
     sourceFile: string,
-  ): string {
+  ): LegacyPlanReferenceTarget {
     const prefix = this.planTargetMarkerPrefix(migrationKey);
     const marker = [...completed].find(value => value.startsWith(prefix));
     if (marker) {
@@ -644,13 +912,16 @@ export class LegacyPlanMigration<TTeam> {
           && !/[\\/]/.test(targetFile)
           && /\.ya?ml$/i.test(targetFile)
         ) {
-          return targetFile;
+          return this.referenceTargetFromFile(targetFile);
         }
       } catch {
         // 无效输出记录回退到旧版本默认目标文件名。
       }
     }
-    return this.migratedUserPlanFileName(sourceFile);
+    return {
+      kind: 'plan',
+      file: this.migratedUserPlanFileName(sourceFile),
+    };
   }
 
   private planTargetMarkerPrefix(migrationKey: string): string {
@@ -658,19 +929,34 @@ export class LegacyPlanMigration<TTeam> {
       .createHash('sha256')
       .update(migrationKey)
       .digest('hex');
-    return `plan-output-v5:${hash}:`;
+    return `plan-output-v7:${hash}:`;
   }
 
   private registerFileMapping(
-    fileMap: Map<string, string>,
+    fileMap: Map<string, LegacyPlanReferenceTarget>,
     source: string,
-    targetFile: string,
+    target: LegacyPlanReferenceTarget,
   ): void {
     const relative = path.relative(this.appPaths.appRoot(), source);
     for (const value of [source, relative, path.basename(source)]) {
       const key = this.planReferenceKey(value);
-      if (key && !fileMap.has(key)) fileMap.set(key, targetFile);
+      if (key && !fileMap.has(key)) fileMap.set(key, target);
     }
+  }
+
+  private referenceTargetFromFile(
+    file: string,
+  ): LegacyPlanReferenceTarget {
+    const match = /^(exercise|campaign|decisive)-/.exec(
+      file.toLowerCase(),
+    );
+    return match
+      ? {
+        kind: 'daily',
+        file,
+        taskType: match[1] as DailyPlanType,
+      }
+      : { kind: 'plan', file };
   }
 
   private planReferenceKey(value: string): string {

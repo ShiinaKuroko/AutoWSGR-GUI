@@ -5,7 +5,10 @@
 import type { TaskGroupModel } from '../../model/TaskGroupModel';
 import type { PlanModel } from '../../model/PlanModel';
 import type { TaskPreset } from '../../types/model.js';
-import type { ManagedBattlePlan } from '../../types/ipc.js';
+import type {
+  DailyPlanSelection,
+  ManagedBattlePlan,
+} from '../../types/ipc.js';
 import { Logger } from '../../utils/Logger';
 import { yamlCodec } from '../../adapter';
 
@@ -45,6 +48,33 @@ export function addManagedPlanToGroup(
   void taskGroupModel.save();
   render();
   Logger.info(`已将「${plan.name}」加入任务列表「${group.name}」`);
+}
+
+/** 将日常任务加入任务列表，并保存卡片上的次数和快修选择。 */
+export function addDailyPlanToGroup(
+  taskGroupModel: TaskGroupModel,
+  selection: DailyPlanSelection,
+  render: () => void,
+): void {
+  const group = ensureActiveGroup(taskGroupModel);
+  const { plan } = selection;
+  taskGroupModel.addItem(group.name, {
+    dailySource: plan.source,
+    dailyFile: plan.file,
+    dailyTaskType: plan.taskType,
+    kind: 'daily',
+    times: plan.taskType === 'exercise'
+      ? 1
+      : Math.max(1, selection.times),
+    label: plan.name,
+    chapter: plan.chapter,
+    useQuickRepair: plan.taskType === 'decisive'
+      ? selection.useQuickRepair !== false
+      : undefined,
+  });
+  void taskGroupModel.save();
+  render();
+  Logger.info(`已将日常任务「${plan.name}」加入任务列表「${group.name}」`);
 }
 
 /** 将当前已加载的 Plan 添加到任务组 */

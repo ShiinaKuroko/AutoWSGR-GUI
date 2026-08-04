@@ -49,6 +49,8 @@ export const mapDataRepository = createMapDataRepository();
 
 export interface DecisivePlanRepository {
   loadSettings(): Promise<DecisivePlanSettings>;
+  loadChapter(chapter: number): Promise<DecisivePlanSettings>;
+  loadSystemDefaults(chapter: number): Promise<DecisivePlanSettings>;
   saveSettings(
     settings: DecisivePlanSettings,
   ): Promise<DecisivePlanSettings>;
@@ -56,14 +58,27 @@ export interface DecisivePlanRepository {
 }
 
 export const decisivePlanRepository: DecisivePlanRepository = {
-  loadSettings(): Promise<DecisivePlanSettings> {
-    return getRendererIpc().bridge.getDecisivePlanSettings();
+  async loadSettings(): Promise<DecisivePlanSettings> {
+    const lastSaved = await getRendererIpc()
+      .bridge
+      .getDecisivePlanSettings();
+    return getRendererIpc().bridge.getDailyDecisivePlan(
+      lastSaved.chapter,
+    );
+  },
+
+  loadChapter(chapter: number): Promise<DecisivePlanSettings> {
+    return getRendererIpc().bridge.getDailyDecisivePlan(chapter);
+  },
+
+  loadSystemDefaults(chapter: number): Promise<DecisivePlanSettings> {
+    return getRendererIpc().bridge.getSystemDailyDecisivePlan(chapter);
   },
 
   saveSettings(
     settings: DecisivePlanSettings,
   ): Promise<DecisivePlanSettings> {
-    return getRendererIpc().bridge.setDecisivePlanSettings(settings);
+    return getRendererIpc().bridge.saveDailyDecisivePlan(settings);
   },
 
   loadShipLibrary(): Promise<ShipLibraryManifest> {

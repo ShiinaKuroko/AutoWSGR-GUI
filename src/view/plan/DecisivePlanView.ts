@@ -55,6 +55,7 @@ export interface DecisivePlanSaveResult {
 export interface DecisivePlanViewHost {
   getState(): DecisivePlanViewState;
   setChapter(chapter: number): void;
+  changeChapter(chapter: number): Promise<DecisivePlanSaveResult>;
   setUseQuickRepair(useQuickRepair: boolean): void;
   findShip(name: string): { level: DecisiveLevel; index: number } | null;
   placeShip(
@@ -70,7 +71,7 @@ export interface DecisivePlanViewHost {
     targetLevel: DecisiveLevel,
     targetIndex: number,
   ): number | null;
-  resetTeams(): void;
+  resetTeams(): Promise<DecisivePlanSaveResult>;
   save(): Promise<DecisivePlanSaveResult>;
 }
 
@@ -191,8 +192,7 @@ export class DecisivePlanView {
 
   bindActions(): void {
     this.chapter.addEventListener('change', () => {
-      this.host.setChapter(Number(this.chapter.value));
-      this.markDirty();
+      void this.changeChapter(Number(this.chapter.value));
     });
     this.quickRepair.addEventListener('change', () => {
       this.host.setUseQuickRepair(this.quickRepair.checked);
@@ -339,6 +339,15 @@ export class DecisivePlanView {
     );
     this.render();
     this.setStatus('读取失败，已使用默认队伍', true);
+  }
+
+  showChapterLoaded(): void {
+    this.backupSlotCount = Math.max(
+      DEFAULT_BACKUP_SLOT_COUNT,
+      this.host.getState().level2.length,
+    );
+    this.render();
+    this.setStatus(`第 ${this.host.getState().chapter} 章配置已加载`);
   }
 
   private bindSlotList(
@@ -1060,10 +1069,20 @@ export class DecisivePlanView {
     if (!this.editEnabled.checked) return;
     const confirmed = await showConfirm(
       '恢复默认决战队伍',
-      '将按最初预设名单恢复主选和备选队列；章节和快速修理设置不变。恢复后请点击“保存配置”。',
+      '将按照GUI2.0提供的默认配置恢复当前队伍队列，此行为将会覆盖继承至旧目录的决战配置。恢复后请点击保存配置。',
     );
     if (!confirmed) return;
-    this.host.resetTeams();
+    const result = await this.host.resetTeams();
+    if (!result.success) {
+      this.setStatus('恢复默认配置失败', true);
+      await showAlert(
+        '恢复失败',
+        result.error instanceof Error
+          ? result.error.message
+          : String(result.error ?? '未知错误'),
+      );
+      return;
+    }
     this.activeMainIndex = 0;
     this.activeBackupIndex = 0;
     this.galleryLevel = 'level1';
@@ -1075,6 +1094,39 @@ export class DecisivePlanView {
     this.renderQueues();
     this.renderGallery(false);
     this.renderGalleryTarget();
+  }
+
+  private async changeChapter(chapter: number): Promise<void> {
+    const previousChapter = this.host.getState().chapter;
+    if (chapter === previousChapter) return;
+    if (this.host.getState().dirty) {
+      const confirmed = await showConfirm(
+        '切换决战章节',
+        `第 ${previousChapter} 章有未保存修改，切换章节将放弃这些修改。是否继续？`,
+      );
+      if (!confirmed) {
+        this.chapter.value = String(previousChapter);
+        return;
+      }
+    }
+
+    this.chapter.disabled = true;
+    this.setStatus(`正在读取第 ${chapter} 章配置…`);
+    const result = await this.host.changeChapter(chapter);
+    this.chapter.disabled = false;
+    if (result.success) {
+      this.showChapterLoaded();
+      return;
+    }
+
+    this.chapter.value = String(previousChapter);
+    this.setStatus(`第 ${chapter} 章配置读取失败`, true);
+    await showAlert(
+      '切换章节失败',
+      result.error instanceof Error
+        ? result.error.message
+        : String(result.error ?? '未知错误'),
+    );
   }
 
   private async save(showSavedStatus = true): Promise<boolean> {

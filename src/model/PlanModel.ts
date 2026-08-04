@@ -214,8 +214,13 @@ export class PlanModel {
       const rawMap = String(this.data.map);
       const match = rawMap.match(/^(\d+)([ab])?$/i);
       const stage = match?.[1] ?? rawMap;
-      const entrance = match?.[2]?.toLowerCase() === 'b' ? 'β' : 'α';
-      return `${String(this.data.chapter).toUpperCase()}-Ex-${stage}-${entrance}`;
+      const entranceCode = match?.[2]?.toLowerCase();
+      const entrance = entranceCode === 'a'
+        ? '-α'
+        : entranceCode === 'b'
+          ? '-β'
+          : '';
+      return `${String(this.data.chapter).toUpperCase()}-Ex-${stage}${entrance}`;
     }
     if (this.data.chapter === 99) return `Ex-${this.data.map}`;
     return `${this.data.chapter}-${this.data.map}`;
@@ -266,10 +271,16 @@ export class PlanModel {
   }
 
   /** 创建空方案 (新建方案用) */
-  static create(chapter: number, map: number, selectedNodes: string[]): PlanModel {
+  static create(
+    chapter: number | string,
+    map: number | string,
+    selectedNodes: string[],
+    event?: string,
+  ): PlanModel {
     const data: PlanData = {
       chapter,
       map,
+      event,
       selected_nodes: selectedNodes,
       fight_condition: 1,
       repair_mode: 1,
@@ -480,25 +491,18 @@ export class PlanModel {
         ? obj.candidates
         : obj.priority;
       if (Array.isArray(rawCandidates)) {
-        const legacyNames = rawCandidates
-          .filter(value => typeof value === 'string')
-          .map(value => String(value).trim())
-          .filter(Boolean);
-        const candidateValues = filter.name || legacyNames.length === 0
-          ? rawCandidates
-          : legacyNames.slice(1);
-        // Legacy string arrays encoded the first entry as the primary ship.
-        // Structured candidate-only slots intentionally have no primary name
-        // and must remain equal alternatives for the backend.
-        if (!filter.name && legacyNames.length > 0 && rawCandidates.every(value => typeof value === 'string')) {
-          filter.name = legacyNames[0];
-        }
-
-        const candidates = candidateValues.flatMap((candidate) => {
+        const candidateOnlyWithLegacyNames = (
+          !filter.name
+          && rawCandidates.some(value => typeof value === 'string')
+        );
+        const candidates = rawCandidates.flatMap((candidate) => {
           if (typeof candidate === 'string') {
             const name = candidate.trim();
             if (!name) return [];
             const legacyRule: ShipRule = { name };
+            if (filter.search_name) {
+              legacyRule.search_name = filter.search_name;
+            }
             if (filter.ship_type) legacyRule.ship_type = [...filter.ship_type];
             if (filter.min_level !== undefined) {
               legacyRule.min_level = filter.min_level;
@@ -512,6 +516,7 @@ export class PlanModel {
           return parsed ? [parsed] : [];
         });
         if (candidates.length > 0) filter.candidates = candidates;
+        if (candidateOnlyWithLegacyNames) delete filter.search_name;
       }
       return filter;
     }

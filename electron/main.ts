@@ -25,6 +25,9 @@ import { WindowService } from './services/WindowService';
 import { UserDataMigrationService } from './services/UserDataMigrationService';
 import { LegacyPlanMigration } from './services/LegacyPlanMigration';
 import {
+  MigrationConflictService,
+} from './services/MigrationConflictService';
+import {
   mergeLegacyMigrationSummaries,
 } from './services/LegacyMigrationSummary';
 import {
@@ -42,6 +45,7 @@ import { RuntimePlanService } from './services/RuntimePlanService';
 import { PlanManagementService } from './services/PlanManagementService';
 import { PlanExportService } from './services/PlanExportService';
 import { TaskPresetCodec } from './services/TaskPresetCodec';
+import { DailyPlanService } from './services/DailyPlanService';
 import { ShipLibraryService } from './services/ShipLibraryService';
 import { ShipLibraryUpdater } from './services/ShipLibraryUpdater';
 import { AdbService } from './services/AdbService';
@@ -51,9 +55,13 @@ import { PythonEnvironmentService } from './services/PythonEnvironmentService';
 import { registerBackendIpc } from './ipc/BackendIpc';
 import { registerCombatPlanIpc } from './ipc/CombatPlanIpc';
 import { registerConfigurationIpc } from './ipc/ConfigurationIpc';
+import { registerDailyPlanIpc } from './ipc/DailyPlanIpc';
 import { registerDeviceIpc } from './ipc/DeviceIpc';
 import { registerEnvironmentIpc } from './ipc/EnvironmentIpc';
 import { registerFileIpc } from './ipc/FileIpc';
+import {
+  registerMigrationConflictIpc,
+} from './ipc/MigrationConflictIpc';
 import { registerShipLibraryIpc } from './ipc/ShipLibraryIpc';
 import { registerTeamPlanIpc } from './ipc/TeamPlanIpc';
 import { registerUpdaterIpc } from './ipc/UpdaterIpc';
@@ -76,6 +84,10 @@ const appPaths = new AppPaths({
 });
 const atomicFileStore = new AtomicFileStore();
 const userDataMigrationService = new UserDataMigrationService(
+  appPaths,
+  atomicFileStore,
+);
+const migrationConflictService = new MigrationConflictService(
   appPaths,
   atomicFileStore,
 );
@@ -106,6 +118,12 @@ const combatPlanCodec = new CombatPlanCodec(
   teamPlanRepository,
 );
 const taskPresetCodec = new TaskPresetCodec();
+const dailyPlanService = new DailyPlanService(
+  appPaths,
+  atomicFileStore,
+  combatPlanCodec,
+  taskPresetCodec,
+);
 const runtimePlanService = new RuntimePlanService(
   combatPlanCodec,
   combatPlanRepository,
@@ -218,6 +236,11 @@ registerConfigurationIpc(ipcMain, {
   pythonEnvironment: pythonEnvironmentService,
   windows: windowService,
 });
+registerDailyPlanIpc(ipcMain, {
+  dailyPlans: dailyPlanService,
+  configuration: guiConfigurationService,
+});
+registerMigrationConflictIpc(ipcMain, migrationConflictService);
 registerEnvironmentIpc(ipcMain, pythonEnvironmentService);
 registerTeamPlanIpc(ipcMain, {
   dialog,
@@ -311,17 +334,21 @@ app.whenReady().then(() => {
   combatPlanRepository.initializeUserDirectory();
   shipLibraryService.initialize();
   teamPlanRepository.initializeUserDirectory();
-  combatPlanRepository.initializeSystemDirectory();
-  teamPlanRepository.initializeSystemDirectory();
+  const presetInventoryResult = (
+    userDataMigrationService.migratePresetInventory()
+  );
   const legacyPlanResult = legacyPlanMigration.migrate();
   const legacyMigrationResult = mergeLegacyMigrationSummaries(
     legacyUserDataMigration,
     legacyPlanResult,
+    presetInventoryResult,
+  );
+  migrationConflictService.prepareAfterMigration(
+    legacyMigrationResult.total > 0,
   );
   registerUpdaterIpc(ipcMain, {
     getMainWindow: () => windowService.getMainWindow(),
     getAppVersion: () => app.getVersion(),
-    hasBackendProcess: () => getBackendProcess() !== null,
     stopBackend,
   });
   windowService.createWindow();
@@ -349,9 +376,19 @@ app.on('before-quit', (event) => {
   if (getBackendProcess()) {
     backendShutdownInProgress = true;
     event.preventDefault();
-    void stopBackend().finally(() => {
+    void stopBackend().then(() => {
       backendShutdownInProgress = false;
       app.quit();
+    }).catch(error => {
+      backendShutdownInProgress = false;
+      const message = error instanceof Error
+        ? error.message
+        : String(error);
+      console.error('[Backend] 无法安全退出:', message);
+      dialog.showErrorBox(
+        '无法安全退出',
+        `后端进程仍在运行，应用没有退出：${message}`,
+      );
     });
   }
 });

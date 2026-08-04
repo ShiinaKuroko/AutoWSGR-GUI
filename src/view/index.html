@@ -12,6 +12,7 @@
     <div class="nav-primary">
       <div class="nav-title">WSGR GUI <span class="nav-version" id="app-version"></span></div>
       <div class="nav-tabs">
+        <span class="nav-tab-indicator" aria-hidden="true"></span>
         <button class="nav-tab active" data-page="main">作战</button>
         <button class="nav-tab" data-page="plan">计划</button>
         <button class="nav-tab" data-page="config">设置</button>
@@ -57,7 +58,7 @@
               </div>
               <div id="task-area-queue" style="display:none">
                 <div class="task-area-header">
-                  <h3>任务队列</h3>
+                  <h3>执行队列</h3>
                   <div class="queue-actions">
                     <button class="btn btn-primary btn-small" id="btn-start-queue">开始执行</button>
                     <button class="btn btn-small" id="btn-clear-queue">清空队列</button>
@@ -73,17 +74,85 @@
               aria-label="舰队预览"
             >
               <h3>舰队预览</h3>
-              <div
-                class="current-fleet-empty"
-                id="current-fleet-empty"
-              >当前无任务执行</div>
-              <div
-                class="current-fleet-preview"
-                id="current-fleet-preview"
-                role="list"
-                aria-label="当前运行任务的舰队"
-                hidden
-              ></div>
+              <div class="current-fleet-stage">
+                <div
+                  class="current-fleet-empty"
+                  id="current-fleet-empty"
+                >当前无任务执行</div>
+                <div
+                  class="current-fleet-preview"
+                  id="current-fleet-preview"
+                  role="list"
+                  aria-label="当前运行任务的舰队"
+                  hidden
+                ></div>
+              </div>
+              <section
+                class="daily-sortie-stats"
+                id="daily-sortie-stats"
+                aria-label="今日出征统计"
+              >
+                <div class="daily-sortie-heading">
+                  <h4>今日出征统计</h4>
+                  <span>每日 00:00 清空</span>
+                </div>
+                <div class="daily-sortie-summary">
+                  <div class="daily-sortie-metric">
+                    <span>战斗</span>
+                    <strong id="daily-battle-count">-</strong>
+                  </div>
+                  <div class="daily-sortie-metric daily-repair-metric">
+                    <strong>
+                      快修 <b id="daily-quick-repair-count">-</b>
+                      · 泡澡 <b id="daily-bath-repair-count">-</b>
+                    </strong>
+                  </div>
+                  <div class="daily-sortie-metric">
+                    <span>战利品</span>
+                    <strong id="daily-loot-count">-</strong>
+                  </div>
+                  <button
+                    class="daily-sortie-metric daily-ship-toggle"
+                    id="daily-ship-toggle"
+                    type="button"
+                    aria-expanded="false"
+                    aria-controls="daily-ship-details"
+                  >
+                    <span>捞船</span>
+                    <strong id="daily-ship-count">-</strong>
+                  </button>
+                  <div class="daily-sortie-metric">
+                    <span>远征</span>
+                    <strong id="daily-expedition-count">-</strong>
+                  </div>
+                </div>
+                <div class="daily-grade-row" aria-label="战果等级统计">
+                  <span>SS <b id="daily-grade-ss">-</b></span>
+                  <span>S <b id="daily-grade-s">-</b></span>
+                  <span>A <b id="daily-grade-a">-</b></span>
+                  <span>B <b id="daily-grade-b">-</b></span>
+                  <span>C <b id="daily-grade-c">-</b></span>
+                  <span>D <b id="daily-grade-d">-</b></span>
+                </div>
+                <div
+                  class="daily-drop-notice"
+                  id="daily-drop-notice"
+                  role="status"
+                  aria-live="polite"
+                  hidden
+                ></div>
+                <div
+                  class="daily-ship-details"
+                  id="daily-ship-details"
+                  hidden
+                >
+                  <div class="daily-ship-details-title">今日舰船掉落</div>
+                  <div
+                    class="daily-ship-drop-list"
+                    id="daily-ship-drop-list"
+                  ></div>
+                </div>
+              </section>
             </div>
           </div>
 
@@ -104,6 +173,7 @@
             <div class="task-group-toolbar">
               <div class="task-group-actions">
                 <button class="btn btn-primary btn-small" id="btn-tg-add-managed-plan">加载计划</button>
+                <button class="btn btn-small" id="btn-tg-add-daily-plan">加载日常任务</button>
                 <button class="btn btn-small" id="btn-tg-load-all">全部加入队列</button>
               </div>
               <div class="task-list-management">
@@ -121,7 +191,7 @@
               </div>
             </div>
             <div class="task-group-items" id="task-group-items">
-              <p class="tg-empty">暂无任务，点击「加载计划」从计划管理中添加作战方案。</p>
+              <p class="tg-empty">暂无任务，可通过「加载计划」或「加载日常任务」添加。</p>
             </div>
           </div>
 
@@ -131,7 +201,7 @@
         <div class="main-right">
           <div class="card log-card">
             <div class="log-header">
-              <h3>日志</h3>
+              <h3>日志预览</h3>
               <div class="log-filters" id="log-filters">
                 <button class="log-filter-btn active" data-level="debug" title="调试">
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 1a.5.5 0 0 0-.5.5v1.02a4.5 4.5 0 0 0-1.87 1.16L.94 2.94a.5.5 0 1 0-.38.92l1.2.5A4.5 4.5 0 0 0 1.5 5.5H.5a.5.5 0 0 0 0 1h1.05a4.5 4.5 0 0 0 .55 1.53l-1.16.48a.5.5 0 1 0 .38.92l1.19-.49a4.5 4.5 0 0 0 1.99 1.56v.5a.5.5 0 0 0 1 0v-.16A4.5 4.5 0 0 0 8 11.5a4.5 4.5 0 0 0 2-.44v.44a.5.5 0 0 0 1 0v-.78a4.5 4.5 0 0 0 1.69-1.28l1.19.49a.5.5 0 1 0 .38-.92l-1.16-.48A4.5 4.5 0 0 0 13.5 7h.5a.5.5 0 0 0 0-1h-1a4.5 4.5 0 0 0-.26-1.14l1.2-.5a.5.5 0 1 0-.38-.92l-1.19.74A4.5 4.5 0 0 0 11 2.52V1.5a.5.5 0 0 0-1 0v.68A4.5 4.5 0 0 0 8 1.5a4.5 4.5 0 0 0-2 .68V1.5a.5.5 0 0 0-.5-.5zM8 3a3.5 3.5 0 0 1 3.5 3.5v1A3.5 3.5 0 0 1 8 11a3.5 3.5 0 0 1-3.5-3.5v-1A3.5 3.5 0 0 1 8 3z"/></svg>
@@ -218,11 +288,9 @@
             <div class="fleet-formation-heading fleet-backup-heading">
               <h3 class="fleet-formation-tag fleet-queue-badge is-backup" id="fleet-backup-title">位置 1 的备选队列</h3>
               <div class="fleet-backup-actions">
+                <button class="btn btn-small" id="btn-backup-follow-mode" type="button" aria-pressed="false">舰船跟随</button>
                 <button class="btn btn-small btn-primary" id="btn-add-fleet-backup" type="button">增加备选</button>
                 <button class="btn btn-small" id="btn-copy-fleet-backup" type="button">复制备选</button>
-                <span class="fleet-backup-append-drop" id="fleet-backup-append-drop" hidden>
-                  移至备选末尾
-                </span>
                 <label class="config-switch fleet-level-switch">
                   <input type="checkbox" id="fleet-backup-level-enabled">
                   <span class="config-switch-track" aria-hidden="true"></span>
@@ -479,7 +547,6 @@
                   <option value="8">第 8 章</option>
                   <option value="9">第 9 章</option>
                   <option value="10">第 10 章</option>
-                  <option value="Ex">Ex 系列</option>
                 </select>
                 <select id="plan-edit-map" class="input input-inline" aria-label="关卡">
                   <option value="1">1</option>
@@ -583,21 +650,28 @@
 
         <div class="plan-right">
           <section id="plan-node-route-panel" class="card plan-right-mode plan-node-workspace">
-            <div class="plan-module-header plan-right-header plan-right-actions-header">
-              <div class="plan-actions plan-actions-top">
-                <button class="btn btn-small" id="btn-new-battle-plan">新建</button>
-                <button class="btn btn-primary btn-small" id="btn-save-plan">保存</button>
-                <button class="btn btn-small" id="btn-load-battle-plan">加载</button>
+            <div class="plan-node-preview-frame">
+              <div class="plan-module-header plan-node-preview-header">
+                <h3 class="plan-node-preview-title">节点路线</h3>
+                <div class="plan-actions plan-actions-top">
+                  <button class="btn btn-small" id="btn-new-battle-plan">新建</button>
+                  <button class="btn btn-primary btn-small" id="btn-save-plan">保存</button>
+                  <button class="btn btn-small" id="btn-load-battle-plan">加载</button>
+                </div>
               </div>
-            </div>
-            <div class="node-list" id="node-list"></div>
-            <div class="plan-editor-area plan-node-info-area">
-              <div id="node-editor-placeholder" class="node-editor-placeholder">
-                <h3>节点信息</h3>
-                <p>点击地图上的节点查看和编辑</p>
-              </div>
-              <div id="node-info" class="node-info" style="display:none"></div>
-              <div id="node-editor" class="node-editor" style="display:none">
+              <div class="plan-node-preview-body">
+                <div class="node-list" id="node-list"></div>
+                <div
+                  class="plan-editor-area plan-node-info-area"
+                  id="plan-node-info-drawer"
+                  aria-hidden="true"
+                >
+                  <div id="node-editor-placeholder" class="node-editor-placeholder">
+                    <h3>节点信息</h3>
+                    <p>点击地图上的节点查看和编辑</p>
+                  </div>
+                  <div id="node-info" class="node-info" style="display:none"></div>
+                  <div id="node-editor" class="node-editor" style="display:none">
                 <div class="node-editor-header">
                   <div class="node-info-badge"></div>
                   <div class="node-editor-title">
@@ -667,6 +741,8 @@
                     </div>
                     <textarea id="node-edit-rules" class="input node-rules-textarea" rows="4"
                       placeholder="指定阵型: DD >= 1, 4&#10;满足条件时迂回（仅迂回点有效）: DD >= 1, detour&#10;满足条件时撤退: BB >= 2, retreat&#10;多条件用 and 连接: DD >= 1 and CL >= 2, 4"></textarea>
+                  </div>
+                </div>
                   </div>
                 </div>
               </div>
@@ -795,6 +871,9 @@
 
           <div class="fleet-formation-heading decisive-tier-heading">
             <h3 class="fleet-formation-tag fleet-queue-badge is-primary">主选队列</h3>
+            <strong class="decisive-automation-note">
+              该页面最后保存配置即系统设置中自动决战选择“用户计划”时所执行配置；选择“系统预设”时不使用此配置。
+            </strong>
           </div>
           <section class="fleet-formation-section">
             <div class="fleet-slot-scroll">
@@ -927,7 +1006,7 @@
                 <strong id="plan-management-linked-count">0</strong>
               </div>
               <div class="plan-management-stat is-warning">
-                <span>需要处理</span>
+                <span>关联异常</span>
                 <strong id="plan-management-attention-count">0</strong>
               </div>
             </div>
@@ -955,6 +1034,12 @@
                   type="button"
                   disabled
                 >批量导出</button>
+                <button
+                  class="btn btn-small btn-danger plan-management-delete"
+                  id="btn-delete-user-plans"
+                  type="button"
+                  disabled
+                >批量删除</button>
               </div>
               <div class="plan-management-filters">
                 <input
@@ -971,7 +1056,7 @@
                 <label class="config-switch plan-management-attention-filter">
                   <input id="plan-management-attention-only" type="checkbox">
                   <span class="config-switch-track" aria-hidden="true"></span>
-                  <span>仅看需处理</span>
+                  <span>过滤非异常</span>
                 </label>
               </div>
             </div>
@@ -1094,121 +1179,6 @@
 
           <section class="config-list-section">
             <div class="config-section-heading">
-              <h3>自动化设置</h3>
-              <p>自动任务最终以后端日常调度配置为准。</p>
-            </div>
-            <div class="config-setting-list">
-              <div class="config-setting-row">
-                <div class="config-setting-copy">
-                  <strong>自动远征</strong>
-                  <span>定期检查并收取已完成远征，然后重新派遣。</span>
-                </div>
-                <div class="config-setting-control">
-                  <label class="config-switch">
-                    <input type="checkbox" id="cfg-auto-expedition" checked>
-                    <span class="config-switch-track" aria-hidden="true"></span>
-                    <span>启用</span>
-                  </label>
-                </div>
-              </div>
-              <div class="config-setting-row">
-                <div class="config-setting-copy">
-                  <strong>自动战役</strong>
-                  <span>每日空闲时完成剩余战役次数。</span>
-                </div>
-                <div class="config-setting-control config-auto-task-control">
-                  <div class="config-inline-options config-auto-task-options" id="cfg-auto-battle-body">
-                    <span>战役类型</span>
-                    <select id="cfg-battle-type" class="input">
-                      <option value="困难潜艇">困难潜艇</option>
-                      <option value="困难航母">困难航母</option>
-                      <option value="困难驱逐">困难驱逐</option>
-                      <option value="困难巡洋">困难巡洋</option>
-                      <option value="困难战列">困难战列</option>
-                      <option value="简单航母">简单航母</option>
-                      <option value="简单潜艇">简单潜艇</option>
-                      <option value="简单驱逐">简单驱逐</option>
-                      <option value="简单巡洋">简单巡洋</option>
-                      <option value="简单战列">简单战列</option>
-                    </select>
-                  </div>
-                  <label class="config-switch">
-                    <input type="checkbox" id="cfg-auto-battle">
-                    <span class="config-switch-track" aria-hidden="true"></span>
-                    <span>启用</span>
-                  </label>
-                </div>
-              </div>
-              <div class="config-setting-row">
-                <div class="config-setting-copy">
-                  <strong>自动演习</strong>
-                  <span>每日空闲时完成剩余演习次数。</span>
-                </div>
-                <div class="config-setting-control config-auto-task-control">
-                  <div class="config-inline-options config-auto-task-options" id="cfg-auto-exercise-body">
-                    <span>出征舰队</span>
-                    <select id="cfg-exercise-fleet" class="input">
-                      <option value="1">第 1 舰队</option>
-                      <option value="2">第 2 舰队</option>
-                      <option value="3">第 3 舰队</option>
-                      <option value="4">第 4 舰队</option>
-                    </select>
-                  </div>
-                  <label class="config-switch">
-                    <input type="checkbox" id="cfg-auto-exercise">
-                    <span class="config-switch-track" aria-hidden="true"></span>
-                    <span>启用</span>
-                  </label>
-                </div>
-              </div>
-              <div class="config-setting-row">
-                <div class="config-setting-copy">
-                  <strong>自动出征</strong>
-                  <span>加载一个常规战或活动战计划，在每日空闲时执行。</span>
-                </div>
-                <div class="config-setting-control config-auto-task-control">
-                  <div class="config-normal-fight-editor" id="cfg-auto-normal-fight-body">
-                    <button class="btn btn-small" id="btn-add-normal-fight-task" type="button">加载</button>
-                    <div class="config-task-list" id="cfg-normal-fight-tasks"></div>
-                  </div>
-                  <label class="config-switch">
-                    <input type="checkbox" id="cfg-auto-normal-fight">
-                    <span class="config-switch-track" aria-hidden="true"></span>
-                    <span>启用</span>
-                  </label>
-                </div>
-              </div>
-              <div class="config-setting-row">
-                <div class="config-setting-copy">
-                  <strong>自动胖次</strong>
-                  <span>配置一个胖次任务，每日空闲时执行。</span>
-                </div>
-                <div class="config-setting-control config-setting-control-stack">
-                  <label class="config-switch">
-                    <input type="checkbox" id="cfg-auto-loot">
-                    <span class="config-switch-track" aria-hidden="true"></span>
-                    <span>启用</span>
-                  </label>
-                  <div class="config-inline-options" id="cfg-auto-loot-body">
-                    <span>任务预设</span>
-                    <select id="cfg-loot-plan" class="input">
-                      <option value="bettle-捞胖次-9-4-6SS.yaml">9-4（6 潜艇）</option>
-                      <option value="bettle-周常-9-2.yaml">9-2</option>
-                      <option value="bettle-周常-7-4.yaml">7-4</option>
-                      <option value="bettle-捞胖次-8-5.yaml">8-5</option>
-                      <option value="bettle-周常-8-2.yaml">8-2</option>
-                      <option value="bettle-周常-2-1.yaml">2-1</option>
-                    </select>
-                    <span>停止数量</span>
-                    <input type="number" id="cfg-loot-stop-count" class="input config-inline-number" min="1" max="50" value="50">
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="config-list-section">
-            <div class="config-section-heading">
               <h3>日志与调试</h3>
               <p>控制后端日志详细程度和 GUI 调试功能。</p>
             </div>
@@ -1234,7 +1204,7 @@
                   <span>后端保存日志文件和调试截图的根目录。</span>
                 </div>
                 <div class="config-setting-control">
-                  <div class="input-row">
+                  <div class="input-row config-compact-path-row">
                     <input type="text" id="cfg-log-root" class="input" placeholder="log">
                     <button class="btn btn-small" id="btn-browse-log-root" type="button">选择</button>
                   </div>
@@ -1282,7 +1252,7 @@
                   <span>当前 GUI 连接本机后端，修改端口后需要重启。</span>
                 </div>
                 <div class="config-setting-control">
-                  <div class="input-row">
+                  <div class="input-row config-backend-controls">
                     <span class="config-prefix">127.0.0.1:</span>
                     <input type="number" id="cfg-backend-port" class="input config-inline-number" min="1" max="65535" value="8438">
                     <button class="btn btn-small" id="btn-check-backend" type="button">检测</button>
@@ -1349,7 +1319,7 @@
                   <span>自动模式会在启动时检查更新，手动模式仅在点击按钮时检查。</span>
                 </div>
                 <div class="config-setting-control">
-                  <div class="input-row">
+                  <div class="input-row config-update-controls">
                     <select id="cfg-update-mode" class="input">
                       <option value="auto">自动更新</option>
                       <option value="manual">手动更新</option>
@@ -1394,11 +1364,6 @@
           <div class="config-compat-controls" aria-hidden="true">
             <div id="cfg-auto-expedition-body"><input type="number" id="cfg-expedition-interval" value="15"></div>
             <input type="number" id="cfg-battle-times" value="3">
-            <input type="checkbox" id="cfg-auto-decisive">
-            <div id="cfg-auto-decisive-body">
-              <input type="number" id="cfg-decisive-ticket-reserve" value="0">
-              <select id="cfg-decisive-template"><option value="">未选择</option></select>
-            </div>
           </div>
         </div>
 
@@ -1417,6 +1382,228 @@
                 <div class="config-setting-control config-range-preview">
                   <label>最小值 <input type="range" id="cfg-delay-min-range" min="0" max="10" step="0.1" value="0"><input type="number" id="cfg-delay-min" class="input" min="0" max="10" step="0.1" value="0"></label>
                   <label>最大值 <input type="range" id="cfg-delay-max-range" min="0" max="10" step="0.1" value="0"><input type="number" id="cfg-delay-max" class="input" min="0" max="10" step="0.1" value="0"></label>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="config-list-section">
+            <div class="config-section-heading">
+              <h3>自动化设置</h3>
+              <p>自动任务最终以后端日常调度配置为准。</p>
+            </div>
+            <div class="config-setting-list">
+              <div class="config-setting-row">
+                <div class="config-setting-copy">
+                  <strong>自动远征</strong>
+                  <span>定期检查并收取已完成远征，然后重新派遣。</span>
+                </div>
+                <div class="config-setting-control">
+                  <label class="config-switch">
+                    <input type="checkbox" id="cfg-auto-expedition" checked>
+                    <span class="config-switch-track" aria-hidden="true"></span>
+                    <span>启用</span>
+                  </label>
+                </div>
+              </div>
+              <div class="config-setting-row">
+                <div class="config-setting-copy">
+                  <strong>自动战役</strong>
+                  <span>每日空闲时完成剩余战役次数。</span>
+                </div>
+                <div class="config-setting-control config-auto-task-control">
+                  <div class="config-inline-options config-auto-task-options" id="cfg-auto-battle-body">
+                    <span>战役类型</span>
+                    <select id="cfg-battle-type" class="input"
+                            data-animated-select-width="source"
+                            data-config-select-width="124">
+                      <option value="困难潜艇">困难潜艇</option>
+                      <option value="困难航母">困难航母</option>
+                      <option value="困难驱逐">困难驱逐</option>
+                      <option value="困难巡洋">困难巡洋</option>
+                      <option value="困难战列">困难战列</option>
+                      <option value="简单航母">简单航母</option>
+                      <option value="简单潜艇">简单潜艇</option>
+                      <option value="简单驱逐">简单驱逐</option>
+                      <option value="简单巡洋">简单巡洋</option>
+                      <option value="简单战列">简单战列</option>
+                    </select>
+                  </div>
+                  <label class="config-switch">
+                    <input type="checkbox" id="cfg-auto-battle">
+                    <span class="config-switch-track" aria-hidden="true"></span>
+                    <span>启用</span>
+                  </label>
+                </div>
+              </div>
+              <div class="config-setting-row">
+                <div class="config-setting-copy">
+                  <strong>自动演习</strong>
+                  <span>每日空闲时完成剩余演习次数。</span>
+                </div>
+                <div class="config-setting-control config-auto-task-control">
+                  <div class="config-inline-options config-auto-task-options" id="cfg-auto-exercise-body">
+                    <span>出征舰队</span>
+                    <select id="cfg-exercise-fleet" class="input"
+                            data-animated-select-width="source"
+                            data-config-select-width="124">
+                      <option value="1">第 1 舰队</option>
+                      <option value="2">第 2 舰队</option>
+                      <option value="3">第 3 舰队</option>
+                      <option value="4">第 4 舰队</option>
+                    </select>
+                  </div>
+                  <label class="config-switch">
+                    <input type="checkbox" id="cfg-auto-exercise">
+                    <span class="config-switch-track" aria-hidden="true"></span>
+                    <span>启用</span>
+                  </label>
+                </div>
+              </div>
+              <div class="config-setting-row">
+                <div class="config-setting-copy">
+                  <strong>自动出征</strong>
+                  <span>加载一个常规战或活动战计划，在每日空闲时执行。</span>
+                </div>
+                <div class="config-setting-control config-auto-task-control">
+                  <div class="config-normal-fight-editor" id="cfg-auto-normal-fight-body">
+                    <button class="btn btn-small" id="btn-add-normal-fight-task" type="button">加载</button>
+                    <div class="config-task-list" id="cfg-normal-fight-tasks"></div>
+                  </div>
+                  <label class="config-switch">
+                    <input type="checkbox" id="cfg-auto-normal-fight">
+                    <span class="config-switch-track" aria-hidden="true"></span>
+                    <span>启用</span>
+                  </label>
+                </div>
+              </div>
+              <div class="config-setting-row">
+                <div class="config-setting-copy">
+                  <strong>自动决战</strong>
+                  <span>每日空闲时执行一轮；可使用计划页面方案或系统预设。</span>
+                </div>
+                <div class="config-setting-control config-auto-task-control">
+                  <div class="config-inline-options config-auto-task-options" id="cfg-auto-decisive-body">
+                    <span>决战方案</span>
+                    <select id="cfg-decisive-template" class="input"
+                            data-animated-select-width="source"
+                            data-config-select-width="124">
+                      <option value="user_plan">用户计划</option>
+                      <option value="system_preset">系统预设</option>
+                    </select>
+                  </div>
+                  <label class="config-switch">
+                    <input type="checkbox" id="cfg-auto-decisive">
+                    <span class="config-switch-track" aria-hidden="true"></span>
+                    <span>启用</span>
+                  </label>
+                </div>
+              </div>
+              <div class="config-setting-row">
+                <div class="config-setting-copy">
+                  <strong>自动胖次</strong>
+                  <span>配置一个胖次任务，每日空闲时执行。</span>
+                </div>
+                <div class="config-setting-control config-auto-task-control config-auto-loot-control">
+                  <div class="config-inline-options config-auto-task-options" id="cfg-auto-loot-body">
+                    <button class="btn btn-small" id="btn-load-loot-plans" type="button">加载</button>
+                    <span>任务预设</span>
+                    <select id="cfg-loot-plan" class="input"></select>
+                    <span>停止数量</span>
+                    <input type="number" id="cfg-loot-stop-count" class="input config-inline-number" min="1" max="50" value="50">
+                  </div>
+                  <label class="config-switch">
+                    <input type="checkbox" id="cfg-auto-loot">
+                    <span class="config-switch-track" aria-hidden="true"></span>
+                    <span>启用</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="config-list-section">
+            <div class="config-section-heading">
+              <h3>舰队设置</h3>
+              <p>集中管理与游戏内舰队、修理、船坞和解装操作有关的配置。</p>
+            </div>
+            <div class="config-setting-list">
+              <div class="config-setting-row">
+                <div class="config-setting-copy"><strong>船坞满处理</strong><span>船坞已满时是否自动进入解装流程。</span></div>
+                <div class="config-setting-control">
+                  <label class="config-switch">
+                    <input type="checkbox" id="cfg-dock-full-destroy">
+                    <span class="config-switch-track" aria-hidden="true"></span>
+                    <span>自动处理</span>
+                  </label>
+                </div>
+              </div>
+              <div class="config-setting-row">
+                <div class="config-setting-copy"><strong>维修方式</strong><span>选择脚本自动维修，或等待用户手动处理。</span></div>
+                <div class="config-setting-control">
+                  <select id="cfg-repair-manually" class="input"
+                          data-animated-select-width="source">
+                    <option value="false">脚本自动维修</option>
+                    <option value="true">手动处理</option>
+                  </select>
+                </div>
+              </div>
+              <div class="config-setting-row">
+                <div class="config-setting-copy"><strong>浴室数量</strong><span>账号已开放的浴室位置数量，后端允许最大 12 个。</span></div>
+                <div class="config-setting-control">
+                  <input type="number" id="cfg-bathroom-count" class="input config-inline-number" min="1" max="12" value="2">
+                </div>
+              </div>
+              <div class="config-setting-row">
+                <div class="config-setting-copy"><strong>解装规则</strong><span>配置工作模式、舰种范围以及是否先拆下装备。</span></div>
+                <div class="config-setting-control config-setting-control-stack">
+                  <div class="config-inline-options">
+                    <select id="cfg-destroy-ship-mode" class="input"
+                            data-animated-select-width="source">
+                      <option value="0">不启用</option>
+                      <option value="1">黑名单</option>
+                      <option value="2">白名单</option>
+                    </select>
+                    <label class="config-switch">
+                      <input type="checkbox" id="cfg-remove-equipment-mode">
+                      <span class="config-switch-track" aria-hidden="true"></span>
+                      <span>卸下装备</span>
+                    </label>
+                  </div>
+                  <div class="config-chip-list" id="cfg-destroy-ship-types">
+                    <label><input type="checkbox" value="航母">航母</label>
+                    <label><input type="checkbox" value="轻母">轻母</label>
+                    <label><input type="checkbox" value="装母">装母</label>
+                    <label><input type="checkbox" value="战列">战列</label>
+                    <label><input type="checkbox" value="航战">航战</label>
+                    <label><input type="checkbox" value="战巡">战巡</label>
+                    <label><input type="checkbox" value="重巡">重巡</label>
+                    <label><input type="checkbox" value="航巡">航巡</label>
+                    <label><input type="checkbox" value="雷巡">雷巡</label>
+                    <label><input type="checkbox" value="轻巡">轻巡</label>
+                    <label><input type="checkbox" value="重炮">重炮</label>
+                    <label><input type="checkbox" value="驱逐">驱逐</label>
+                    <label><input type="checkbox" value="导潜">导潜</label>
+                    <label><input type="checkbox" value="潜艇">潜艇</label>
+                    <label><input type="checkbox" value="炮潜">炮潜</label>
+                    <label><input type="checkbox" value="补给">补给</label>
+                    <label><input type="checkbox" value="导驱">导驱</label>
+                    <label><input type="checkbox" value="防驱">防驱</label>
+                    <label><input type="checkbox" value="导巡">导巡</label>
+                    <label><input type="checkbox" value="防巡">防巡</label>
+                    <label><input type="checkbox" value="大巡">大巡</label>
+                    <label><input type="checkbox" value="导战">导战</label>
+                    <label><input type="checkbox" value="其他">其他</label>
+                  </div>
+                </div>
+              </div>
+              <div class="config-setting-row">
+                <div class="config-setting-copy"><strong>作战方案目录</strong><span>后端查找普通战和活动战 YAML 的自定义目录。</span></div>
+                <div class="config-setting-control">
+                  <div class="input-row config-compact-path-row">
+                    <input type="text" id="cfg-plan-root" class="input" placeholder="留空使用后端内置目录">
+                    <button class="btn btn-small" id="btn-browse-plan-root" type="button">选择</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1508,7 +1695,8 @@
                   <strong>自定义舰名映射</strong>
                 </div>
                 <div class="config-setting-control">
-                  <textarea id="cfg-ship-name-aliases" class="input config-map-editor" rows="4" placeholder="请使用英文半角冒号 : 分隔，每行只能添加一艘舰船，例如：希尔德布兰德: AIII"></textarea>
+                  <textarea id="cfg-ship-name-aliases" class="input config-map-editor" rows="3"
+                    placeholder="用于适配玩家的自定义舰名，请使用英文半角冒号进行分割，每行一条规则。&#10;格式：{自定义舰名}:{默认舰名}&#10;举例：0v0 : 昆西"></textarea>
                 </div>
               </div>
               <div class="config-setting-row">
@@ -1516,96 +1704,13 @@
                   <strong>识别纠错规则</strong>
                 </div>
                 <div class="config-setting-control">
-                  <textarea id="cfg-ship-name-corrections" class="input config-map-editor" rows="4" placeholder="把 OCR 经常识别错的文字修正为标准舰名，每行一条，例如：巧心: 热心"></textarea>
+                  <textarea id="cfg-ship-name-corrections" class="input config-map-editor" rows="3"
+                    placeholder="用于在OCR异常时提供规避方案，请使用英文半角冒号进行分割，每行一条规则。&#10;格式：{OCR识别结果}:{正确结果}&#10;举例：A111 : AIII"></textarea>
                 </div>
               </div>
             </div>
           </section>
 
-          <section class="config-list-section">
-            <div class="config-section-heading">
-              <h3>舰队设置</h3>
-              <p>集中管理与游戏内舰队、修理、船坞和解装操作有关的配置。</p>
-            </div>
-            <div class="config-setting-list">
-              <div class="config-setting-row">
-                <div class="config-setting-copy"><strong>船坞满处理</strong><span>船坞已满时是否自动进入解装流程。</span></div>
-                <div class="config-setting-control">
-                  <label class="config-switch">
-                    <input type="checkbox" id="cfg-dock-full-destroy">
-                    <span class="config-switch-track" aria-hidden="true"></span>
-                    <span>自动处理</span>
-                  </label>
-                </div>
-              </div>
-              <div class="config-setting-row">
-                <div class="config-setting-copy"><strong>维修方式</strong><span>选择脚本自动维修，或等待用户手动处理。</span></div>
-                <div class="config-setting-control">
-                  <select id="cfg-repair-manually" class="input">
-                    <option value="false">脚本自动维修</option>
-                    <option value="true">手动处理</option>
-                  </select>
-                </div>
-              </div>
-              <div class="config-setting-row">
-                <div class="config-setting-copy"><strong>浴室数量</strong><span>账号已开放的浴室位置数量，后端允许最大 12 个。</span></div>
-                <div class="config-setting-control">
-                  <input type="number" id="cfg-bathroom-count" class="input config-inline-number" min="1" max="12" value="2">
-                </div>
-              </div>
-              <div class="config-setting-row">
-                <div class="config-setting-copy"><strong>解装规则</strong><span>配置工作模式、舰种范围以及是否先拆下装备。</span></div>
-                <div class="config-setting-control config-setting-control-stack">
-                  <div class="config-inline-options">
-                    <select id="cfg-destroy-ship-mode" class="input">
-                      <option value="0">不启用</option>
-                      <option value="1">黑名单</option>
-                      <option value="2">白名单</option>
-                    </select>
-                    <label class="config-switch">
-                      <input type="checkbox" id="cfg-remove-equipment-mode">
-                      <span class="config-switch-track" aria-hidden="true"></span>
-                      <span>卸下装备</span>
-                    </label>
-                  </div>
-                  <div class="config-chip-list" id="cfg-destroy-ship-types">
-                    <label><input type="checkbox" value="航母">航母</label>
-                    <label><input type="checkbox" value="轻母">轻母</label>
-                    <label><input type="checkbox" value="装母">装母</label>
-                    <label><input type="checkbox" value="战列">战列</label>
-                    <label><input type="checkbox" value="航战">航战</label>
-                    <label><input type="checkbox" value="战巡">战巡</label>
-                    <label><input type="checkbox" value="重巡">重巡</label>
-                    <label><input type="checkbox" value="航巡">航巡</label>
-                    <label><input type="checkbox" value="雷巡">雷巡</label>
-                    <label><input type="checkbox" value="轻巡">轻巡</label>
-                    <label><input type="checkbox" value="重炮">重炮</label>
-                    <label><input type="checkbox" value="驱逐">驱逐</label>
-                    <label><input type="checkbox" value="导潜">导潜</label>
-                    <label><input type="checkbox" value="潜艇">潜艇</label>
-                    <label><input type="checkbox" value="炮潜">炮潜</label>
-                    <label><input type="checkbox" value="补给">补给</label>
-                    <label><input type="checkbox" value="导驱">导驱</label>
-                    <label><input type="checkbox" value="防驱">防驱</label>
-                    <label><input type="checkbox" value="导巡">导巡</label>
-                    <label><input type="checkbox" value="防巡">防巡</label>
-                    <label><input type="checkbox" value="大巡">大巡</label>
-                    <label><input type="checkbox" value="导战">导战</label>
-                    <label><input type="checkbox" value="其他">其他</label>
-                  </div>
-                </div>
-              </div>
-              <div class="config-setting-row">
-                <div class="config-setting-copy"><strong>作战方案目录</strong><span>后端查找普通战和活动战 YAML 的自定义目录。</span></div>
-                <div class="config-setting-control">
-                  <div class="input-row">
-                    <input type="text" id="cfg-plan-root" class="input" placeholder="留空使用后端内置目录">
-                    <button class="btn btn-small" id="btn-browse-plan-root" type="button">选择</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
         </div>
       </div>
     </section>
@@ -1948,6 +2053,63 @@
     </div>
   </div>
 
+  <!-- 主页：加载独立日常任务 -->
+  <div id="daily-task-loader" class="modal-overlay" style="display:none">
+    <div class="modal card daily-task-loader-dialog">
+      <div class="fleet-dialog-header">
+        <div class="fleet-dialog-heading">
+          <h3>日常任务</h3>
+          <p>演习、战役和决战使用独立配置，不进入普通出征计划管理。</p>
+        </div>
+      </div>
+      <div class="daily-task-tabs" role="tablist" aria-label="日常任务分类">
+        <button
+          class="daily-task-tab active"
+          data-daily-task-tab="exercise"
+          type="button"
+          role="tab"
+        >演习</button>
+        <button
+          class="daily-task-tab"
+          data-daily-task-tab="campaign"
+          type="button"
+          role="tab"
+        >战役</button>
+        <button
+          class="daily-task-tab"
+          data-daily-task-tab="decisive"
+          type="button"
+          role="tab"
+        >决战</button>
+      </div>
+      <div id="daily-task-loader-list" class="daily-task-loader-list"></div>
+      <p
+        id="daily-task-loader-status"
+        class="fleet-dialog-status"
+        hidden
+      ></p>
+      <div class="modal-actions">
+        <button
+          class="btn"
+          id="btn-close-daily-task-loader"
+          type="button"
+        >取消</button>
+        <button
+          class="btn"
+          id="btn-daily-task-add-list"
+          type="button"
+          disabled
+        >加入任务列表</button>
+        <button
+          class="btn btn-primary"
+          id="btn-daily-task-add-queue"
+          type="button"
+          disabled
+        >加入执行队列</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 主页：队列管理 -->
   <div id="task-list-loader" class="modal-overlay" style="display:none">
     <div class="modal card fleet-team-loader-dialog task-list-loader-dialog">
@@ -2064,6 +2226,85 @@
       <div id="fleet-backup-copy-targets" class="fleet-backup-copy-targets"></div>
       <div class="modal-actions">
         <button class="btn" id="btn-cancel-backup-copy" type="button">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 旧配置迁移完成后的 YAML 冲突确认 -->
+  <div
+    id="migration-conflict-dialog"
+    class="modal-overlay"
+    style="display:none"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="migration-conflict-title"
+  >
+    <div class="modal card migration-conflict-dialog">
+      <div class="migration-conflict-heading">
+        <div>
+          <h3 id="migration-conflict-title">处理迁移配置冲突</h3>
+          <p>勾选卡片后使用中间按钮移动；最终位于删除侧的 YAML 会直接删除。</p>
+        </div>
+        <span id="migration-conflict-count">0 项冲突</span>
+      </div>
+      <div class="migration-conflict-warning">
+        <strong>数据丢失风险</strong>
+        <span>删除操作无法撤销。请确认文件内容和冲突原因后再提交。</span>
+      </div>
+      <div class="migration-conflict-columns">
+        <section class="migration-conflict-column delete">
+          <div class="migration-conflict-column-heading">
+            <h4 id="migration-conflict-delete-title">删除（0）</h4>
+            <button
+              class="btn btn-small"
+              id="btn-select-all-migration-delete"
+              type="button"
+            >全选</button>
+          </div>
+          <div
+            id="migration-conflict-delete-list"
+            class="migration-conflict-list"
+          ></div>
+        </section>
+        <div class="migration-conflict-transfer">
+          <button
+            class="btn btn-small"
+            id="btn-migration-move-keep"
+            type="button"
+          >保留 →</button>
+          <button
+            class="btn btn-small migration-delete-button"
+            id="btn-migration-move-delete"
+            type="button"
+          >← 删除</button>
+        </div>
+        <section class="migration-conflict-column keep">
+          <div class="migration-conflict-column-heading">
+            <h4 id="migration-conflict-keep-title">保留（0）</h4>
+            <button
+              class="btn btn-small"
+              id="btn-select-all-migration-keep"
+              type="button"
+            >全选</button>
+          </div>
+          <div
+            id="migration-conflict-keep-list"
+            class="migration-conflict-list"
+          ></div>
+        </section>
+      </div>
+      <p id="migration-conflict-status" class="fleet-dialog-status" hidden></p>
+      <div class="modal-actions">
+        <button
+          class="btn"
+          id="btn-migration-keep-all"
+          type="button"
+        >全部保留</button>
+        <button
+          class="btn btn-primary"
+          id="btn-confirm-migration-conflicts"
+          type="button"
+        >确认处理</button>
       </div>
     </div>
   </div>

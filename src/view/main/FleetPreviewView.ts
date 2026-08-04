@@ -4,6 +4,7 @@ import type {
   ShipLibraryManifest,
   ShipLibraryShip,
 } from '../../types/ipc.js';
+import type { DailySortieStatsSnapshot } from '../../types/statistics.js';
 import type { CurrentFleetShipVO } from '../../types/view.js';
 import { createShipArtwork } from '../plan/ShipArtwork';
 
@@ -11,6 +12,11 @@ export type FleetPreviewViewHost = Pick<
   ElectronBridge,
   'getShipLibraryManifest'
 >;
+
+function formatCount(count: number, limit?: number): string {
+  if (count === 0) return '-';
+  return limit === undefined ? String(count) : `${count}/${limit}`;
+}
 
 /** 在主页展示当前运行任务明确携带的舰队。 */
 export class FleetPreviewView {
@@ -20,13 +26,69 @@ export class FleetPreviewView {
   private manifestPromise: Promise<void> | null = null;
   private currentShips: CurrentFleetShipVO[] = [];
   private renderedSignature = '';
+  private currentStats: DailySortieStatsSnapshot | null = null;
+  private shipDetailsPinned = false;
+  private readonly statsRoot: HTMLElement;
+  private readonly battleCount: HTMLElement;
+  private readonly quickRepairCount: HTMLElement;
+  private readonly bathRepairCount: HTMLElement;
+  private readonly lootCount: HTMLElement;
+  private readonly shipCount: HTMLElement;
+  private readonly expeditionCount: HTMLElement;
+  private readonly shipToggle: HTMLButtonElement;
+  private readonly shipDetails: HTMLElement;
+  private readonly shipDropList: HTMLElement;
+  private readonly dropNotice: HTMLElement;
+  private readonly gradeCounts: Record<string, HTMLElement>;
 
   constructor(private readonly host: FleetPreviewViewHost) {
     this.grid = document.getElementById('current-fleet-preview')!;
     this.empty = document.getElementById('current-fleet-empty')!;
+    this.statsRoot = document.getElementById('daily-sortie-stats')!;
+    this.battleCount = document.getElementById('daily-battle-count')!;
+    this.quickRepairCount = document.getElementById(
+      'daily-quick-repair-count',
+    )!;
+    this.bathRepairCount = document.getElementById(
+      'daily-bath-repair-count',
+    )!;
+    this.lootCount = document.getElementById('daily-loot-count')!;
+    this.shipCount = document.getElementById('daily-ship-count')!;
+    this.expeditionCount = document.getElementById(
+      'daily-expedition-count',
+    )!;
+    this.shipToggle = document.getElementById(
+      'daily-ship-toggle',
+    ) as HTMLButtonElement;
+    this.shipDetails = document.getElementById('daily-ship-details')!;
+    this.shipDropList = document.getElementById('daily-ship-drop-list')!;
+    this.dropNotice = document.getElementById('daily-drop-notice')!;
+    this.gradeCounts = {
+      SS: document.getElementById('daily-grade-ss')!,
+      S: document.getElementById('daily-grade-s')!,
+      A: document.getElementById('daily-grade-a')!,
+      B: document.getElementById('daily-grade-b')!,
+      C: document.getElementById('daily-grade-c')!,
+      D: document.getElementById('daily-grade-d')!,
+    };
+    this.shipToggle.addEventListener('click', () => {
+      if (!this.currentStats) return;
+      if (!this.shipDetailsPinned && this.currentStats.dropNotice) {
+        this.shipDetailsPinned = true;
+      } else {
+        this.shipDetailsPinned = !this.shipDetailsPinned;
+      }
+      this.renderStats(this.currentStats);
+    });
   }
 
-  render(ships: CurrentFleetShipVO[], hasRunningTask: boolean): void {
+  render(
+    ships: CurrentFleetShipVO[],
+    hasRunningTask: boolean,
+    stats: DailySortieStatsSnapshot,
+  ): void {
+    this.currentStats = stats;
+    this.renderStats(stats);
     this.currentShips = ships
       .map(ship => ({
         name: ship.name.trim(),
@@ -49,6 +111,64 @@ export class FleetPreviewView {
       return;
     }
     this.loadManifest();
+  }
+
+  private renderStats(stats: DailySortieStatsSnapshot): void {
+    this.battleCount.textContent = formatCount(stats.battleCount);
+    this.quickRepairCount.textContent = formatCount(stats.quickRepairCount);
+    this.bathRepairCount.textContent = formatCount(stats.bathRepairCount);
+    this.lootCount.textContent = formatCount(
+      stats.lootCount,
+      stats.lootLimit,
+    );
+    this.shipCount.textContent = formatCount(
+      stats.shipCount,
+      stats.shipLimit,
+    );
+    this.expeditionCount.textContent = formatCount(
+      stats.expeditionCount,
+    );
+    for (const [grade, element] of Object.entries(this.gradeCounts)) {
+      element.textContent = formatCount(
+        stats.grades[grade as keyof typeof stats.grades],
+      );
+    }
+
+    const notice = stats.dropNotice;
+    this.dropNotice.hidden = !notice;
+    this.dropNotice.textContent = notice
+      ? `获得「${notice.shipName}」！今日第 ${notice.dailyIndex} 艘了！0v0！`
+      : '';
+    this.statsRoot.classList.toggle('has-drop-notice', Boolean(notice));
+    this.shipToggle.classList.toggle('has-drop-notice', Boolean(notice));
+
+    const detailsExpanded = this.shipDetailsPinned || Boolean(notice);
+    this.shipToggle.setAttribute(
+      'aria-expanded',
+      String(detailsExpanded),
+    );
+    this.shipDetails.hidden = !detailsExpanded;
+    if (!detailsExpanded) return;
+
+    const fragment = document.createDocumentFragment();
+    if (stats.shipDrops.length === 0) {
+      const empty = document.createElement('span');
+      empty.className = 'daily-ship-drop-empty';
+      empty.textContent = '今日暂无舰船掉落';
+      fragment.append(empty);
+    } else {
+      for (const drop of stats.shipDrops) {
+        const row = document.createElement('div');
+        row.className = 'daily-ship-drop-item';
+        const name = document.createElement('span');
+        name.textContent = drop.name;
+        const count = document.createElement('b');
+        count.textContent = `×${drop.count}`;
+        row.append(name, count);
+        fragment.append(row);
+      }
+    }
+    this.shipDropList.replaceChildren(fragment);
   }
 
   private loadManifest(): void {

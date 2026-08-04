@@ -7,7 +7,10 @@ import type { TemplateModel } from '../../model/TemplateModel';
 import { PlanModel } from '../../model/PlanModel';
 import { TaskPriority, type Scheduler } from '../../model/scheduler';
 import type { EventFightReq, NormalFightReq, TaskRequest } from '../../types/api.js';
-import type { ManagedBattlePlanSelection } from '../../types/ipc.js';
+import type {
+  DailyPlanSelection,
+  ManagedBattlePlanSelection,
+} from '../../types/ipc.js';
 import type { TaskPreset } from '../../types/model.js';
 import { resolveFleetPreset } from '../../model/fleet/ShipMatcher';
 import { resolveFleetPresetRules } from '../../model/fleet/FleetRuleMapper';
@@ -129,7 +132,9 @@ function addPresetTaskToQueue(
       level1: preset.level1 ?? [],
       level2: preset.level2 ?? [],
       flagship_priority: preset.flagship_priority ?? [],
-      use_quick_repair: preset.use_quick_repair,
+      use_quick_repair: item.useQuickRepair
+        ?? preset.use_quick_repair
+        ?? true,
     };
   } else {
     req = {
@@ -140,10 +145,7 @@ function addPresetTaskToQueue(
       fleet_id: preset.fleet_id,
     };
   }
-  const effectiveTimes = (
-    preset.task_type === 'exercise'
-    || preset.task_type === 'decisive'
-  )
+  const effectiveTimes = preset.task_type === 'exercise'
     ? 1
     : Math.max(1, item.times || preset.times || 1);
   scheduler.addTask(
@@ -187,6 +189,32 @@ export async function loadManagedPlanToQueue(
     addPlanTaskToQueue(item, plan, path, host.scheduler);
   }
   Logger.info(`已将「${selection.plan.name}」加入任务队列`);
+  host.renderMain();
+}
+
+/** 将日常任务浮窗选中的卡片直接加入调度队列。 */
+export async function loadDailyPlanToQueue(
+  selection: DailyPlanSelection,
+  host: PlanQueueHost,
+): Promise<void> {
+  const item: TaskGroupItem = {
+    dailySource: selection.plan.source,
+    dailyFile: selection.plan.file,
+    dailyTaskType: selection.plan.taskType,
+    kind: 'daily',
+    times: selection.plan.taskType === 'exercise'
+      ? 1
+      : Math.max(1, selection.times),
+    label: selection.plan.name,
+    chapter: selection.plan.chapter,
+    useQuickRepair: selection.plan.taskType === 'decisive'
+      ? selection.useQuickRepair !== false
+      : undefined,
+  };
+  const { content } = await readTaskGroupItemFile(item);
+  const preset = yamlCodec.parse<TaskPreset>(content);
+  addPresetTaskToQueue(item, preset, host.scheduler);
+  Logger.info(`已将日常任务「${selection.plan.name}」加入任务队列`);
   host.renderMain();
 }
 

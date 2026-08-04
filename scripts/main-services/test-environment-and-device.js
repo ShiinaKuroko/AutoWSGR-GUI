@@ -35,6 +35,13 @@ const {
   PythonEnvironmentService,
   temporaryDirectory,
 } = context;
+const {
+  applyBackendRuntimeSettings,
+  buildBackendBootstrap,
+  buildBackendCapabilityProbe,
+} = require(
+  '../../dist/electron/services/BackendRuntimeContract.js',
+);
 
 /** 验证 Python 校验、检查和安装入口的原有返回语义。 */
 async function testPythonEnvironmentService() {
@@ -289,12 +296,43 @@ async function testCudaEnvironmentService() {
     'cublas',
     'utf8',
   );
+  const contractEnvironment = {
+    pythonCmd: 'python.exe',
+    startupMode: 'external',
+    backendRoot: temporaryDirectory,
+    localSite: path.join(temporaryDirectory, 'site-packages'),
+    useLocalSite: false,
+    installTarget: null,
+    identity: 'external:test',
+  };
+  const runtimeSettings = applyBackendRuntimeSettings(
+    { PYTHONPATH: 'shared-python-path' },
+    { ocrGpuMode: 'cpu', saveImages: false },
+  );
+  assert.equal(runtimeSettings.PYTHONPATH, 'shared-python-path');
+  assert.equal(runtimeSettings.AUTOWSGR_OCR_GPU_MODE, 'cpu');
+  assert.equal(runtimeSettings.AUTOWSGR_SAVE_IMAGES, 'false');
+  const capabilityProbe = buildBackendCapabilityProbe(
+    contractEnvironment,
+  );
+  assert.match(capabilityProbe, /gui-runtime-env-v1/);
+  assert.match(capabilityProbe, /AUTOWSGR_SAVE_IMAGES/);
+  assert.match(capabilityProbe, /AUTOWSGR_OCR_GPU_MODE/);
+  const backendBootstrap = buildBackendBootstrap(
+    contractEnvironment,
+    16710,
+  );
+  assert.match(backendBootstrap, /port=16710/);
+  assert.doesNotMatch(backendBootstrap, /__func__|_patched_|_image_dir/);
 
   let findPythonCalls = 0;
   const noPython = new CudaEnvironmentService({
     findPython: async () => {
       findPythonCalls += 1;
       return null;
+    },
+    buildRuntimeEnvironment: () => {
+      throw new Error('must not build runtime environment');
     },
     execute: async () => {
       throw new Error('must not execute');
@@ -352,8 +390,40 @@ async function testCudaEnvironmentService() {
   assert.equal(findPythonCalls, 1);
 
   let commandCall = null;
+  const runtimeEnvironmentCalls = [];
+  const buildRuntimeEnvironment = (
+    pythonCommand,
+    configuredCudaRoot,
+  ) => {
+    runtimeEnvironmentCalls.push({
+      pythonCommand,
+      configuredCudaRoot,
+    });
+    const cudaDirectory = configuredCudaRoot
+      ? (
+          fs.existsSync(path.join(configuredCudaRoot, 'bin'))
+            ? path.join(configuredCudaRoot, 'bin')
+            : configuredCudaRoot
+        )
+      : null;
+    return {
+      PATH: [
+        ...(cudaDirectory ? [cudaDirectory] : []),
+        'base-path',
+      ].join(path.delimiter),
+      PYTHONPATH: 'shared-python-path',
+      PYTHONUSERBASE: 'shared-python-user-base',
+      ...(configuredCudaRoot
+        ? {
+            CUDA_PATH: configuredCudaRoot,
+            CUDA_HOME: configuredCudaRoot,
+          }
+        : {}),
+    };
+  };
   const detected = new CudaEnvironmentService({
     findPython: async () => 'python.exe',
+    buildRuntimeEnvironment,
     execute: async (executable, args, options) => {
       commandCall = { executable, args, options };
       return {
@@ -386,12 +456,25 @@ async function testCudaEnvironmentService() {
   assert.equal(commandCall.options.env.CUDA_PATH, cudaRoot);
   assert.equal(commandCall.options.env.CUDA_HOME, cudaRoot);
   assert.equal(
+    commandCall.options.env.PYTHONPATH,
+    'shared-python-path',
+  );
+  assert.equal(
+    commandCall.options.env.PYTHONUSERBASE,
+    'shared-python-user-base',
+  );
+  assert.equal(
     commandCall.options.env.PATH.split(path.delimiter)[0],
     cudaBin,
   );
+  assert.deepEqual(runtimeEnvironmentCalls[0], {
+    pythonCommand: 'python.exe',
+    configuredCudaRoot: cudaRoot,
+  });
 
   const unavailable = new CudaEnvironmentService({
     findPython: async () => 'python.exe',
+    buildRuntimeEnvironment,
     execute: async () => ({
       stdout: JSON.stringify({
         available: false,
@@ -412,6 +495,7 @@ async function testCudaEnvironmentService() {
 
   const importFailure = new CudaEnvironmentService({
     findPython: async () => 'python.exe',
+    buildRuntimeEnvironment,
     execute: async () => ({
       stdout: JSON.stringify({
         available: false,
@@ -431,6 +515,7 @@ async function testCudaEnvironmentService() {
 
   const executionFailure = new CudaEnvironmentService({
     findPython: async () => 'python.exe',
+    buildRuntimeEnvironment,
     execute: async () => {
       throw new Error('execution failed');
     },

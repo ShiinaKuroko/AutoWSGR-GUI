@@ -189,15 +189,27 @@ interface MapNode {
 | `FleetEditorView` | 舰位、主选/备选和拖拽编辑 |
 | `FleetRuleView` | 舰种、国籍、等级等规则输入 |
 | `FleetGalleryView` | 图鉴筛选、排序和展示缓存 |
-| `PlanManagementView` | 保存、覆盖、重命名、删除和批量导出 |
+| `PlanManagementView` | 展示管理清单并上报重命名、删除和批量导出意图 |
 | `TeamPlanLoaderView` | 系统/用户编队方案选择 |
 
+`FleetPlannerController` 通过 `FleetPlannerRepository` 读取舰船库和编队计划，
+处理保存、同名覆盖确认、系统预设另存为用户副本，以及当前草稿的
+`file/source` identity。Controller 将持久化 `UserTeamPlan` 转换为
+`TeamPlanViewObject`，View 只接收不透明的计划 `id`，不知道真实文件路径。
+
+`FleetDraft.fleetDraftToTeamPlan()` 和 `fleetDraftFromTeamPlan()` 是草稿与持久化
+DTO 的唯一双向转换边界。名称、舰种、等级和 candidate-only 规则在这里校验；
+View 不拼装 YAML/IPC DTO，也不更新文件 identity。
+
 决战舰队由 `DecisivePlanController` 的独立 `DecisiveFleetDraft` 管理，不与普通
-舰队共享草稿。两类 View 都不直接访问 Model、IPC 或持久化。
+舰队共享草稿。`DecisivePlanController` 负责设置和舰船库 Repository 调用，
+`DecisivePlanView` 只通过显式 Host 上报编辑和保存意图。两类 View 都不直接
+访问 Model、IPC 或持久化。
 
 Fleet 规则集中在 `src/model/fleet/`：`ShipMatcher` 负责匹配和显示标签，
-`FleetRuleMapper` 负责 API rule 映射，`ShipNameNormalizer` 负责后端舰名。
-candidate-only 槽位不会生成顶层 `name`，候选顺序和各候选的舰种/等级规则保持。
+`FleetRuleMapper` 负责 API rule 映射，`ShipNameNormalizer` 负责后端舰名，
+`FleetDraft` 负责编辑草稿和持久化编队 DTO 的转换。candidate-only 槽位不会
+生成顶层 `name`，槽位约束、候选顺序和各候选的舰种/等级规则均保持。
 
 ---
 
@@ -224,7 +236,7 @@ candidate-only 槽位不会生成顶层 `name`，候选顺序和各候选的舰�
 保存计划时，内嵌 `fleet_presets` 被拆成独立编队文件；运行时再按来源优先级
 展开引用。YAML 根对象、文件开头注释和不认识的字段必须保留。
 
-v5 迁移会扫描旧 `plans/`、`resource/user_*`，并递归识别安装目录中的有效
+旧计划迁移状态 v5 会扫描旧 `plans/`、`resource/user_*`，并递归识别安装目录中的有效
 计划 YAML。旧 YAML 经当前 Codec 升级并按 `bettle-*`、`team-*` 规范重命名
 后写入用户目录，源文件保留。不同内容的同名计划或舰队保存为“（旧版）”
 副本，计划中的舰队引用和旧任务组的受管文件名同步更新。完成项按旧来源路径

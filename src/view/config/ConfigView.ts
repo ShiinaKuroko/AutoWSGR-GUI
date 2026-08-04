@@ -5,7 +5,17 @@
  */
 import type { NormalFightTaskConfig } from '../../types/model.js';
 import type { ConfigViewObject } from '../../types/view.js';
-import { normalizeLootPlanId } from '../../shared/lootPlans.js';
+import {
+  DEFAULT_LOOT_PLAN_ID,
+  findLootAutomationPlan,
+  lootAutomationPlanKey,
+  normalizeLootAutomationPlans,
+  type LootAutomationPlan,
+  type LootPlanSource,
+} from '../../shared/lootPlans.js';
+import {
+  normalizeDecisiveAutomationSource,
+} from '../../shared/decisiveAutomation.js';
 
 type StatusKind = 'ok' | 'error' | 'unknown';
 
@@ -21,6 +31,7 @@ export class ConfigView {
   private configTabDescription = document.getElementById('config-tab-description');
   private normalFightTasks: NormalFightTaskConfig[] = [];
   private normalFightFleetNames = new Map<string, string>();
+  private lootPlans: LootAutomationPlan[] = [];
 
   private emuType = element<HTMLSelectElement>('cfg-emu-type');
   private emuPath = element<HTMLInputElement>('cfg-emu-path');
@@ -35,13 +46,11 @@ export class ConfigView {
   private exerciseFleetId = element<HTMLSelectElement>('cfg-exercise-fleet');
   private battleTimes = element<HTMLInputElement>('cfg-battle-times');
   private autoNormalFight = element<HTMLInputElement>('cfg-auto-normal-fight');
+  private autoDecisive = element<HTMLInputElement>('cfg-auto-decisive');
+  private decisiveTemplate = element<HTMLSelectElement>('cfg-decisive-template');
   private autoLoot = element<HTMLInputElement>('cfg-auto-loot');
   private lootPlan = element<HTMLSelectElement>('cfg-loot-plan');
   private lootStopCount = element<HTMLInputElement>('cfg-loot-stop-count');
-  private autoBattleBody = document.getElementById('cfg-auto-battle-body');
-  private autoExerciseBody = document.getElementById('cfg-auto-exercise-body');
-  private autoNormalFightBody = document.getElementById('cfg-auto-normal-fight-body');
-  private autoLootBody = document.getElementById('cfg-auto-loot-body');
   private normalFightTaskList = element<HTMLElement>('cfg-normal-fight-tasks');
 
   private logLevel = element<HTMLSelectElement>('cfg-log-level');
@@ -111,10 +120,10 @@ export class ConfigView {
         hasPath ? 'CUDA 路径已修改，请点击检测' : 'CUDA 路径留空，将检测当前系统环境',
       );
     });
-    this.autoBattle.addEventListener('change', () => this.updateAutoOptionVisibility());
-    this.autoExercise.addEventListener('change', () => this.updateAutoOptionVisibility());
-    this.autoNormalFight.addEventListener('change', () => this.updateAutoOptionVisibility());
-    this.autoLoot.addEventListener('change', () => this.updateAutoOptionVisibility());
+    this.lootPlan.addEventListener(
+      'change',
+      () => this.updateLootPlanSelectWidth(),
+    );
     this.bindNumberRange(this.delayMinRange, this.delayMin);
     this.bindNumberRange(this.delayMaxRange, this.delayMax);
     this.bindNumberRange(this.ocrConfidenceRange, this.ocrConfidence);
@@ -126,6 +135,10 @@ export class ConfigView {
     this.ocrGpu.addEventListener('change', () => {
       this.ocrGpuMode.value = this.ocrGpu.checked ? 'cuda' : 'cpu';
     });
+
+    document.querySelectorAll<HTMLSelectElement>(
+      '#page-config select.input',
+    ).forEach(select => this.updateSettingSelectWidth(select));
   }
 
   /** 用 ViewObject 填充表单。 */
@@ -146,8 +159,11 @@ export class ConfigView {
     this.normalFightTasks = structuredClone(vo.normalFightTasks);
     this.normalFightFleetNames.clear();
     this.renderNormalFightTasks();
-    this.autoLoot.checked = vo.autoLoot;
-    this.lootPlan.value = vo.lootPlanId;
+    this.autoDecisive.checked = vo.autoDecisive;
+    this.decisiveTemplate.value = vo.decisiveTemplateId;
+    this.lootPlans = normalizeLootAutomationPlans(vo.lootPlans, []);
+    this.renderLootPlanOptions(vo.lootPlanSource, vo.lootPlanId);
+    this.autoLoot.checked = vo.autoLoot && this.lootPlans.length > 0;
     this.lootStopCount.value = String(vo.lootStopCount);
     this.logLevel.value = vo.logLevel;
     this.logRoot.value = vo.logRoot;
@@ -191,7 +207,6 @@ export class ConfigView {
 
     this.updateDebugAdvancedVisibility();
     this.updateBackendRepoVisibility();
-    this.updateAutoOptionVisibility();
   }
 
   /** 收集并校验当前表单。 */
@@ -200,6 +215,10 @@ export class ConfigView {
     const operationDelayMax = this.clamp(this.delayMax.value, 0, 10, 0);
     if (operationDelayMin > operationDelayMax) {
       throw new Error('全局延迟的最小值不能大于最大值');
+    }
+    const selectedLootPlan = this.selectedLootPlan();
+    if (this.autoLoot.checked && !selectedLootPlan) {
+      throw new Error('启用自动胖次前必须先加载并选择出征计划');
     }
     return {
       emulatorType: this.emuType.value,
@@ -216,8 +235,14 @@ export class ConfigView {
       battleTimes: Math.trunc(this.clamp(this.battleTimes.value, 1, 99, 3)),
       autoNormalFight: this.autoNormalFight.checked,
       normalFightTasks: this.collectNormalFightTasks(),
+      autoDecisive: this.autoDecisive.checked,
+      decisiveTemplateId: normalizeDecisiveAutomationSource(
+        this.decisiveTemplate.value,
+      ),
       autoLoot: this.autoLoot.checked,
-      lootPlanId: normalizeLootPlanId(this.lootPlan.value),
+      lootPlanSource: selectedLootPlan?.source ?? 'system',
+      lootPlanId: selectedLootPlan?.file ?? DEFAULT_LOOT_PLAN_ID,
+      lootPlans: structuredClone(this.lootPlans),
       lootStopCount: Math.trunc(this.clamp(this.lootStopCount.value, 1, 50, 50)),
       logLevel: this.logLevel.value as ConfigViewObject['logLevel'],
       logRoot: this.logRoot.value.trim() || 'log',
@@ -342,11 +367,80 @@ export class ConfigView {
     this.backendRepoPath.required = show;
   }
 
-  private updateAutoOptionVisibility(): void {
-    if (this.autoBattleBody) this.autoBattleBody.style.display = this.autoBattle.checked ? '' : 'none';
-    if (this.autoExerciseBody) this.autoExerciseBody.style.display = this.autoExercise.checked ? '' : 'none';
-    if (this.autoNormalFightBody) this.autoNormalFightBody.style.display = this.autoNormalFight.checked ? '' : 'none';
-    if (this.autoLootBody) this.autoLootBody.style.display = this.autoLoot.checked ? '' : 'none';
+  getLootPlans(): LootAutomationPlan[] {
+    return structuredClone(this.lootPlans);
+  }
+
+  setLootPlans(plans: readonly LootAutomationPlan[]): void {
+    const selected = this.selectedLootPlan();
+    this.lootPlans = normalizeLootAutomationPlans(plans, []);
+    this.renderLootPlanOptions(selected?.source, selected?.file);
+    if (this.lootPlans.length === 0) this.autoLoot.checked = false;
+  }
+
+  private renderLootPlanOptions(
+    source?: LootPlanSource,
+    file?: string,
+  ): void {
+    const selected = findLootAutomationPlan(this.lootPlans, source, file)
+      ?? this.lootPlans[0]
+      ?? null;
+    this.lootPlan.replaceChildren();
+    this.lootPlans.forEach((plan) => {
+      const option = document.createElement('option');
+      option.value = lootAutomationPlanKey(plan);
+      option.textContent = plan.name;
+      option.title = `${plan.name} (${plan.file})`;
+      this.lootPlan.append(option);
+    });
+    this.lootPlan.disabled = this.lootPlans.length === 0;
+    this.lootPlan.value = selected
+      ? lootAutomationPlanKey(selected)
+      : '';
+    this.updateLootPlanSelectWidth();
+  }
+
+  private selectedLootPlan(): LootAutomationPlan | null {
+    return this.lootPlans.find(plan => (
+      lootAutomationPlanKey(plan) === this.lootPlan.value
+    )) ?? null;
+  }
+
+  private updateLootPlanSelectWidth(): void {
+    const option = this.lootPlan.selectedOptions[0];
+    const text = option?.textContent?.trim() || '任务预设';
+    this.updateSettingSelectWidth(this.lootPlan);
+    this.lootPlan.title = option?.title || text;
+  }
+
+  private updateSettingSelectWidth(select: HTMLSelectElement): void {
+    const fixedWidth = Number(select.dataset['configSelectWidth']);
+    if (Number.isFinite(fixedWidth) && fixedWidth > 0) {
+      select.style.setProperty(
+        '--config-select-width',
+        `${fixedWidth}px`,
+      );
+      return;
+    }
+
+    const style = window.getComputedStyle(select);
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    context.font = style.font;
+    const contentWidth = Math.max(
+      0,
+      ...Array.from(
+        select.options,
+        item => context.measureText(item.text.trim()).width,
+      ),
+    );
+    const requiredWidth = Math.ceil(contentWidth + 38);
+    const widthSteps = [96, 124, 168, 204, 240, 280, 320];
+    const width = widthSteps.find(step => step >= requiredWidth)
+      ?? widthSteps[widthSteps.length - 1]!;
+    select.style.setProperty('--config-select-width', `${width}px`);
   }
 
   private bindNumberRange(range: HTMLInputElement, number: HTMLInputElement): void {

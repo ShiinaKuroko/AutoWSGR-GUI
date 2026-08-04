@@ -105,6 +105,7 @@ export class TaskQueueView {
       for (let i = 0; i < vo.taskQueue.length; i++) {
         const item = vo.taskQueue[i];
         const isRunning = item.id === vo.runningTaskId;
+        const canReorder = !isRunning && !item.waiting;
         const queueIndex = hasRunning ? i - 1 : i;
         const div = document.createElement('div');
         div.className = 'task-queue-item' + (isRunning ? ' tq-running' : '');
@@ -112,7 +113,7 @@ export class TaskQueueView {
         const mainRow = document.createElement('div');
         mainRow.className = 'tq-main-row';
 
-        if (!isRunning) {
+        if (canReorder) {
           div.draggable = true;
           div.addEventListener('dragstart', (e) => {
             div.classList.add('tq-dragging');
@@ -141,7 +142,7 @@ export class TaskQueueView {
           });
         }
 
-        if (!isRunning) {
+        if (canReorder) {
           const handle = document.createElement('span');
           handle.className = 'tq-drag-handle';
           handle.textContent = '⠿';
@@ -189,6 +190,11 @@ export class TaskQueueView {
             acqSpan.textContent = item.acquisitionText;
             mainRow.appendChild(acqSpan);
           }
+        } else if (item.waitingText) {
+          const waitingSpan = document.createElement('span');
+          waitingSpan.className = 'tq-progress';
+          waitingSpan.textContent = item.waitingText;
+          mainRow.appendChild(waitingSpan);
         }
 
         const prioSpan = document.createElement('span');
@@ -234,7 +240,14 @@ export class TaskQueueView {
       ) as HTMLButtonElement | null;
       const clearBtn = document.getElementById('btn-clear-queue');
       const isRunningOrStopping = vo.status === 'running' || vo.status === 'stopping';
-      if (startBtn) startBtn.style.display = isRunningOrStopping ? 'none' : '';
+      const hasReadyTask = vo.taskQueue.some(
+        item => !item.waiting && item.id !== vo.runningTaskId,
+      );
+      if (startBtn) {
+        startBtn.style.display = isRunningOrStopping || !hasReadyTask
+          ? 'none'
+          : '';
+      }
       if (stopBtn) {
         const isStopping = vo.status === 'stopping';
         stopBtn.style.display = isRunningOrStopping ? '' : 'none';

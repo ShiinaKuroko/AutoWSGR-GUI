@@ -1,12 +1,12 @@
 /** 展示编队方案选择器并发出加载方案意图。 */
 import type {
-  ElectronBridge,
-  PlanPresetSource,
   ShipLibraryShip,
-  UserTeamPlan,
-  UserTeamPlanSlot,
-  UserTeamShipRule,
 } from '../../types/ipc.js';
+import type {
+  TeamPlanListViewObject,
+  TeamPlanShipRuleViewObject,
+  TeamPlanViewObject,
+} from '../../types/view.js';
 import {
   showAlert,
   showConfirm,
@@ -26,20 +26,17 @@ import type { TeamPlanSortField } from './TeamPlanListUi';
 
 const FLEET_SLOT_COUNT = 6;
 
-export interface TeamPlanLoaderViewHost extends Pick<
-  ElectronBridge,
-  'listTeamPlans'
-> {
+export interface TeamPlanLoaderViewHost {
   ensureLibrary(): Promise<void>;
-  currentPlan(): {
-    file: string | null;
-    source: PlanPresetSource;
-  };
+  loadPlans(): Promise<TeamPlanListViewObject>;
   ships(): readonly ShipLibraryShip[];
   colorfulBackgroundUrl(): string;
   shipTypeDisplay(ship: ShipLibraryShip): string;
   hasUnsavedChanges(): boolean;
-  applyPlan(plan: UserTeamPlan): void;
+  applyPlan(planId: string): Promise<{
+    success: boolean;
+    error?: string;
+  }>;
 }
 
 export class TeamPlanLoaderView {
@@ -79,8 +76,8 @@ export class TeamPlanLoaderView {
     'btn-confirm-team-loader',
   ) as HTMLButtonElement;
 
-  private plans: UserTeamPlan[] = [];
-  private selectedPlan: UserTeamPlan | null = null;
+  private plans: TeamPlanViewObject[] = [];
+  private selectedPlan: TeamPlanViewObject | null = null;
   private selectedPosition = 0;
   private sortField: TeamPlanSortField = 'modifiedAt';
 
@@ -88,18 +85,12 @@ export class TeamPlanLoaderView {
     this.bindActions();
   }
 
-  async open(
-    targetFile?: string,
-    targetSource?: PlanPresetSource,
-  ): Promise<void> {
+  async open(targetId?: string): Promise<void> {
     await this.host.ensureLibrary();
     this.search.value = '';
     await this.refresh();
-    if (targetFile) {
-      const selected = this.plans.find(plan => (
-        plan.file === targetFile
-        && (plan.source ?? 'user') === (targetSource ?? 'user')
-      ));
+    if (targetId) {
+      const selected = this.plans.find(plan => plan.id === targetId);
       if (!selected) {
         await showAlert('加载失败', '未找到对应的舰队方案');
         return;
@@ -186,21 +177,18 @@ export class TeamPlanLoaderView {
     this.count.textContent = '正在读取编队预设…';
     this.status.textContent = '';
     try {
-      const result = await this.host.listTeamPlans();
+      const result = await this.host.loadPlans();
       this.plans = result.plans;
-      const current = this.host.currentPlan();
       const visiblePlans = this.visiblePlans();
       const firstSortedPlan = [...visiblePlans]
         .sort((left, right) => this.comparePlans(left, right))[0];
-      this.selectedPlan = visiblePlans.find(plan => (
-        Boolean(current.file)
-        && plan.file === current.file
-        && (plan.source ?? 'user') === current.source
-      )) ?? firstSortedPlan ?? null;
+      this.selectedPlan = visiblePlans.find(plan => plan.selected)
+        ?? firstSortedPlan
+        ?? null;
       this.selectedPosition = 0;
       this.count.textContent = `共读取 ${result.plans.length} 个舰队预设`;
-      this.status.textContent = result.errors.length > 0
-        ? `有 ${result.errors.length} 个配置格式不合法，已跳过`
+      this.status.textContent = result.errorCount > 0
+        ? `有 ${result.errorCount} 个配置格式不合法，已跳过`
         : '';
       this.render();
     } catch (error) {
@@ -246,7 +234,10 @@ export class TeamPlanLoaderView {
     this.renderPreview();
   }
 
-  private comparePlans(left: UserTeamPlan, right: UserTeamPlan): number {
+  private comparePlans(
+    left: TeamPlanViewObject,
+    right: TeamPlanViewObject,
+  ): number {
     return compareTeamPlans(
       left,
       right,
@@ -255,7 +246,7 @@ export class TeamPlanLoaderView {
     );
   }
 
-  private visiblePlans(): UserTeamPlan[] {
+  private visiblePlans(): TeamPlanViewObject[] {
     return this.plans.filter(plan => (
       !this.filterSystem.checked || plan.source !== 'system'
     ));
@@ -277,10 +268,8 @@ export class TeamPlanLoaderView {
     const fragment = document.createDocumentFragment();
     Array.from({ length: FLEET_SLOT_COUNT }, (_, index) => {
       const slot = plan?.ships[index];
-      const backupCount = slot?.candidates?.length ?? 0;
-      const primary = slot && (slot.name || slot.search_name)
-        ? slot
-        : undefined;
+      const backupCount = slot?.candidates.length ?? 0;
+      const primary = slot?.primary;
       const item = document.createElement('div');
       item.className = 'fleet-team-main-item';
       const card = this.createPreviewCard(
@@ -312,8 +301,8 @@ export class TeamPlanLoaderView {
     const plan = this.selectedPlan;
     const slot = plan?.ships[this.selectedPosition];
     const candidates = slot?.candidates ?? [];
-    this.backupTitle.textContent = slot?.name
-      ? `【${slot.name}】的备选队列`
+    this.backupTitle.textContent = slot?.primary?.name
+      ? `【${slot.primary.name}】的备选队列`
       : `【位置${this.selectedPosition + 1}】的备选队列`;
     if (candidates.length === 0) {
       const empty = document.createElement('div');
@@ -336,7 +325,7 @@ export class TeamPlanLoaderView {
   }
 
   private createPreviewCard(
-    rule: UserTeamPlanSlot | UserTeamShipRule | undefined,
+    rule: TeamPlanShipRuleViewObject | undefined,
     size: 'main' | 'backup',
     position: number,
     candidateOnly = false,
@@ -344,7 +333,7 @@ export class TeamPlanLoaderView {
     const card = document.createElement(size === 'main' ? 'button' : 'div');
     if (card instanceof HTMLButtonElement) card.type = 'button';
     card.className = `fleet-team-${size}-card`;
-    const name = rule?.name ?? rule?.search_name ?? null;
+    const name = rule?.name ?? rule?.searchName ?? null;
     card.setAttribute(
       'aria-label',
       name ? `位置 ${position + 1}：${name}` : `位置 ${position + 1}：空`,
@@ -375,8 +364,10 @@ export class TeamPlanLoaderView {
     const ship = ships.find(item => item.name === name)
       ?? ships.find(item => item.search_name === name)
       ?? (
-        rule?.search_name
-          ? ships.find(item => item.search_name === rule.search_name)
+        rule?.searchName
+          ? ships.find(
+              item => item.search_name === rule.searchName,
+            )
           : undefined
       );
     if (ship) {
@@ -394,24 +385,24 @@ export class TeamPlanLoaderView {
   }
 
   private createLevelSummary(
-    rule: UserTeamPlanSlot | UserTeamShipRule | undefined,
+    rule: TeamPlanShipRuleViewObject | undefined,
   ): HTMLElement | null {
     if (
       !rule
-      || (rule.min_level === undefined && rule.max_level === undefined)
+      || (rule.minLevel === undefined && rule.maxLevel === undefined)
     ) {
       return null;
     }
     const summary = document.createElement('span');
     summary.className = 'fleet-team-level-summary';
-    if (rule.min_level !== undefined) {
+    if (rule.minLevel !== undefined) {
       const min = document.createElement('span');
-      min.textContent = `最小等级：${rule.min_level}`;
+      min.textContent = `最小等级：${rule.minLevel}`;
       summary.append(min);
     }
-    if (rule.max_level !== undefined) {
+    if (rule.maxLevel !== undefined) {
       const max = document.createElement('span');
-      max.textContent = `最大等级：${rule.max_level}`;
+      max.textContent = `最大等级：${rule.maxLevel}`;
       summary.append(max);
     }
     return summary;
@@ -428,11 +419,17 @@ export class TeamPlanLoaderView {
       if (!confirmed) return false;
     }
     try {
-      this.host.applyPlan(plan);
+      const result = await this.host.applyPlan(plan.id);
+      if (!result.success) {
+        throw new Error(result.error || '当前 YAML 格式不符合规则');
+      }
       this.close();
       return true;
-    } catch {
-      await showAlert('加载失败', '当前yaml格式不符合规则');
+    } catch (error) {
+      await showAlert(
+        '加载失败',
+        error instanceof Error ? error.message : String(error),
+      );
       return false;
     }
   }

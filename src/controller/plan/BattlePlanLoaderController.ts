@@ -7,6 +7,11 @@ import type {
   PlanTeamBinding,
 } from '../../types/ipc.js';
 import {
+  lootAutomationPlanKey,
+  normalizeLootAutomationPlans,
+  type LootAutomationPlan,
+} from '../../shared/lootPlans.js';
+import {
   BattlePlanLoaderView,
   type BattlePlanLoaderPurpose,
   type BattlePlanSortField,
@@ -14,6 +19,7 @@ import {
 import { Logger } from '../../utils/Logger';
 import {
   showAlert,
+  showConfirm,
   showSaveSuccess,
 } from '../shared/DialogHelper';
 
@@ -34,6 +40,10 @@ export class BattlePlanLoaderController {
   private resolveSelection: (
     (selection: ManagedBattlePlanSelection | null) => void
   ) | null = null;
+  private lootPlanDraft: LootAutomationPlan[] = [];
+  private resolveLootPlans: (
+    (plans: LootAutomationPlan[] | null) => void
+  ) | null = null;
 
   constructor(
     private readonly view: BattlePlanLoaderView,
@@ -53,6 +63,10 @@ export class BattlePlanLoaderController {
       },
       onSelectPlan: (file, source) => this.selectPlan(file, source),
       onSelectFleet: (index) => this.selectFleet(index),
+      onAddLootPlan: (file, source) => this.addLootPlan(file, source),
+      onDeleteLootPlan: (source, file) => {
+        void this.deleteLootPlan(source, file);
+      },
       onConfirm: () => void this.confirm(),
     });
     this.view.setSortField(this.sortField);
@@ -67,7 +81,10 @@ export class BattlePlanLoaderController {
   }
 
   pick(
-    purpose: Exclude<BattlePlanLoaderPurpose, 'editor'>,
+    purpose: Exclude<
+      BattlePlanLoaderPurpose,
+      'editor' | 'loot-automation'
+    >,
   ): Promise<ManagedBattlePlanSelection | null> {
     this.finishSelection(null);
     this.purpose = purpose;
@@ -76,6 +93,21 @@ export class BattlePlanLoaderController {
     void this.refresh().then(() => this.view.focusSearch());
     return new Promise((resolve) => {
       this.resolveSelection = resolve;
+    });
+  }
+
+  pickLootPlans(
+    currentPlans: readonly LootAutomationPlan[],
+  ): Promise<LootAutomationPlan[] | null> {
+    this.finishSelection(null);
+    this.finishLootPlans(null);
+    this.purpose = 'loot-automation';
+    this.selectedFleetIndex = null;
+    this.lootPlanDraft = normalizeLootAutomationPlans(currentPlans, []);
+    this.prepareAndOpen();
+    void this.refresh().then(() => this.view.focusSearch());
+    return new Promise((resolve) => {
+      this.resolveLootPlans = resolve;
     });
   }
 
@@ -88,6 +120,7 @@ export class BattlePlanLoaderController {
   private close(): void {
     this.view.close();
     this.finishSelection(null);
+    this.finishLootPlans(null);
     this.selectedFleetIndex = null;
     this.purpose = 'editor';
     this.view.setPurposeCopy(this.purpose);
@@ -99,6 +132,12 @@ export class BattlePlanLoaderController {
     const resolve = this.resolveSelection;
     this.resolveSelection = null;
     resolve?.(selection);
+  }
+
+  private finishLootPlans(plans: LootAutomationPlan[] | null): void {
+    const resolve = this.resolveLootPlans;
+    this.resolveLootPlans = null;
+    resolve?.(plans);
   }
 
   private async importLocal(): Promise<void> {
@@ -258,7 +297,10 @@ export class BattlePlanLoaderController {
     const direction = filters.ascending ? 1 : -1;
     return this.plans
       .filter(plan => (
-        this.purpose !== 'automation'
+        (
+          this.purpose !== 'automation'
+          && this.purpose !== 'loot-automation'
+        )
         || plan.kind === 'battle'
       ))
       .filter(plan => !filters.excludeSystem || plan.source !== 'system')
@@ -306,6 +348,7 @@ export class BattlePlanLoaderController {
       selectedPlan: this.selectedPlan,
       selectedFleetIndex: this.selectedFleetIndex,
       purpose: this.purpose,
+      lootPlans: this.lootPlanDraft,
     });
   }
 
@@ -340,7 +383,60 @@ export class BattlePlanLoaderController {
     this.render();
   }
 
+  private addLootPlan(
+    file: string,
+    source: PlanPresetSource,
+  ): void {
+    if (this.purpose !== 'loot-automation') return;
+    const plan = this.plans.find(item => (
+      item.kind === 'battle'
+      && item.file === file
+      && item.source === source
+    ));
+    if (!plan) return;
+    const next: LootAutomationPlan = {
+      source: plan.source,
+      file: plan.file,
+      name: plan.name,
+    };
+    const key = lootAutomationPlanKey(next);
+    if (
+      this.lootPlanDraft.some(item => (
+        lootAutomationPlanKey(item) === key
+      ))
+    ) {
+      return;
+    }
+    this.lootPlanDraft.push(next);
+    this.render();
+  }
+
+  private async deleteLootPlan(
+    source: PlanPresetSource,
+    file: string,
+  ): Promise<void> {
+    if (this.purpose !== 'loot-automation') return;
+    const target = this.lootPlanDraft.find(plan => (
+      plan.source === source && plan.file === file
+    ));
+    if (!target) return;
+    const confirmed = await showConfirm(
+      '删除自动胖次计划',
+      `确定从自动胖次下拉列表中删除「${target.name}」吗？`,
+    );
+    if (!confirmed) return;
+    this.lootPlanDraft = this.lootPlanDraft.filter(plan => (
+      plan.source !== source || plan.file !== file
+    ));
+    this.render();
+  }
+
   private async confirm(): Promise<void> {
+    if (this.purpose === 'loot-automation') {
+      this.finishLootPlans(structuredClone(this.lootPlanDraft));
+      this.close();
+      return;
+    }
     if (!this.selectedPlan) return;
     if (this.isPickingWithFleet()) {
       if (

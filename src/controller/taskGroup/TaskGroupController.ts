@@ -21,13 +21,20 @@ import type { MapData } from '../../model/MapDataLoader';
 import { showAlert, showSaveSuccess } from '../shared/DialogHelper';
 import {
   addCurrentPlanToGroup,
+  addDailyPlanToGroup,
   addManagedPlanToGroup,
   addPresetToGroup,
 } from './addItems';
-import { loadGroupToQueue, loadSingleItemToQueue } from './queueLoader';
+import {
+  loadDailyPlanToQueue,
+  loadGroupToQueue,
+  loadSingleItemToQueue,
+} from './queueLoader';
 import { showContextMenuForItem, hideContextMenu, handleContextMenuEdit, type ContextMenuTarget, type ContextMenuHost } from './contextMenu';
 import { loadItemMetas } from './metaLoader';
 import { TaskListLoaderController } from './TaskListLoaderController';
+import { DailyTaskLoaderController } from './DailyTaskLoaderController';
+import { DailyTaskLoaderView } from '../../view/taskGroup/DailyTaskLoaderView';
 
 function toTaskGroupItemViewObject(
   item: TaskGroupItem,
@@ -36,6 +43,9 @@ function toTaskGroupItemViewObject(
     path: item.path,
     managedSource: item.managedSource,
     managedFile: item.managedFile,
+    dailySource: item.dailySource,
+    dailyFile: item.dailyFile,
+    dailyTaskType: item.dailyTaskType,
     templateId: item.templateId,
     kind: item.kind,
     times: item.times,
@@ -62,6 +72,7 @@ export interface TaskGroupHost {
 export class TaskGroupController {
   private contextMenuTarget: ContextMenuTarget | null = null;
   private readonly taskListLoader: TaskListLoaderController;
+  private readonly dailyTaskLoader: DailyTaskLoaderController;
 
   constructor(
     private readonly taskGroupModel: TaskGroupModel,
@@ -74,9 +85,24 @@ export class TaskGroupController {
       this.taskGroupModel,
       () => this.render(),
     );
+    this.dailyTaskLoader = new DailyTaskLoaderController(
+      new DailyTaskLoaderView(),
+      {
+        addToList: selection => addDailyPlanToGroup(
+          this.taskGroupModel,
+          selection,
+          () => this.render(),
+        ),
+        addToQueue: selection => loadDailyPlanToQueue(
+          selection,
+          this.host,
+        ),
+      },
+    );
   }
 
   bindActions(): void {
+    this.dailyTaskLoader.bindActions();
     this.taskGroupView.onNewGroup = async () => {
       const baseName = '新任务列表';
       let name = baseName;
@@ -152,6 +178,9 @@ export class TaskGroupController {
         selection.fleetPresetIndex,
         () => this.render(),
       );
+    };
+    this.taskGroupView.onAddDailyPlan = () => {
+      this.dailyTaskLoader.open();
     };
     this.taskGroupView.onDropToQueue = () => {};
     this.taskGroupView.onLoadItem = (index) => {

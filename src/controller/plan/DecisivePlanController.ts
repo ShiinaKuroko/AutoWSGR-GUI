@@ -28,6 +28,7 @@ export class DecisivePlanController {
     this.view = new DecisivePlanView({
       getState: () => this.getViewState(),
       setChapter: chapter => this.draft.setChapter(chapter),
+      changeChapter: chapter => this.changeChapter(chapter),
       setUseQuickRepair: useQuickRepair => (
         this.draft.setUseQuickRepair(useQuickRepair)
       ),
@@ -47,7 +48,7 @@ export class DecisivePlanController {
         targetLevel,
         targetIndex,
       ),
-      resetTeams: () => this.draft.resetTeams(),
+      resetTeams: () => this.resetTeams(),
       save: () => this.save(),
     });
   }
@@ -83,6 +84,29 @@ export class DecisivePlanController {
       this.draft.load(
         await this.repository.saveSettings(this.draft.toSettings()),
       );
+      return { success: true };
+    } catch (error) {
+      return { success: false, error };
+    }
+  }
+
+  private async changeChapter(
+    chapter: number,
+  ): Promise<DecisivePlanSaveResult> {
+    try {
+      this.draft.load(await this.repository.loadChapter(chapter));
+      return { success: true };
+    } catch (error) {
+      return { success: false, error };
+    }
+  }
+
+  private async resetTeams(): Promise<DecisivePlanSaveResult> {
+    try {
+      const defaults = await this.repository.loadSystemDefaults(
+        this.draft.chapter,
+      );
+      this.draft.resetTeams(defaults);
       return { success: true };
     } catch (error) {
       return { success: false, error };

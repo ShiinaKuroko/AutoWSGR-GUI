@@ -5,7 +5,10 @@
  */
 import { Logger } from '../utils/Logger';
 import { jsonCodec, rendererFileRepository } from '../adapter/index.js';
-import type { PlanPresetSource } from '../types/ipc.js';
+import type {
+  DailyPlanType,
+  PlanPresetSource,
+} from '../types/ipc.js';
 
 // ════════════════════════════════════════
 // 数据结构
@@ -20,10 +23,16 @@ export interface TaskGroupItem {
   managedSource?: PlanPresetSource;
   /** 计划管理目录中的实际文件名 */
   managedFile?: string;
+  /** 日常任务目录来源；与 dailyFile 一起使用 */
+  dailySource?: PlanPresetSource;
+  /** 日常任务目录中的实际文件名 */
+  dailyFile?: string;
+  /** 日常任务类型，用于限制可编辑字段 */
+  dailyTaskType?: DailyPlanType;
   /** 模板 ID — template 类型必填 */
   templateId?: string;
-  /** 条目类型: plan=战斗方案YAML, preset=任务预设YAML, template=模板库引用 */
-  kind: 'plan' | 'preset' | 'template';
+  /** 条目类型：daily 使用独立日常任务目录 */
+  kind: 'plan' | 'preset' | 'template' | 'daily';
   /** 执行次数 */
   times: number;
   /** 显示名称 */
@@ -38,6 +47,8 @@ export interface TaskGroupItem {
   allowPolling?: boolean;
   /** 章节覆盖（仅 decisive 模板使用时选择） */
   chapter?: number;
+  /** 决战快速修理开关覆盖 */
+  useQuickRepair?: boolean;
   /** 编队预设索引（plan 类型条目指定默认使用的编队预设） */
   fleetPresetIndex?: number;
 }
@@ -66,28 +77,17 @@ interface TaskGroupsData {
 // ════════════════════════════════════════
 
 const STORAGE_FILE = 'task_groups.json';
-const TASK_GROUPS_VERSION = 3;
+const TASK_GROUPS_VERSION = 4;
 const LEGACY_SYSTEM_PLAN_FILES: Readonly<Record<string, string>> = {
-  '周常1章-1-2.yaml': 'bettle-周常-1-2-v1.yaml',
   '周常2章-2-1.yaml': 'bettle-周常-2-1.yaml',
   '周常3章-3-1.yaml': 'bettle-周常-3-1.yaml',
-  '周常3章-3-3.yaml': 'bettle-周常-3-3-v1.yaml',
   '周常4章-4-1.yaml': 'bettle-周常-4-1.yaml',
   '周常5章-5-5.yaml': 'bettle-周常-5-5.yaml',
-  '周常6章-6-3.yaml': 'bettle-周常-6-3-v1.yaml',
   '周常6章-6-4.yaml': 'bettle-周常-6-4.yaml',
   '周常7章-7-4.yaml': 'bettle-周常-7-4.yaml',
   '周常8章-8-2.yaml': 'bettle-周常-8-2.yaml',
   '周常9章-9-2.yaml': 'bettle-周常-9-2.yaml',
   '周常10章-10-1.yaml': 'bettle-周常-10-1.yaml',
-  '活动20260730-E1炸鱼.yaml': 'bettle-E1炸鱼.yaml',
-  '活动20260730-E5夜战.yaml': 'bettle-E5夜战.yaml',
-  '活动20260730-H1炸鱼.yaml': 'bettle-H1炸鱼.yaml',
-  '活动20260730-H5夜战.yaml': 'bettle-H5夜战.yaml',
-  'E1炸鱼.yaml': 'bettle-E1炸鱼.yaml',
-  'E5夜战.yaml': 'bettle-E5夜战.yaml',
-  'H1炸鱼.yaml': 'bettle-H1炸鱼.yaml',
-  'H5夜战.yaml': 'bettle-H5夜战.yaml',
 };
 
 export class TaskGroupModel {
@@ -231,7 +231,11 @@ export class TaskGroupModel {
   private migrateItem(raw: unknown): TaskGroupItem[] {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
     const source = { ...(raw as Record<string, unknown>) };
-    const kind = source.kind === 'preset' || source.kind === 'template'
+    const kind = (
+      source.kind === 'preset'
+      || source.kind === 'template'
+      || source.kind === 'daily'
+    )
       ? source.kind
       : 'plan';
     const pathValue = typeof source.path === 'string' && source.path.trim()
@@ -243,6 +247,12 @@ export class TaskGroupModel {
     const managedSource = source.managedSource === 'system' || source.managedSource === 'user'
       ? source.managedSource
       : this.inferManagedSource(pathValue);
+    const dailySource = source.dailySource === 'system' || source.dailySource === 'user'
+      ? source.dailySource
+      : undefined;
+    const dailyFile = typeof source.dailyFile === 'string' && source.dailyFile.trim()
+      ? source.dailyFile
+      : undefined;
     const inferredFile = managedFile ?? this.inferManagedFile(pathValue);
     const migratedFile = managedSource === 'system' && inferredFile
       ? LEGACY_SYSTEM_PLAN_FILES[inferredFile] ?? inferredFile
@@ -256,6 +266,8 @@ export class TaskGroupModel {
       path: pathValue,
       managedSource,
       managedFile: migratedFile,
+      dailySource,
+      dailyFile,
       times: typeof source.times === 'number' && source.times > 0 ? source.times : 1,
       label,
     } as TaskGroupItem];

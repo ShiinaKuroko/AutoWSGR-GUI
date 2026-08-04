@@ -10,15 +10,37 @@ export interface NavigationControllerHost {
 }
 
 export class NavigationController {
+  private navTabs: HTMLElement | null = null;
+  private navIndicator: HTMLElement | null = null;
+  private navResizeObserver: ResizeObserver | null = null;
+
   constructor(private readonly host: NavigationControllerHost) {}
 
   bindNavigation(): void {
+    this.navTabs = document.querySelector<HTMLElement>('.nav-tabs');
+    this.navIndicator = this.navTabs?.querySelector<HTMLElement>(
+      '.nav-tab-indicator',
+    ) ?? null;
+
     document.querySelectorAll<HTMLElement>('.nav-tab').forEach((tab) => {
       tab.addEventListener('click', () => {
         const pageId = tab.dataset['page'];
         if (pageId) this.switchPage(pageId);
       });
     });
+
+    this.updateNavigationIndicator();
+    requestAnimationFrame(() => {
+      this.navIndicator?.classList.add('is-ready');
+    });
+
+    if (this.navTabs) {
+      this.navResizeObserver?.disconnect();
+      this.navResizeObserver = new ResizeObserver(
+        () => this.updateNavigationIndicator(),
+      );
+      this.navResizeObserver.observe(this.navTabs);
+    }
   }
 
   bindPlanNavigation(): void {
@@ -53,6 +75,7 @@ export class NavigationController {
   switchPage(pageId: string, planTab?: string): void {
     document.querySelectorAll('.nav-tab').forEach((t) => t.classList.remove('active'));
     document.querySelector(`.nav-tab[data-page="${pageId}"]`)?.classList.add('active');
+    this.updateNavigationIndicator();
     document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
     document.getElementById(`page-${pageId}`)?.classList.add('active');
     if (pageId === 'plan') {
@@ -67,5 +90,15 @@ export class NavigationController {
       void this.host.refreshAdbStatus();
       void this.host.refreshShipLibraryStatus();
     }
+  }
+
+  private updateNavigationIndicator(): void {
+    const activeTab = this.navTabs?.querySelector<HTMLElement>('.nav-tab.active');
+    if (!activeTab || !this.navIndicator) return;
+
+    this.navIndicator.style.width = `${activeTab.offsetWidth}px`;
+    this.navIndicator.style.transform = (
+      `translate3d(${activeTab.offsetLeft}px, 0, 0)`
+    );
   }
 }
