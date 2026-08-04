@@ -68,6 +68,16 @@ interface TaskGroupsData {
 const STORAGE_FILE = 'task_groups.json';
 const TASK_GROUPS_VERSION = 3;
 const LEGACY_SYSTEM_PLAN_FILES: Readonly<Record<string, string>> = {
+  '周常1章-1-2.yaml': 'bettle-周常-1-1.yaml',
+  '周常2章-2-1.yaml': 'bettle-周常-2-1.yaml',
+  '周常3章-3-1.yaml': 'bettle-周常-3-1.yaml',
+  '周常4章-4-1.yaml': 'bettle-周常-4-1.yaml',
+  '周常5章-5-5.yaml': 'bettle-周常-5-5.yaml',
+  '周常6章-6-4.yaml': 'bettle-周常-6-4.yaml',
+  '周常7章-7-4.yaml': 'bettle-周常-7-4.yaml',
+  '周常8章-8-2.yaml': 'bettle-周常-8-2.yaml',
+  '周常9章-9-2.yaml': 'bettle-周常-9-2.yaml',
+  '周常10章-10-1.yaml': 'bettle-周常-10-1.yaml',
   '活动20260730-E1炸鱼.yaml': 'bettle-E1炸鱼.yaml',
   '活动20260730-E5夜战.yaml': 'bettle-E5夜战.yaml',
   '活动20260730-H1炸鱼.yaml': 'bettle-H1炸鱼.yaml',

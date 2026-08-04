@@ -25,6 +25,7 @@ Thumbs.db
 usersettings.yaml
 gui_settings.json
 task_groups.json
+!scripts/fixtures/**/task_groups.json
 templates.json
 .env_ready
 plans/

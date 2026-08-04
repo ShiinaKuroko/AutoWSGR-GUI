@@ -1,6 +1,6 @@
 {
   "name": "wsgrgui",
-  "version": "2.0.2-dev",
+  "version": "2.0.3-dev",
   "description": "AutoWSGR YAML 管理与自动化桌面界面",
   "main": "dist/electron/main.js",
   "scripts": {
@@ -10,7 +10,7 @@
     "build": "npm run clean && npm run build:css && tsc && node scripts/bundle.js",
     "sync:fleet-types": "node scripts/sync-fleet-ship-types.js",
     "check:fleet-types": "node scripts/sync-fleet-ship-types.js --check",
-    "test:legacy-config-upgrade": "npm run build && node scripts/test-legacy-config-upgrade.js",
+    "test:legacy-config-upgrade": "npm run build && node scripts/test-legacy-config-upgrade.js && node scripts/test-task-group-migration.js",
     "test:legacy-plan": "npm run build && node scripts/test-legacy-plan-migration.js",
     "test:task-group-migration": "npm run build && node scripts/test-task-group-migration.js",
     "test:api-contract": "npm run check:fleet-types && npm run build && node scripts/test-api-contract.js",
