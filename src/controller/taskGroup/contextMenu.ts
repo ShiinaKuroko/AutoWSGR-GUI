@@ -1,3 +1,4 @@
+/** 处理任务组条目的右键菜单、编辑、复制和删除。 */
 /**
  * contextMenu —— 右键上下文菜单逻辑。
  */
@@ -6,8 +7,10 @@ import type { Scheduler } from '../../model/scheduler';
 import { PlanModel } from '../../model/PlanModel';
 import { loadMapData, loadExMapData, loadEventMapData } from '../../model/MapDataLoader';
 import type { MapData } from '../../model/MapDataLoader';
-import type { TaskPreset } from '../../types/model';
+import type { TaskPreset } from '../../types/model.js';
+import type { PlanPresetSource } from '../../types/ipc.js';
 import { Logger } from '../../utils/Logger';
+import { yamlCodec } from '../../adapter';
 
 export interface ContextMenuTarget {
   source: 'taskgroup' | 'queue';
@@ -20,6 +23,7 @@ export interface ContextMenuHost {
   setCurrentPlan(plan: PlanModel, mapData: MapData | null): void;
   renderPlanPreview(): void;
   switchPage(page: string): void;
+  openManagedPlan(file: string, source: PlanPresetSource): Promise<boolean>;
 }
 
 export function showContextMenuForItem(
@@ -59,6 +63,14 @@ export async function handleContextMenuEdit(
       Logger.info(`模板「${item.label}」请在模板库中查看和编辑`);
       return;
     }
+    if (item.managedSource && item.managedFile) {
+      await host.openManagedPlan(item.managedFile, item.managedSource);
+      return;
+    }
+    if (!item.path) {
+      Logger.error(`「${item.label}」没有关联的配置文件`);
+      return;
+    }
     await openItemForEdit(item.path!, item.kind, host);
   } else {
     const taskId = target.id as string;
@@ -89,10 +101,10 @@ export async function openItemForEdit(
 
   try {
     const content = await bridge.readFile(filePath);
-    const parsed = (await import('js-yaml')).load(content) as Record<string, unknown>;
+    const parsed = yamlCodec.parse<Record<string, unknown>>(content);
     if (!parsed || typeof parsed !== 'object') return;
 
-    if (kind === 'preset' || ('task_type' in parsed && !('chapter' in parsed))) {
+    if (kind === 'preset' || ('task_type' in parsed && !('map' in parsed))) {
       host.importTaskPreset(parsed as unknown as TaskPreset, filePath);
     } else {
       const plan = PlanModel.fromYaml(content, filePath);

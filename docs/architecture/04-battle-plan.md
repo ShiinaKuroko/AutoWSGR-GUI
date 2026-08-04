@@ -1,6 +1,6 @@
 # 出击计划系统
 
-> 涉及文件：`src/model/PlanModel.ts` · `src/controller/plan/`（PlanController · importExport · presetFlow · nodeEditor · rendering）· `src/view/plan/`（PlanPreviewView(Facade) · MapView · NodeEditorView · FleetPresetView · FleetEditDialog）· `src/model/MapDataLoader.ts` · `src/types/model.ts` · `resource/builtin_plans/` · `resource/maps/`
+> 涉及文件：`src/model/PlanModel.ts` · `src/controller/plan/` · `src/view/plan/` · `src/model/MapDataLoader.ts` · `electron/services/CombatPlanCodec.ts` · `electron/services/CombatPlanRepository.ts` · `electron/services/PlanManagementService.ts` · `electron/services/RuntimePlanService.ts` · `electron/ipc/CombatPlanIpc.ts` · `resource/system_battle_plans/` · `resource/maps/`
 
 ## 概述
 
@@ -57,16 +57,27 @@ enemy_rules:
 ```typescript
 interface FleetPreset {
   name: string;
-  ships: (string | ShipFilter)[];  // 6 个舰位：具体舰名或模糊筛选
+  ships: ShipSlot[];  // 6 个舰位：具体舰名、结构化规则或空位
 }
 
 interface ShipFilter {
+  name?: string;
+  search_name?: string;
   nation?: string;     // 国籍筛选
-  ship_type?: string;  // 舰型筛选
+  ship_type?: string[]; // 舰型筛选
+  candidates?: ShipRule[];
+  min_level?: number;
+  max_level?: number;
 }
+
+type ShipSlot = string | ShipFilter | null;
 ```
 
 编队预设支持**具体舰名**（如 `"85工程"`）和**模糊筛选**（如 `{nation: "苏联", ship_type: "dd"}`），后者在执行时由 `resolveFleetPreset()` 解析为实际舰船。
+
+没有顶层 `name` 的槽位可以只包含结构化 `candidates`。此时候选项是平等
+替代项，GUI 不得把第一个候选提升为主选；只有旧版字符串候选列表才按旧
+格式推断第一项为主选。
 
 ---
 
@@ -150,8 +161,8 @@ interface MapNode {
 
 | 文件 | 职责 |
 |------|------|
-| `PlanController.ts` | 主控制器：持有当前方案状态，协调下属模块 |
-| `importExport.ts` | 方案文件的导入/导出/新建流程 |
+| `PlanController.ts` | 主控制器：持有当前方案状态，协调编辑、保存和执行 |
+| `BattlePlanLoaderController.ts` | 持有受管方案选择器状态并协调读取、筛选和选择结果 |
 | `presetFlow.ts` | 任务预设的导入/查看/关闭/执行流程 |
 | `nodeEditor.ts` | 从 UI 收集节点阵型/夜战/索敌规则并写回 PlanData |
 | `rendering.ts` | 构建 `PlanPreviewViewObject`，协调地图数据和方案数据的合并 |
@@ -166,6 +177,65 @@ interface MapNode {
 | `NodeEditorView` | `view/plan/NodeEditorView.ts` | 节点详细编辑器（阵形、夜战、继续条件） |
 | `FleetPresetView` | `view/plan/FleetPresetView.ts` | 编队预设列表管理（添加、编辑、删除） |
 | `FleetEditDialog` | `view/plan/FleetEditDialog.ts` | 编队预设编辑弹窗（支持舰船自动补全） |
+| `BattlePlanLoaderView` | `view/plan/BattlePlanLoaderView.ts` | 受管方案列表、筛选、预览和舰队选择弹窗 |
+
+### Fleet Planner — 舰队计划
+
+普通舰队草稿的唯一所有者是 `FleetPlannerController` 中的单个 `FleetDraft`。
+`FleetPlannerView` 只组合完整业务子视图并转发用户意图：
+
+| 子视图 | 职责 |
+|--------|------|
+| `FleetEditorView` | 舰位、主选/备选和拖拽编辑 |
+| `FleetRuleView` | 舰种、国籍、等级等规则输入 |
+| `FleetGalleryView` | 图鉴筛选、排序和展示缓存 |
+| `PlanManagementView` | 保存、覆盖、重命名、删除和批量导出 |
+| `TeamPlanLoaderView` | 系统/用户编队方案选择 |
+
+决战舰队由 `DecisivePlanController` 的独立 `DecisiveFleetDraft` 管理，不与普通
+舰队共享草稿。两类 View 都不直接访问 Model、IPC 或持久化。
+
+Fleet 规则集中在 `src/model/fleet/`：`ShipMatcher` 负责匹配和显示标签，
+`FleetRuleMapper` 负责 API rule 映射，`ShipNameNormalizer` 负责后端舰名。
+candidate-only 槽位不会生成顶层 `name`，候选顺序和各候选的舰种/等级规则保持。
+
+---
+
+## 主进程计划流水线
+
+作战计划在主进程按职责拆分，IPC Adapter 不直接解析或写 YAML：
+
+| 模块 | 职责 |
+|------|------|
+| `CombatPlanIpc` | 处理本地 YAML 选择、冲突确认及受管计划 IPC 边界 |
+| `PlanManagementService` | 管理页汇总、导入升级、保存、重命名、删除和运行时准备 |
+| `LegacyPlanMigration` | 启动时升级旧计划、拆分舰队并迁移任务组引用 |
+| `CombatPlanCodec` | YAML 根校验、未知字段保留、编队引用拆分与展开 |
+| `CombatPlanRepository` | 系统/用户目录、受管路径和原子文件操作 |
+| `RuntimePlanService` | 展开舰队引用并写入当前进程的临时执行目录 |
+
+系统计划从只读 `resource/system_battle_plans/` 读取，用户计划写入 Electron
+`userData/user_battle_plans/`，用户舰队写入
+`userData/user_team_plans/`。两类计划均通过 GUI 统一清单加载和管理。
+执行前生成的临时计划位于
+`<temp>/AutoWSGR-GUI/runtime_battle_plans/<pid>/`，文件序号只由
+`RuntimePlanService` 持有。
+
+保存计划时，内嵌 `fleet_presets` 被拆成独立编队文件；运行时再按来源优先级
+展开引用。YAML 根对象、文件开头注释和不认识的字段必须保留。
+
+v5 迁移会扫描旧 `plans/`、`resource/user_*`，并递归识别安装目录中的有效
+计划 YAML。旧 YAML 经当前 Codec 升级并按 `bettle-*`、`team-*` 规范重命名
+后写入用户目录，源文件保留。不同内容的同名计划或舰队保存为“（旧版）”
+副本，计划中的舰队引用和旧任务组的受管文件名同步更新。完成项按旧来源路径
+和内容哈希记录，实际输出文件名也写入迁移状态；第二次启动不会重复处理或把
+引用改回默认文件名。若同名目标与升级结果一致，则直接复用目标，并保留用户
+之后修改的编队。
+
+计划加载浮窗提供“添加本地 YAML”。用户显式选择的 YAML 会经过同一套
+Codec 升级、拆分舰队并按规范命名后写入用户受管目录，源文件保持不变；
+同名目标必须由用户确认后才会覆盖。外部文件路径不会进入任务队列，运行时
+仍只读取受管计划。计划页不再提供独立的手工转换入口。
 
 ---
 
@@ -175,7 +245,7 @@ interface MapNode {
 flowchart TB
   subgraph Input["输入"]
     YAML["方案 YAML 文件"]
-    Builtin["内置方案<br/>resource/builtin_plans/"]
+    Builtin["系统方案<br/>resource/system_battle_plans/"]
   end
 
   subgraph Parse["解析"]
@@ -209,17 +279,15 @@ flowchart TB
 
 ---
 
-## 内置方案
+## 系统方案
 
-`resource/builtin_plans/` 包含 18 个预制方案：
+`resource/system_battle_plans/` 当前包含周常和活动预制方案。活动计划从
+AutoWSGR 主库经 `PlanManagementService` 的现有升级链路导入：
 
 | 分类 | 数量 | 示例 |
 |------|------|------|
-| 周常 | 11 | `周常1章-1-2.yaml` ~ `周常9章-9-2.yaml` |
-| 捞胖次 | 4 | `捞胖次9-2.yaml`, `捞胖次7-4.yaml` |
-| 战役 | 1 | `战役.yaml` |
-| 演习 | 1 | `自动演习.yaml` |
-| 决战 | 1 | `决战.yaml` |
+| 周常 | 10 | `bettle-周常-1-1.yaml` ~ `bettle-周常-10-1.yaml` |
+| 20260730 活动 | 4 | `bettle-E1炸鱼.yaml`、`bettle-E5夜战.yaml`、`bettle-H1炸鱼.yaml`、`bettle-H5夜战.yaml` |
 
 ---
 

@@ -34,6 +34,10 @@ npm run dev
 |------|------|
 | `npm run dev` | 编译 TypeScript + esbuild 打包 + 启动 Electron（开发日常使用） |
 | `npm run build` | 仅编译（`tsc` + `esbuild`），不运行 |
+| `npm run test:main-services` | 构建后验证主进程 Service 的路径、配置、计划、环境和资料库行为 |
+| `npm run test:main-ipc` | 构建后核对 preload 与 IPC Adapter 的通道及同步/异步契约 |
+| `npm run test:api-contract` | 构建后验证 GUI 与 AutoWSGR API 契约 fixture |
+| `npm run test:task-group-migration` | 构建后验证任务组迁移和往返兼容 |
 | `npm start` | 等同于 `build` + `electron .`（含 chcp 65001） |
 | `npm run dist` | 完整打包：下载 Python + ADB → 编译 → electron-builder NSIS 安装包 |
 | `npm run pack` | 编译 + `electron-builder --dir`（生成目录，不打安装包） |
@@ -114,13 +118,26 @@ flowchart LR
 |------|--------------|--------------|
 | `appRoot()` | 项目根目录 | `%LOCALAPPDATA%/autowsgr-gui/` 或安装目录 |
 | `resourceRoot()` | 同 appRoot | `resources/` (extraResources) |
-| `plans/` | 项目根 `plans/` | extraResources `plans/` |
+| `resource/system_battle_plans/` | 项目根 `resource/system_battle_plans/` | extraResources `resource/system_battle_plans/` |
+| `userData/user_battle_plans/` | Electron userData | Electron userData |
+| `userData/user_team_plans/` | Electron userData | Electron userData |
 | `python/` | 项目根 `python/` | extraResources `python/` |
 | `adb/` | 项目根 `adb/` | extraResources `adb/` |
-| `usersettings.yaml` | 项目根 | appRoot |
-| `gui_settings.json` | 项目根 | appRoot |
-| `task_groups.json` | 项目根 | appRoot |
-| `templates/` | 项目根 | appRoot |
+| `userData/usersettings.yaml` | Electron userData | Electron userData |
+| `userData/gui_settings.json` | Electron userData | Electron userData |
+| `userData/task_groups.json` | Electron userData | Electron userData |
+| `userData/templates/` | Electron userData | Electron userData |
+
+启动迁移会扫描本次运行所在的旧项目根目录。即使 `userData` 已存在，也会
+深度合并旧设置，并迁移旧任务组、模板和递归扫描发现的有效计划 YAML。
+旧字段覆盖同名当前字段，当前版本独有字段继续保留。不同内容的同名任务组、
+计划、舰队和模板以“（旧版）”保留，不会覆盖现有文件。迁移按旧来源路径和
+内容哈希记录完成状态及实际输出文件名，状态保存在
+`userData/.migration-state.json`。源文件不会删除；本次实际执行迁移后会
+弹窗展示总数、成功数、失败数，失败项在下次启动继续尝试。
+
+版本号包含 `-` 的开发/预发布版本自动进入 prerelease 更新频道，不会发布为
+稳定 `latest`。稳定版本必须使用不带预发布后缀的版本号和独立 release tag。
 
 ---
 

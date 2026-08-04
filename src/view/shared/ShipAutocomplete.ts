@@ -1,3 +1,4 @@
+/** 为舰名输入框提供搜索建议、键盘选择和补全。 */
 /**
  * 舰船名称自动补全组件（共享）。
  * 使用事件委托，对指定容器内匹配选择器的 input 提供下拉补全。
@@ -6,7 +7,8 @@
  *   const ac = new ShipAutocomplete(container, '.fleet-ship');
  *   // container 移除前调用 ac.destroy() 解除全局监听（若容器自身即被移除则可省略）
  */
-import { ALL_SHIPS, shipTypeLabel } from '../../data/shipData';
+import { ALL_SHIPS } from '../../model/fleet/ShipCatalog';
+import { shipTypeLabel } from '../../shared/fleetShipTypes';
 
 function escapeHtml(str: string): string {
   const d = document.createElement('span');

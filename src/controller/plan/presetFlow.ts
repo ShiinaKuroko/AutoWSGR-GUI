@@ -1,10 +1,11 @@
+/** 把任务预设和舰队预设转换为可调度的作战任务。 */
 /**
  * presetFlow —— 任务预设相关流程独立函数。
  */
 import type { PlanPreviewView } from '../../view/plan/PlanPreviewView';
-import type { TaskRequest, NormalFightReq } from '../../types/api';
+import type { TaskRequest } from '../../types/api.js';
 import { TaskPriority } from '../../model/scheduler';
-import type { TaskPreset } from '../../types/model';
+import type { TaskPreset } from '../../types/model.js';
 import { TemplateController } from '../template/TemplateController';
 import { Logger } from '../../utils/Logger';
 import type { PlanHost } from './PlanController';

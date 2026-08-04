@@ -1,20 +1,21 @@
 # Controller 层
 
-> 涉及文件：`src/controller/` 全部 6 个子目录（33 个文件）
+> 涉及文件：`src/controller/` 的 6 个业务子目录
 
 ## 概述
 
-Controller 层采用 **Host 接口依赖注入** 模式组织。`AppController` 作为唯一的根控制器，实现各子控制器定义的 Host 接口，子控制器通过 Host 访问调度器、页面切换等共享能力，避免子控制器之间的直接依赖。
+Controller 层采用 **最小 Host 接口依赖注入** 模式组织。`AppController` 是唯一
+Renderer 组合根，创建子控制器时传入只包含所需能力的对象。
 
 每个子控制器内部进一步按职责拆分为多个模块文件，主控制器类保持精简（"瘦身版"），核心逻辑委托给同目录下的模块。
 
 ---
 
-## ControllerHost — 基础 Host 接口
+## 最小 Host 接口
 
 ```typescript
-// src/controller/shared/ControllerHost.ts
-interface ControllerHost {
+// src/controller/plan/PlanController.ts
+interface PlanHost {
   readonly scheduler: Scheduler;
   plansDir: string;
   renderMain(): void;
@@ -22,7 +23,9 @@ interface ControllerHost {
 }
 ```
 
-这是所有子控制器的最小依赖接口。各子控制器根据自身需求定义扩展的 Host 接口（如 `StartupHost`、`PlanHost`、`TaskGroupHost`），AppController 统一实现。
+`StartupHost`、`PlanHost`、`TaskGroupHost` 等接口由各功能模块自行声明，不继承
+公共基接口。已删除无实际调用方的 `controller/shared/ControllerHost.ts` 和
+Controller 目录 barrel，内部代码使用明确模块路径。
 
 ---
 
@@ -32,7 +35,6 @@ interface ControllerHost {
 
 | 文件 | 职责 |
 |------|------|
-| `ControllerHost.ts` | 基础 Host 接口定义 |
 | `DialogHelper.ts` | 通用对话框工具（`showPrompt` / `showConfirm` / `showAlert`） |
 
 ---
@@ -45,11 +47,13 @@ interface ControllerHost {
 |------|------|
 | `AppController.ts` | 根控制器类：初始化子控制器、实现 Host 接口、协调全局状态 |
 | `ConfigController.ts` | 配置保存逻辑：从表单收集 → 更新 ConfigModel → 同步 CronScheduler/Scheduler → 写文件 |
+| `SettingsController.ts` | 设置页操作：环境与 ADB 检测、舰船库、更新检查和主题交互 |
+| `NavigationController.ts` | 页面和方案标签导航 |
+| `OperationsController.ts` | 远征收取和奖励领取等常用操作 |
 | `SchedulerBinder.ts` | 调度器回调绑定：将 Scheduler/CronScheduler 的回调连接到 UI 更新，管理远征/演习/战役等待中任务的 ID 跟踪 |
 | `rendering.ts` | 渲染分发：构建 `MainViewObject` → 调用 `MainView.render()` |
 | `theme.ts` | 主题管理：亮色/暗色/自动切换、强调色应用 |
 | `constants.ts` | 常量定义 |
-| `index.ts` | 聚合导出 |
 
 **SchedulerBinder Host 接口**：
 
@@ -72,10 +76,9 @@ interface SchedulerBinderHost {
 
 | 文件 | 职责 |
 |------|------|
-| `StartupController.ts` | 启动流程主编排：路径获取 → 配置加载 → 模拟器检测 → 首次引导 → 环境检查 → 后端连接 |
+| `StartupController.ts` | 启动流程主编排，并持有后端心跳和自动重启定时器 |
 | `envAndUpdates.ts` | 环境检查与更新：调用 IPC `checkEnvironment()` / `installDeps()` / `checkForUpdates()` |
 | `connection.ts` | 后端连接：`waitForBackendAndConnect()` 轮询等待后端 HTTP 就绪，然后发送系统启动请求 |
-| `index.ts` | 聚合导出 |
 
 **StartupHost 接口**（由 AppController 实现）：
 
@@ -128,16 +131,15 @@ flowchart TD
 
 ### controller/plan/ — 方案控制器
 
-管理方案的导入/导出/编辑和预览渲染。
+管理受管方案的新建、加载、编辑、保存和预览渲染。
 
 | 文件 | 职责 |
 |------|------|
 | `PlanController.ts` | 方案子控制器类：持有当前方案状态，协调下属模块 |
-| `importExport.ts` | 方案文件的导入/导出/新建流程 |
+| `BattlePlanLoaderController.ts` | 独立持有受管方案选择器状态，加载、筛选并返回最终选择 |
 | `presetFlow.ts` | 任务预设的导入/查看/关闭/执行流程 |
 | `nodeEditor.ts` | 节点编辑器：从 UI 收集节点阵型/夜战/索敌规则并写回 PlanData |
 | `rendering.ts` | 构建 `PlanPreviewViewObject`，协调地图数据和方案数据的合并 |
-| `index.ts` | 聚合导出 |
 
 **PlanHost 接口**：
 
@@ -163,8 +165,6 @@ interface PlanHost {
 | `queueLoader.ts` | 加载任务组到调度队列：逐项构建 TaskRequest → `Scheduler.addTask()` |
 | `metaLoader.ts` | 加载任务项的元数据（方案标题、模板名称）用于 UI 显示 |
 | `contextMenu.ts` | 右键上下文菜单：编辑/删除/复制任务项 |
-| `importExport.ts` | 任务组的导入/导出 |
-| `index.ts` | 聚合导出 |
 
 **TaskGroupHost 接口**：
 
@@ -197,7 +197,6 @@ interface TaskGroupHost {
 | `useTemplate.ts` | "使用模板"流程：展示选项弹窗 → 添加到任务组 / 加入队列 / 直接执行 |
 | `selectors.ts` | 选择弹窗：方案选择、战役选择、舰队选择、决战章节选择 |
 | `crud.ts` | 模板的编辑/删除/重命名/批量导入 |
-| `index.ts` | 聚合导出 |
 
 ---
 
@@ -210,23 +209,21 @@ graph TD
   Plan["controller/plan/<br/>PlanController"]
   TG["controller/taskGroup/<br/>TaskGroupController"]
   Tpl["controller/template/<br/>TemplateController"]
-  Shared["controller/shared/<br/>ControllerHost"]
 
-  AppCtrl -->|"实现"| Shared
   AppCtrl -->|"创建 & 持有"| Plan
   AppCtrl -->|"创建 & 持有"| TG
   AppCtrl -->|"创建 & 持有"| Tpl
   AppCtrl -->|"创建 & 持有"| Startup
 
-  Plan -->|"通过 PlanHost"| AppCtrl
-  TG -->|"通过 TaskGroupHost"| AppCtrl
-  Startup -->|"通过 StartupHost"| AppCtrl
+  AppCtrl -->|"注入 PlanHost"| Plan
+  AppCtrl -->|"注入 TaskGroupHost"| TG
+  AppCtrl -->|"注入 StartupHost"| Startup
 
-  Plan -.->|"无直接依赖"| TG
-  Plan -.->|"无直接依赖"| Tpl
+  Plan -.->|"显式功能依赖"| Tpl
 ```
 
-**关键设计**：Plan/TaskGroup/Template 之间没有直接依赖，需要跨子控制器协作时通过 Host 接口回调到 AppController，再由 AppController 分发。
+**关键设计**：共享能力通过最小 Host 注入；确有业务关系的模块使用明确 import 或
+回调，不通过通用根控制器或隐藏 barrel 获取依赖。
 
 ---
 

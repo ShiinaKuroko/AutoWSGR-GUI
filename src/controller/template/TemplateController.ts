@@ -1,3 +1,4 @@
+/** 协调模板库、模板向导和任务组添加流程。 */
 /**
  * TemplateController —— 模板系统控制器（精简版）。
  * 向导逻辑 → wizard.ts，使用模板 → useTemplate.ts，
@@ -5,14 +6,16 @@
  */
 import { TemplateModel } from '../../model/TemplateModel';
 import { TaskGroupModel } from '../../model/TaskGroupModel';
-import type { TemplateLibraryItemVO } from '../../types/view';
+import type { PlanData } from '../../types/model.js';
+import type { TemplateLibraryItemVO } from '../../types/view.js';
 import { TemplateLibraryView } from '../../view/template/TemplateLibraryView';
 import { TemplateWizardView } from '../../view/template/TemplateWizardView';
 import { Logger } from '../../utils/Logger';
-import { showWizard, showWizardWithTemplate, wizardNav, finishWizard } from './wizard';
-import { useTemplateFlow, addPlanToTaskList, type UseTemplateCallbacks } from './useTemplate';
-import { showPlanSelector, showFleetPresetPicker, showCampaignSelector, showExerciseFleetSelector, showDecisiveChapterSelector } from './selectors';
+import { showWizard, wizardNav, finishWizard } from './wizard';
+import { useTemplateFlow, type UseTemplateCallbacks } from './useTemplate';
+import { showPlanSelector, showCampaignSelector, showExerciseFleetSelector, showDecisiveChapterSelector } from './selectors';
 import { editTemplate, deleteTemplate, renameTemplate, importTemplatesFlow } from './crud';
+import { yamlCodec } from '../../adapter';
 
 export class TemplateController {
   static readonly TEMPLATE_TYPE_LABELS: Record<string, string> = {
@@ -23,14 +26,10 @@ export class TemplateController {
     decisive: '决战',
   };
 
-  private _wizardPlanPaths: string[] = [];
-  private _editingTemplateId: string | null = null;
+  private readonly wizardPlanPathsRef: { value: string[] } = { value: [] };
+  private readonly editingIdRef: { value: string | null } = { value: null };
   private libraryView: TemplateLibraryView;
   private wizardView: TemplateWizardView;
-
-  /** Ref-wrapper for extracted modules to mutate state */
-  private get wizardPlanPathsRef() { return { value: this._wizardPlanPaths, set: (v: string[]) => { this._wizardPlanPaths = v; } }; }
-  private get editingIdRef() { return { value: this._editingTemplateId, set: (v: string | null) => { this._editingTemplateId = v; } }; }
 
   constructor(
     private readonly templateModel: TemplateModel,
@@ -50,12 +49,12 @@ export class TemplateController {
   bindActions(): void {
     // 创建模板按钮
     document.getElementById('btn-create-template')?.addEventListener('click', () => {
-      showWizard(this.wizardView, this.wizardPlanPathsRef as any, this.editingIdRef as any);
+      showWizard(this.wizardView, this.wizardPlanPathsRef, this.editingIdRef);
     });
 
     // 导入模板按钮
     document.getElementById('btn-import-template')?.addEventListener('click', () => {
-      importTemplatesFlow(this.templateModel, this.wizardView, this.wizardPlanPathsRef as any, this.appRoot, () => this.renderLibrary());
+      importTemplatesFlow(this.templateModel, this.wizardView, this.wizardPlanPathsRef, this.appRoot, () => this.renderLibrary());
     });
 
     // 向导：上一步 / 下一步 / 取消
@@ -82,23 +81,28 @@ export class TemplateController {
       );
       if (!result) return;
       const filePath = result.path;
-      if (!this._wizardPlanPaths.includes(filePath)) {
-        this._wizardPlanPaths.push(filePath);
-        this.wizardView.renderPlanList(this._wizardPlanPaths);
+      if (!this.wizardPlanPathsRef.value.includes(filePath)) {
+        this.wizardPlanPathsRef.value.push(filePath);
+        this.wizardView.renderPlanList(this.wizardPlanPathsRef.value);
       }
       this.wizardView.setPlanPathInput(filePath);
-      if (this._wizardPlanPaths.length === 1) {
+      if (this.wizardPlanPathsRef.value.length === 1) {
         try {
-          const parsed = (await import('js-yaml')).load(result.content) as Record<string, any>;
+          const parsed = yamlCodec.parse<Partial<PlanData>>(result.content);
           if (!parsed || typeof parsed !== 'object') return;
-          if (parsed.fleet_id) {
+          if (typeof parsed.fleet_id === 'number') {
             this.wizardView.setFleetId(parsed.fleet_id);
           }
-          const presets = parsed.fleet_presets as any[] | undefined;
-          if (presets?.length && presets[0].ships?.length) {
-            this.wizardView.fillFleetGrid('nf', presets[0].ships);
+          const presets = Array.isArray(parsed.fleet_presets)
+            ? parsed.fleet_presets
+            : [];
+          const fixedShips = presets[0]?.ships.filter(
+            (ship): ship is string => typeof ship === 'string',
+          ) ?? [];
+          if (fixedShips.length > 0) {
+            this.wizardView.fillFleetGrid('nf', fixedShips);
           }
-          const sc = parsed.stop_condition as any;
+          const sc = parsed.stop_condition;
           if (sc) {
             if (sc.loot_count_ge != null && sc.loot_count_ge >= 0) {
               this.wizardView.setStopConditions(sc.loot_count_ge, undefined);
@@ -111,7 +115,7 @@ export class TemplateController {
           if (fileName) {
             this.wizardView.setName(fileName);
           }
-          if (parsed.times) {
+          if (typeof parsed.times === 'number' && parsed.times > 0) {
             this.wizardView.setDefaultTimes(parsed.times);
           }
         } catch { /* YAML 解析失败不影响流程 */ }
@@ -126,12 +130,14 @@ export class TemplateController {
       let added = 0;
       for (const f of files) {
         const fullPath = `${this.plansDir}\\${f.file}`;
-        if (!this._wizardPlanPaths.includes(fullPath)) {
-          this._wizardPlanPaths.push(fullPath);
+        if (!this.wizardPlanPathsRef.value.includes(fullPath)) {
+          this.wizardPlanPathsRef.value.push(fullPath);
           added++;
         }
       }
-      if (added > 0) this.wizardView.renderPlanList(this._wizardPlanPaths);
+      if (added > 0) {
+        this.wizardView.renderPlanList(this.wizardPlanPathsRef.value);
+      }
       Logger.info(`扫描到 ${files.length} 个方案文件，新增 ${added} 个`);
     });
 
@@ -140,9 +146,9 @@ export class TemplateController {
       const btn = (e.target as HTMLElement).closest('.btn-remove-plan') as HTMLElement | null;
       if (!btn) return;
       const idx = parseInt(btn.dataset.idx ?? '-1');
-      if (idx >= 0 && idx < this._wizardPlanPaths.length) {
-        this._wizardPlanPaths.splice(idx, 1);
-        this.wizardView.renderPlanList(this._wizardPlanPaths);
+      if (idx >= 0 && idx < this.wizardPlanPathsRef.value.length) {
+        this.wizardPlanPathsRef.value.splice(idx, 1);
+        this.wizardView.renderPlanList(this.wizardPlanPathsRef.value);
       }
     });
 
@@ -157,7 +163,7 @@ export class TemplateController {
 
     // Library view 回调
     this.libraryView.onUse = (id) => this.doUseTemplate(id);
-    this.libraryView.onEdit = (id) => editTemplate(id, this.templateModel, this.wizardView, this.wizardPlanPathsRef as any, this.editingIdRef as any);
+    this.libraryView.onEdit = (id) => editTemplate(id, this.templateModel, this.wizardView, this.wizardPlanPathsRef, this.editingIdRef);
     this.libraryView.onDelete = (id) => deleteTemplate(id, this.templateModel, () => this.renderLibrary());
     this.libraryView.onRename = (id) => renameTemplate(id, this.templateModel, () => this.renderLibrary());
 
@@ -166,7 +172,8 @@ export class TemplateController {
   }
 
   renderLibrary(): void {
-    const templates = this.templateModel.getAll();
+    const templates = this.templateModel.getAll()
+      .filter(tpl => tpl.type !== 'decisive');
     const items: TemplateLibraryItemVO[] = templates.map(tpl => ({
       id: tpl.id,
       name: tpl.name,
@@ -195,7 +202,7 @@ export class TemplateController {
   private async doFinishWizard(): Promise<void> {
     await finishWizard(
       this.wizardView, this.templateModel,
-      this._wizardPlanPaths, this.editingIdRef as any,
+      this.wizardPlanPathsRef.value, this.editingIdRef,
       () => this.renderLibrary(),
     );
   }

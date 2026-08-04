@@ -1,20 +1,44 @@
+/** 读取并应用主题、强调色和系统主题变化。 */
 /** 获取当前主题模式 */
 export function getThemeMode(): 'dark' | 'light' | 'system' {
-  return (localStorage.getItem('themeMode') as 'dark' | 'light' | 'system') || 'dark';
+  const mode = localStorage.getItem('themeMode');
+  return mode === 'dark' || mode === 'system' ? mode : 'light';
 }
 
 /** 获取当前主色调 */
 export function getAccentColor(): string {
-  return localStorage.getItem('accentColor') || '#0f7dff';
+  const accent = localStorage.getItem('accentColor') || '#0f7dff';
+  return /^#[0-9a-f]{6}$/i.test(accent) ? accent : '#0f7dff';
 }
 
-/** 将 hex 颜色加亮指定百分比 */
-export function lightenColor(hex: string, percent: number): string {
-  const num = parseInt(hex.slice(1), 16);
-  const r = Math.min(255, (num >> 16) + Math.round(2.55 * percent));
-  const g = Math.min(255, ((num >> 8) & 0xff) + Math.round(2.55 * percent));
-  const b = Math.min(255, (num & 0xff) + Math.round(2.55 * percent));
-  return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
+interface RgbColor {
+  r: number;
+  g: number;
+  b: number;
+}
+
+/** 将十六进制颜色转换为 RGB。 */
+function hexToRgb(hex: string): RgbColor {
+  const value = parseInt(hex.slice(1), 16);
+  return {
+    r: value >> 16,
+    g: (value >> 8) & 0xff,
+    b: value & 0xff,
+  };
+}
+
+/** 将颜色按比例混入黑色或白色。 */
+function tintColor(hex: string, target: 0 | 255, ratio: number): string {
+  const rgb = hexToRgb(hex);
+  const channel = (value: number) => Math.round(value + (target - value) * ratio);
+  const value = (channel(rgb.r) << 16) | (channel(rgb.g) << 8) | channel(rgb.b);
+  return `#${value.toString(16).padStart(6, '0')}`;
+}
+
+/** 根据强调色亮度选择清晰的按钮文字颜色。 */
+function getAccentForeground({ r, g, b }: RgbColor): string {
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return luminance > 0.62 ? '#172033' : '#ffffff';
 }
 
 /** 根据主题模式 + 主色调更新 DOM */
@@ -29,6 +53,11 @@ export function applyTheme(): void {
   document.documentElement.setAttribute('data-theme', resolved);
 
   const accent = getAccentColor();
+  const rgb = hexToRgb(accent);
+  const hover = tintColor(accent, resolved === 'light' ? 0 : 255, resolved === 'light' ? 0.14 : 0.16);
   document.documentElement.style.setProperty('--accent', accent);
-  document.documentElement.style.setProperty('--accent-hover', lightenColor(accent, 20));
+  document.documentElement.style.setProperty('--accent-hover', hover);
+  document.documentElement.style.setProperty('--accent-foreground', getAccentForeground(rgb));
+  document.documentElement.style.setProperty('--accent-glow', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${resolved === 'light' ? 0.2 : 0.18})`);
+  document.documentElement.style.setProperty('--accent-subtle', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${resolved === 'light' ? 0.12 : 0.09})`);
 }

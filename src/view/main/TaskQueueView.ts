@@ -1,4 +1,55 @@
-import type { MainViewObject } from '../../types/view';
+/** 渲染任务队列进度并发出删除和停止操作意图。 */
+import type { MainViewObject } from '../../types/view.js';
+import {
+  captureScrollPosition,
+  restoreScrollPosition,
+} from '../shared/scrollPosition';
+
+function clampPercent(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+/** 统一计算队列和顶栏显示的当前任务进度。 */
+export function resolveTaskProgressPercent(
+  item: MainViewObject['taskQueue'][number],
+  isRunning: boolean,
+): number {
+  if (!isRunning) return 0;
+
+  // 多轮任务优先按“轮次/总轮次”计算，避免后端单轮 1/1 进度把条形图误显示为 100%。
+  if (item.totalTimes > 1) {
+    if (item.progress) {
+      const parts = item.progress.split('/');
+      if (parts.length === 2) {
+        const cur = parseInt(parts[0], 10);
+        const total = parseInt(parts[1], 10);
+        if (Number.isFinite(cur) && Number.isFinite(total) && total > 1) {
+          return clampPercent(cur / total);
+        }
+      }
+    }
+
+    const currentRound = item.totalTimes - item.remaining + 1;
+    return clampPercent(currentRound / item.totalTimes);
+  }
+
+  if (item.progressPercent != null && Number.isFinite(item.progressPercent)) {
+    return clampPercent(item.progressPercent);
+  }
+
+  if (item.progress) {
+    const parts = item.progress.split('/');
+    if (parts.length === 2) {
+      const cur = parseInt(parts[0], 10);
+      const total = parseInt(parts[1], 10);
+      if (Number.isFinite(cur) && Number.isFinite(total) && total > 0) {
+        return clampPercent(cur / total);
+      }
+    }
+  }
+
+  return 0;
+}
 
 export class TaskQueueView {
   private taskAreaIdle: HTMLElement;
@@ -41,49 +92,8 @@ export class TaskQueueView {
     });
   }
 
-  private clampPercent(value: number): number {
-    return Math.min(1, Math.max(0, value));
-  }
-
-  private resolveProgressPercent(item: MainViewObject['taskQueue'][number], isRunning: boolean): number {
-    if (!isRunning) return 0;
-
-    // 多轮任务优先按“轮次/总轮次”计算，避免后端单轮 1/1 进度把条形图误显示为 100%。
-    if (item.totalTimes > 1) {
-      if (item.progress) {
-        const parts = item.progress.split('/');
-        if (parts.length === 2) {
-          const cur = parseInt(parts[0], 10);
-          const total = parseInt(parts[1], 10);
-          if (Number.isFinite(cur) && Number.isFinite(total) && total > 1) {
-            return this.clampPercent(cur / total);
-          }
-        }
-      }
-
-      const currentRound = item.totalTimes - item.remaining + 1;
-      return this.clampPercent(currentRound / item.totalTimes);
-    }
-
-    if (item.progressPercent != null && Number.isFinite(item.progressPercent)) {
-      return this.clampPercent(item.progressPercent);
-    }
-
-    if (item.progress) {
-      const parts = item.progress.split('/');
-      if (parts.length === 2) {
-        const cur = parseInt(parts[0], 10);
-        const total = parseInt(parts[1], 10);
-        if (Number.isFinite(cur) && Number.isFinite(total) && total > 0) {
-          return this.clampPercent(cur / total);
-        }
-      }
-    }
-
-    return 0;
-  }
-
   render(vo: MainViewObject): void {
+    const scrollPosition = captureScrollPosition(this.taskQueueList);
     const hasQueue = vo.taskQueue.length > 0;
 
     if (hasQueue) {
@@ -140,7 +150,9 @@ export class TaskQueueView {
 
         const nameSpan = document.createElement('span');
         nameSpan.className = 'tq-name';
-        nameSpan.textContent = item.totalTimes > 1
+        nameSpan.textContent = item.unlimited
+          ? `${item.name} ×无限`
+          : item.totalTimes > 1
           ? `${item.name} ×${item.totalTimes}`
           : item.name;
         mainRow.appendChild(nameSpan);
@@ -148,7 +160,9 @@ export class TaskQueueView {
         if (isRunning) {
           const progSpan = document.createElement('span');
           progSpan.className = 'tq-progress';
-          if (item.totalTimes > 1) {
+          if (item.unlimited) {
+            progSpan.textContent = item.progress || '无限';
+          } else if (item.totalTimes > 1) {
             let useBackendProgress = false;
             if (item.progress) {
               const parts = item.progress.split('/');
@@ -196,7 +210,7 @@ export class TaskQueueView {
         div.appendChild(mainRow);
 
         if (isRunning) {
-          const pct = this.resolveProgressPercent(item, isRunning);
+          const pct = resolveTaskProgressPercent(item, isRunning);
           const track = document.createElement('div');
           track.className = 'tq-progress-track';
           const fill = document.createElement('div');
@@ -225,5 +239,6 @@ export class TaskQueueView {
       this.taskAreaIdle.style.display = '';
       this.taskAreaQueue.style.display = 'none';
     }
+    restoreScrollPosition(this.taskQueueList, scrollPosition);
   }
 }

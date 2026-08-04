@@ -1,7 +1,9 @@
+/** 加载、缓存并查询地图节点、连线和位置信息。 */
 /**
  * MapDataLoader —— 加载地图 JSON 数据。
  * 通过 IPC 从 resource/maps/ 目录读取地图数据文件。
  */
+import { jsonCodec, mapDataRepository } from '../adapter/index.js';
 
 /** 地图节点类型 */
 export type MapNodeType = 'Start' | 'Normal' | 'Boss' | 'Resource' | 'Penalty' | 'Suppress' | 'Aerial' | 'Hard';
@@ -28,9 +30,8 @@ export async function loadMapData(chapter: number, map: number): Promise<MapData
 
   const filePath = `resource/maps/${key}.json`;
   try {
-    const bridge = (window as any).electronBridge;
-    const content: string = await bridge.readFile(filePath);
-    const data: MapData = JSON.parse(content);
+    const content = await mapDataRepository.read(filePath);
+    const data = jsonCodec.parse<MapData>(content);
     mapCache.set(key, data);
     return data;
   } catch {
@@ -45,9 +46,8 @@ export async function loadExMapData(exNumber: number): Promise<MapData | null> {
 
   const filePath = `resource/maps/${key}.json`;
   try {
-    const bridge = (window as any).electronBridge;
-    const content: string = await bridge.readFile(filePath);
-    const data: MapData = JSON.parse(content);
+    const content = await mapDataRepository.read(filePath);
+    const data = jsonCodec.parse<MapData>(content);
     mapCache.set(key, data);
     return data;
   } catch {
@@ -83,9 +83,8 @@ export async function loadEventMapData(
 
   const filePath = `resource/maps/event/${eventName}/${difficulty}-${stage}${entrance}.json`;
   try {
-    const bridge = (window as any).electronBridge;
-    const content: string = await bridge.readFile(filePath);
-    const raw = JSON.parse(content) as Record<string, Partial<MapPoint>>;
+    const content = await mapDataRepository.read(filePath);
+    const raw = jsonCodec.parse<Record<string, Partial<MapPoint>>>(content);
     const data: MapData = {};
     for (const [id, point] of Object.entries(raw)) {
       data[id] = {

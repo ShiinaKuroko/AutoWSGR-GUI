@@ -1,11 +1,18 @@
+/** 提供舰队预设名称、舰船和候选规则的编辑对话框。 */
 /**
  * 编队预设编辑弹窗。
  * 从 PlanPreviewView.showFleetEditDialog 提取。
  */
-import type { FleetPresetVO } from '../../types/view';
-import type { ShipSlot, ShipFilter } from '../../types/model';
-import { ALL_NATIONS, ALL_SHIPS, TYPE_LABELS, toBackendName } from '../../data/shipData';
+import type { FleetPresetVO } from '../../types/view.js';
+import type { ShipSlot, ShipFilter } from '../../types/model.js';
+import { ALL_NATIONS, ALL_SHIPS } from '../../model/fleet/ShipCatalog';
+import { toBackendName } from '../../model/fleet/ShipNameNormalizer';
+import { TYPE_LABELS } from '../../shared/fleetShipTypes';
 import { ShipAutocomplete } from '../shared/ShipAutocomplete';
+import {
+  showAlert,
+  showSaveSuccess,
+} from '../../controller/shared/DialogHelper';
 
 function escapeHtml(str: string): string {
   const div = document.createElement('div');
@@ -40,9 +47,10 @@ function buildPrioritySuggestions(nation: string, shipType: string, limit = 8): 
 function isAdvancedFilterSlot(slot: ShipSlot | undefined): boolean {
   if (!slot || typeof slot === 'string') return false;
   const nation = typeof slot.nation === 'string' ? slot.nation.trim() : '';
-  const shipType = typeof slot.ship_type === 'string' ? slot.ship_type.trim() : '';
-  const hasPriority = Array.isArray(slot.priority) && slot.priority.some((name) => Boolean(name && name.trim()));
-  return Boolean(nation || shipType || hasPriority);
+  const shipType = Array.isArray(slot.ship_type) ? slot.ship_type.join(',') : '';
+  const hasCandidates = Array.isArray(slot.candidates)
+    && slot.candidates.some(candidate => Boolean(candidate.name.trim()));
+  return Boolean(nation || shipType || hasCandidates);
 }
 
 /**
@@ -71,28 +79,36 @@ export function showFleetEditDialog(
   // 构建每个槽位的 HTML
   const slotsHtml = [0, 1, 2, 3, 4, 5].map(i => {
     const slot = ships[i];
-    const isObjectSlot = slot != null && typeof slot === 'object';
+    const slotFilter: ShipFilter | undefined =
+      slot != null && typeof slot === 'object' ? slot : undefined;
     const isFilter = isAdvancedFilterSlot(slot);
-    const slotName = isObjectSlot ? ((slot as any).name ?? '') : '';
+    const slotName = slotFilter?.name ?? '';
     const shipName = typeof slot === 'string' ? slot : (isFilter ? '' : slotName);
     const fixedName = isFilter ? slotName : '';
-    const nation = isFilter ? ((slot as any).nation ?? '') : '';
-    const shipType = isFilter ? ((slot as any).ship_type ?? '') : '';
-    const priority = isFilter && Array.isArray((slot as any).priority)
-      ? (slot as any).priority.join(', ')
+    const nation = isFilter ? (slotFilter?.nation ?? '') : '';
+    const shipType = isFilter && Array.isArray(slotFilter?.ship_type)
+      ? (slotFilter.ship_type[0] ?? '')
       : '';
-    const minLevel = isObjectSlot && Number.isFinite((slot as any).min_level)
-      ? String((slot as any).min_level)
+    const candidates = isFilter && Array.isArray(slotFilter?.candidates)
+      ? slotFilter.candidates
+        .map(candidate => candidate.name)
+        .filter(Boolean)
+        .join(', ')
       : '';
-    const maxLevel = isObjectSlot && Number.isFinite((slot as any).max_level)
-      ? String((slot as any).max_level)
+    const minLevel = typeof slotFilter?.min_level === 'number'
+      && Number.isFinite(slotFilter.min_level)
+      ? String(slotFilter.min_level)
+      : '';
+    const maxLevel = typeof slotFilter?.max_level === 'number'
+      && Number.isFinite(slotFilter.max_level)
+      ? String(slotFilter.max_level)
       : '';
 
     const nationOpts = `<option value="">不限</option>` + ALL_NATIONS.map(
       (n: string) => `<option value="${escapeHtml(n)}"${n === nation ? ' selected' : ''}>${escapeHtml(n)}</option>`
     ).join('');
     const typeOpts = `<option value="">不限</option>` + typeEntries.map(
-      ([code, label]) => `<option value="${escapeHtml(code)}"${code === shipType ? ' selected' : ''}>${escapeHtml(label as string)}</option>`
+      ([code, label]) => `<option value="${escapeHtml(code)}"${code === shipType ? ' selected' : ''}>${escapeHtml(label)}</option>`
     ).join('');
 
     return `
@@ -112,7 +128,7 @@ export function showFleetEditDialog(
           <input type="text" class="input fleet-edit-filter-name" placeholder="固定舰名（可选）" value="${escapeHtml(fixedName)}" />
           <select class="input fleet-edit-nation">${nationOpts}</select>
           <select class="input fleet-edit-type">${typeOpts}</select>
-          <input type="text" class="input fleet-edit-priority" placeholder="优先舰船（逗号分隔）" value="${escapeHtml(priority)}" />
+          <input type="text" class="input fleet-edit-priority" placeholder="候选舰船（按填写顺序尝试）" value="${escapeHtml(candidates)}" />
           <div class="fleet-edit-priority-guide plan-task-hint" style="display:none">
             <span class="fleet-edit-priority-guide-text"></span>
             <button type="button" class="fleet-edit-priority-fill">填入建议</button>
@@ -158,8 +174,8 @@ export function showFleetEditDialog(
 
     const nation = (wrapper.querySelector('.fleet-edit-nation') as HTMLSelectElement | null)?.value ?? '';
     const shipType = (wrapper.querySelector('.fleet-edit-type') as HTMLSelectElement | null)?.value ?? '';
-    const priorityInput = wrapper.querySelector('.fleet-edit-priority') as HTMLInputElement | null;
-    const priorityRaw = priorityInput?.value.trim() ?? '';
+    const candidatesInput = wrapper.querySelector('.fleet-edit-priority') as HTMLInputElement | null;
+    const candidatesRaw = candidatesInput?.value.trim() ?? '';
 
     if (!nation || !shipType) {
       guide.style.display = 'none';
@@ -168,22 +184,22 @@ export function showFleetEditDialog(
 
     const suggestions = buildPrioritySuggestions(nation, shipType);
 
-    if (priorityRaw) {
-      guideText.textContent = '已设置优先舰船顺序，可按逗号继续追加。';
+    if (candidatesRaw) {
+      guideText.textContent = '已设置有限候选列表，可按逗号继续追加。';
       fillBtn.style.display = 'none';
       guide.style.display = '';
       return;
     }
 
     if (suggestions.length === 0) {
-      guideText.textContent = '建议填写优先舰船（逗号分隔）以提高选船稳定性。';
+      guideText.textContent = '建议填写候选舰船（逗号分隔）以提高选船稳定性。';
       fillBtn.style.display = 'none';
       guide.style.display = '';
       return;
     }
 
     const preview = suggestions.slice(0, 4).join(' > ');
-    guideText.textContent = `建议优先序示例：${preview}`;
+    guideText.textContent = `建议候选顺序：${preview}`;
     fillBtn.style.display = '';
     guide.style.display = '';
   };
@@ -250,21 +266,25 @@ export function showFleetEditDialog(
         const fixedName = (wrapper.querySelector('.fleet-edit-filter-name') as HTMLInputElement).value.trim();
         const nation = (wrapper.querySelector('.fleet-edit-nation') as HTMLSelectElement).value;
         const shipType = (wrapper.querySelector('.fleet-edit-type') as HTMLSelectElement).value;
-        const priorityRaw = (wrapper.querySelector('.fleet-edit-priority') as HTMLInputElement).value.trim();
+        const candidatesRaw = (wrapper.querySelector('.fleet-edit-priority') as HTMLInputElement).value.trim();
         const minLevelRaw = (wrapper.querySelector('.fleet-edit-min-level') as HTMLInputElement).value.trim();
         const maxLevelRaw = (wrapper.querySelector('.fleet-edit-max-level') as HTMLInputElement).value.trim();
-        const hasFilter = fixedName || nation || shipType || priorityRaw || minLevelRaw || maxLevelRaw;
+        const hasFilter = fixedName || nation || shipType || candidatesRaw || minLevelRaw || maxLevelRaw;
         if (hasFilter) {
           const filter: ShipFilter = {};
           if (fixedName) filter.name = fixedName;
           if (nation) filter.nation = nation;
-          if (shipType) filter.ship_type = shipType;
-          if (priorityRaw) {
-            const names = priorityRaw
+          if (shipType) filter.ship_type = [shipType];
+          if (candidatesRaw) {
+            const names = candidatesRaw
               .split(/[，,]/)
               .map(s => s.trim())
               .filter(Boolean);
-            if (names.length > 0) filter.priority = names;
+            if (names.length > 0) {
+              filter.candidates = names.map(candidateName => ({
+                name: candidateName,
+              }));
+            }
           }
           if (minLevelRaw) {
             const minLevel = parseInt(minLevelRaw, 10);
@@ -307,11 +327,19 @@ export function showFleetEditDialog(
     });
 
     const newPreset: FleetPresetVO = { name: newName, ships: newShips };
-    if (isNew) {
-      onSave('add', -1, newPreset);
-    } else {
-      onSave('edit', index, newPreset);
+    try {
+      if (isNew) {
+        onSave('add', -1, newPreset);
+      } else {
+        onSave('edit', index, newPreset);
+      }
+      close();
+      showSaveSuccess(`编队设置「${newName}」保存成功`);
+    } catch (error) {
+      void showAlert(
+        '保存失败',
+        error instanceof Error ? error.message : String(error),
+      );
     }
-    close();
   });
 }

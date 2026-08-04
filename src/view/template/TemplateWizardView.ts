@@ -1,16 +1,16 @@
+/** 渲染模板创建向导、计划列表和分步表单。 */
 /**
  * TemplateWizardView —— 模板向导 + 选择器弹窗的纯渲染组件。
  * 负责向导 overlay 的显示/隐藏、步骤导航 UI、表单读写、舰船自动补全、
  * 以及通用选择器弹窗（方案/战役/舰队/决战章节）。不含任何业务逻辑。
  */
-import type { WizardFormData, WizardPrefillData, SelectorOption } from '../../types/view';
+import type { WizardFormData, WizardPrefillData, SelectorOption } from '../../types/view.js';
 import { showSelector as showSelectorFn, showMultiSelector as showMultiSelectorFn } from './SelectorDialog';
 import { ShipAutocomplete } from '../shared/ShipAutocomplete';
 
 export class TemplateWizardView {
   private wizardOverlay: HTMLElement;
   private wizardTitle: HTMLElement;
-  private shipAC: ShipAutocomplete;
   private currentStep = 1;
 
   onWizardFinish?: () => void;
@@ -18,7 +18,7 @@ export class TemplateWizardView {
   constructor() {
     this.wizardOverlay = document.getElementById('template-wizard')!;
     this.wizardTitle = document.getElementById('wizard-title')!;
-    this.shipAC = new ShipAutocomplete(document, '.fleet-ship');
+    new ShipAutocomplete(document, '.fleet-ship');
   }
 
   // ════════════════════════════════════════

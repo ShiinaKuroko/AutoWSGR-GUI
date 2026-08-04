@@ -1,3 +1,4 @@
+/** 持有当前任务和运行状态，驱动任务消费、重试与后续任务。 */
 /**
  * Scheduler —— 前端任务调度器 (Model 层)。
  *
@@ -15,15 +16,25 @@ import { ApiClient } from '../ApiClient';
 import type {
   TaskRequest,
   TaskResult,
-} from '../../types/api';
-import type { StopCondition, BathRepairConfig, FleetPreset } from '../../types/model';
+  RoundResult,
+} from '../../types/api.js';
+import type {
+  StopCondition,
+  BathRepairConfig,
+  FleetPreset,
+  BattleResultGrade,
+} from '../../types/model.js';
 import { Logger } from '../../utils/Logger';
+import { jsonCodec } from '../../adapter/index.js';
 import { RepairManager } from './RepairManager';
 import { StopConditionChecker } from './StopConditionChecker';
 import { ExpeditionTimer } from './ExpeditionTimer';
 import { TaskQueue, generateTaskId, parseUiCount } from './TaskQueue';
 import { TaskPriority, type SchedulerTaskType, type SchedulerTask, type SchedulerStatus, type SchedulerCallbacks } from '../../types/scheduler';
-import { toBackendName } from '../../data/shipData';
+import { toBackendName } from '../fleet/index.js';
+import { buildFollowUpTask, createSchedulerTask } from './SchedulerTaskPolicy.js';
+
+const RESULT_GRADE_ORDER: BattleResultGrade[] = ['D', 'C', 'B', 'A', 'S', 'SS'];
 
 // ════════════════════════════════════════
 // Scheduler 实现
@@ -41,9 +52,12 @@ export class Scheduler {
 
   // ── 状态 ──
   private _status: SchedulerStatus = 'not_connected';
-  private connected = false;
+  private systemActive = false;
+  private autoExpedition = true;
   /** 用户主动停止标志，阻止 handleTaskFinished 创建后续任务 */
   private _stopped = false;
+  /** 重试和轮次间隔定时器，系统停止时统一取消 */
+  private retryTimers = new Set<ReturnType<typeof setTimeout>>();
 
   // ── 远征定时器 & 停止条件 ──
   private expeditionTimer: ExpeditionTimer;
@@ -76,6 +90,16 @@ export class Scheduler {
     this.expeditionTimer.setInterval(clamped * 60 * 1000);
   }
 
+  /** 开关自动远征检查；运行中修改时立即启停定时器 */
+  setAutoExpedition(enabled: boolean): void {
+    this.autoExpedition = enabled;
+    if (!enabled) {
+      this.expeditionTimer.stop();
+    } else if (this.systemActive && !this.expeditionTimer.isRunning) {
+      this.expeditionTimer.start();
+    }
+  }
+
   get status(): SchedulerStatus {
     return this._status;
   }
@@ -93,18 +117,22 @@ export class Scheduler {
     const resp = await this.api.systemStart(configPath, 300_000);
     if (!resp.success) return false;
 
+    this.systemActive = true;
+    this._stopped = false;
     this.api.connectWebSockets();
     this.setStatus('idle');
 
-    // 系统启动后立即检查远征，确保远征页面不会阻碍后续任务
-    this.emitLog('info', '正在检查远征...');
-    try {
-      await this.api.expeditionCheck();
-      this.emitLog('info', '远征检查完成');
-    } catch {
-      this.emitLog('debug', '远征检查跳过');
+    if (this.autoExpedition) {
+      // 系统启动后立即检查远征，确保远征页面不会阻碍后续任务
+      this.emitLog('info', '正在检查远征...');
+      try {
+        await this.api.expeditionCheck();
+        this.emitLog('info', '远征检查完成');
+      } catch {
+        this.emitLog('debug', '远征检查跳过');
+      }
+      this.expeditionTimer.start();
     }
-    this.expeditionTimer.start();
     return true;
   }
 
@@ -123,23 +151,45 @@ export class Scheduler {
    * 建立 WebSocket、设置状态、启动远征检查。
    */
   recoverAfterTimeout(): void {
+    this.systemActive = true;
+    this._stopped = false;
     this.api.connectWebSockets();
     this.setStatus('idle');
-    this.expeditionTimer.start();
+    if (this.autoExpedition) this.expeditionTimer.start();
   }
 
   /** 停止系统 */
   async stop(): Promise<void> {
+    const hadRunningTask = this.currentTask !== null;
+    this.systemActive = false;
+    this._stopped = true;
     this.expeditionTimer.stop();
-    if (this.currentTask) {
-      await this.api.taskStop();
+    for (const timer of this.retryTimers) {
+      clearTimeout(timer);
     }
-    this._taskQueue.clearQueue();
+    this.retryTimers.clear();
+    this._taskQueue.clear();
     this.currentTask = null;
-    await this.api.systemStop();
-    this.api.disconnectWebSockets();
-    this.setStatus('not_connected');
-    this.notifyQueueChange();
+
+    try {
+      if (hadRunningTask) {
+        try {
+          await this.api.taskStop();
+        } catch (e) {
+          this.emitLog('warn', `停止当前任务失败: ${String(e)}`);
+        }
+      }
+      try {
+        await this.api.systemStop();
+      } catch (e) {
+        this.emitLog('warn', `停止后端系统失败: ${String(e)}`);
+      }
+    } finally {
+      this.api.disconnectWebSockets();
+      this._stopped = false;
+      this.setStatus('not_connected');
+      this.notifyQueueChange();
+    }
   }
 
   /** 添加任务到队列 */
@@ -157,6 +207,7 @@ export class Scheduler {
     forceRetry?: boolean,
     allowPolling?: boolean,
     endpointNodes?: string[],
+    endpointResult?: BattleResultGrade,
     sortKey?: number,
   ): string {
     const id = this._taskQueue.addTask(
@@ -173,6 +224,7 @@ export class Scheduler {
       forceRetry,
       allowPolling,
       endpointNodes,
+      endpointResult,
       sortKey,
     );
     this.notifyQueueChange();
@@ -253,6 +305,10 @@ export class Scheduler {
 
   /** 清空队列 (不影响当前正在运行的) */
   clearQueue(): void {
+    for (const timer of this.retryTimers) {
+      clearTimeout(timer);
+    }
+    this.retryTimers.clear();
     this._taskQueue.clear();
     this.repairManager.clearAll();
     this.notifyQueueChange();
@@ -272,6 +328,7 @@ export class Scheduler {
   // ── 内部: 消费循环 ──
 
   private async consumeNext(): Promise<void> {
+    if (!this.systemActive) return;
     if (this.currentTask) return; // 还有任务在跑
     if (this._taskQueue.length === 0) {
       if (this._taskQueue.hasDeferredTasks) {
@@ -292,7 +349,7 @@ export class Scheduler {
     this.setStatus('running');
     this.notifyQueueChange();
 
-    Logger.debug(`consumeNext: 「${task.name}」 type=${task.type} remaining=${task.remainingTimes}/${task.totalTimes} req=${JSON.stringify(task.request)}`, 'scheduler');
+    Logger.debug(`consumeNext: 「${task.name}」 type=${task.type} remaining=${task.remainingTimes}/${task.totalTimes} req=${jsonCodec.stringify(task.request)}`, 'scheduler');
 
     // 远征任务: 直接调用远征 API，不走 taskStart 流程
     if (task.type === 'expedition') {
@@ -304,8 +361,10 @@ export class Scheduler {
         this.emitLog('debug', '远征检查跳过');
       }
 
+      if (!this.systemActive || this.currentTask?.id !== task.id) return;
       await this.handlePostExpedition();
 
+      if (!this.systemActive || this.currentTask?.id !== task.id) return;
       this.currentTask = null;
       this.consumeNext();
       return;
@@ -314,9 +373,11 @@ export class Scheduler {
     // 发起前预检停止条件
     if (task.stopCondition) {
       const preflightMet = await this.stopChecker.preflightCheck(task.stopCondition, task.name);
+      if (!this.systemActive || this.currentTask?.id !== task.id) return;
       if (preflightMet) {
         this.emitLog('info', `任务「${task.name}」启动前已满足停止条件，跳过`);
         this.callbacks.onTaskCompleted?.(task.id, true, null, null);
+        this.callbacks.onLogicalTaskCompleted?.(task.logicalId, true, null);
         this.currentTask = null;
         this.consumeNext();
         return;
@@ -326,6 +387,7 @@ export class Scheduler {
     // 泡澡修理编排: 检查 → 送泡澡 → 轮换预设 → 是否 defer
     if (task.bathRepairConfig?.enabled && task.fleetId) {
       const repairResult = await this.prepareRepair(task);
+      if (!this.systemActive || this.currentTask?.id !== task.id) return;
       if (repairResult === 'deferred') return;
     }
 
@@ -355,6 +417,7 @@ export class Scheduler {
       if (healthyIdx >= 0) {
         this.emitLog('info', `任务「${task.name}」: 轮换至编队预设「${presets[healthyIdx].name}」`);
         this._taskQueue.switchTaskPreset(task, healthyIdx);
+        this.notifyQueueChange();
         return 'proceed';
       }
       this.emitLog('info', `任务「${task.name}」: 所有编队预设的舰船都在修理中，任务延迟`);
@@ -374,18 +437,22 @@ export class Scheduler {
   private async executeTaskStart(task: SchedulerTask): Promise<void> {
     try {
       const resp = await this.api.taskStart(task.request);
+      if (!this.systemActive || this.currentTask?.id !== task.id) return;
       if (resp.success && resp.data) {
         task.backendTaskId = resp.data.task_id;
       } else {
         this.currentTask = null;
         if (this.scheduleRetry(task, resp.error ?? '任务启动失败')) return;
         this.callbacks.onTaskCompleted?.(task.id, false, null, resp.error ?? '任务启动失败');
+        this.callbacks.onLogicalTaskCompleted?.(task.logicalId, false, resp.error ?? '任务启动失败');
         this.consumeNext();
       }
     } catch (e) {
+      if (!this.systemActive || this.currentTask?.id !== task.id) return;
       this.currentTask = null;
       if (this.scheduleRetry(task, String(e))) return;
       this.callbacks.onTaskCompleted?.(task.id, false, null, String(e));
+      this.callbacks.onLogicalTaskCompleted?.(task.logicalId, false, String(e));
       this.consumeNext();
     }
   }
@@ -395,16 +462,20 @@ export class Scheduler {
    * @returns true 表示已安排重试，调用方应 return；false 表示重试耗尽。
    */
   private scheduleRetry(task: SchedulerTask, reason: string): boolean {
+    if (!this.systemActive) return false;
     if (task.retryCount >= task.maxRetries) return false;
     task.retryCount++;
     const retryHint = task.forceRetry ? '，强制重试' : '';
     this.emitLog('warn', `任务「${task.name}」${reason}，${task.retryCount}/${task.maxRetries} 次重试${retryHint} (5s 后)`);
-    setTimeout(() => {
+    const timer = setTimeout(() => {
+      this.retryTimers.delete(timer);
+      if (!this.systemActive) return;
       const prioritizeCurrent = !!task.forceRetry || !task.allowPolling;
       this._taskQueue.insertByPriority(task, prioritizeCurrent);
       this.notifyQueueChange();
       this.consumeNext();
     }, 5000);
+    this.retryTimers.add(timer);
     return true;
   }
 
@@ -412,6 +483,7 @@ export class Scheduler {
 
   /** 任务完成后的后触发处理 */
   private async handleTaskFinished(success: boolean, result?: TaskResult | null, error?: string | null): Promise<void> {
+    if (!this.systemActive) return;
     const finished = this.currentTask;
     if (!finished) return;
 
@@ -420,6 +492,7 @@ export class Scheduler {
       Logger.debug(`handleTaskFinished: _stopped flag set, skipping follow-up for 「${finished.name}」`, 'scheduler');
       this._stopped = false;
       this.callbacks.onTaskCompleted?.(finished.id, success, result, error);
+      this.callbacks.onLogicalTaskCompleted?.(finished.logicalId, false, error);
       this.currentTask = null;
       this.setStatus('idle');
       this.notifyQueueChange();
@@ -432,10 +505,14 @@ export class Scheduler {
       this.currentTask = null;
       if (this.scheduleRetry(finished, '执行失败')) return;
       // 重试耗尽时，将失败轮计入次数并继续剩余轮次
-      const nextRemaining = finished.remainingTimes - 1;
+      const nextRemaining = finished.unlimited
+        ? 1
+        : finished.remainingTimes - 1;
       if (nextRemaining > 0) {
         const followUp = this.buildFollowUpTask(finished, nextRemaining);
         this._taskQueue.insertByPriority(followUp, !finished.allowPolling);
+      } else {
+        this.callbacks.onLogicalTaskCompleted?.(finished.logicalId, false, error);
       }
       this.consumeNext();
       return;
@@ -445,24 +522,34 @@ export class Scheduler {
     if (!shouldCountRound) {
       const endpoints = this.getEndpointNodes(finished);
       if (endpoints.length > 0) {
-        this.emitLog('info', `任务「${finished.name}」未到达终点节点 ${endpoints.join('/')}，本轮不计入次数`);
+        const resultHint = finished.endpointResult
+          ? `或终点战果未达到 ${finished.endpointResult}`
+          : '';
+        this.emitLog(
+          'info',
+          `任务「${finished.name}」未到达终点节点 ${endpoints.join('/')}${resultHint}，本轮不计入次数`,
+        );
       }
     }
 
     this.callbacks.onTaskCompleted?.(finished.id, true, result, error);
 
-    const nextRemainingTimes = shouldCountRound
-      ? finished.remainingTimes - 1
-      : finished.remainingTimes;
+    const nextRemainingTimes = finished.unlimited
+      ? 1
+      : shouldCountRound
+        ? finished.remainingTimes - 1
+        : finished.remainingTimes;
 
     // 后触发: 若还有剩余次数，追加一个新任务回队列。
     // 注意: 未达到终点节点时，本轮不计数，remainingTimes 不减少。
     if (nextRemainingTimes > 0) {
       if (finished.stopCondition) {
         const shouldStop = await this.stopChecker.checkCondition(finished.stopCondition, finished.name);
+        if (!this.systemActive || this.currentTask?.id !== finished.id) return;
         if (shouldStop) {
           this.emitLog('info', `任务「${finished.name}」满足停止条件，不再继续`);
           this.currentTask = null;
+          this.callbacks.onLogicalTaskCompleted?.(finished.logicalId, true, null);
           this.consumeNext();
           return;
         }
@@ -470,7 +557,16 @@ export class Scheduler {
 
       const followUp: SchedulerTask = this.buildFollowUpTask(finished, nextRemainingTimes);
       Logger.debug(`followUp: 「${finished.name}」 remaining=${followUp.remainingTimes}/${followUp.totalTimes}`, 'scheduler');
-      this._taskQueue.insertByPriority(followUp, !finished.allowPolling);
+      const gapSeconds = 'gap' in finished.request
+        ? Math.max(0, Number(finished.request.gap) || 0)
+        : 0;
+      if (shouldCountRound && gapSeconds > 0) {
+        this.scheduleFollowUpAfterGap(followUp, gapSeconds);
+      } else {
+        this._taskQueue.insertByPriority(followUp, !finished.allowPolling);
+      }
+    } else {
+      this.callbacks.onLogicalTaskCompleted?.(finished.logicalId, true, null);
     }
 
     this.currentTask = null;
@@ -480,12 +576,14 @@ export class Scheduler {
   private buildFollowUpTask(finished: SchedulerTask, remainingTimes: number): SchedulerTask {
     return {
       id: generateTaskId(),
+      logicalId: finished.logicalId,
       name: finished.name,
       type: finished.type,
       priority: finished.priority,
       request: finished.request,
       remainingTimes,
       totalTimes: finished.totalTimes,
+      unlimited: finished.unlimited,
       stopCondition: finished.stopCondition,
       maxRetries: finished.maxRetries,
       retryCount: 0,
@@ -496,8 +594,28 @@ export class Scheduler {
       fleetPresets: finished.fleetPresets,
       currentPresetIndex: finished.currentPresetIndex,
       endpointNodes: finished.endpointNodes,
+      endpointResult: finished.endpointResult,
       sortKey: finished.sortKey,
     };
+  }
+
+  /** 按方案 gap 等待后再把下一轮放回队列。 */
+  private scheduleFollowUpAfterGap(
+    task: SchedulerTask,
+    gapSeconds: number,
+  ): void {
+    this.emitLog(
+      'info',
+      `任务「${task.name}」将在 ${gapSeconds} 秒后开始下一轮`,
+    );
+    const timer = setTimeout(() => {
+      this.retryTimers.delete(timer);
+      if (!this.systemActive) return;
+      this._taskQueue.insertByPriority(task, !task.allowPolling);
+      this.notifyQueueChange();
+      this.consumeNext();
+    }, gapSeconds * 1000);
+    this.retryTimers.add(timer);
   }
 
   /**
@@ -524,7 +642,15 @@ export class Scheduler {
     if (endpoints.length === 0) return true;
 
     const details = result?.details;
-    if (!details || details.length === 0) return true;
+    if (!details || details.length === 0) return !task.endpointResult;
+
+    if (task.endpointResult) {
+      return details.some((round) => this.roundMeetsEndpointResult(
+        round,
+        endpoints,
+        task.endpointResult!,
+      ));
+    }
 
     // 失败轮次保持原有行为（计入次数），避免在异常场景下无限重跑。
     if (details.some((round) => !round.success)) return true;
@@ -536,6 +662,44 @@ export class Scheduler {
         return endpoints.includes(normalized);
       });
     });
+  }
+
+  /** 检查指定终点的战果是否达到用户要求。 */
+  private roundMeetsEndpointResult(
+    round: RoundResult,
+    endpoints: string[],
+    requiredResult: BattleResultGrade,
+  ): boolean {
+    const endpointFightEvents = (round.events ?? []).filter((event) => {
+      const node = String(event.node ?? '').trim().toUpperCase();
+      return event.type === 'FIGHT_RESULT' && endpoints.includes(node);
+    });
+
+    if (endpointFightEvents.length > 0) {
+      return endpointFightEvents.some((event) => this.resultMeetsRequirement(
+        event.result,
+        requiredResult,
+      ));
+    }
+
+    // 兼容不返回 events 的旧后端：仅当最后经过的节点是终点时使用 round.grade。
+    const lastNode = round.nodes?.[round.nodes.length - 1];
+    if (!lastNode || !endpoints.includes(String(lastNode).trim().toUpperCase())) {
+      return false;
+    }
+    return this.resultMeetsRequirement(round.grade, requiredResult);
+  }
+
+  private resultMeetsRequirement(
+    actual: unknown,
+    required: BattleResultGrade,
+  ): boolean {
+    if (typeof actual !== 'string') return false;
+    const actualIndex = RESULT_GRADE_ORDER.indexOf(
+      actual.trim().toUpperCase() as BattleResultGrade,
+    );
+    const requiredIndex = RESULT_GRADE_ORDER.indexOf(required);
+    return actualIndex >= requiredIndex;
   }
 
   /** 任务执行中实时检查停止条件，满足则立即发送 taskStop */
@@ -622,12 +786,14 @@ export class Scheduler {
 
   /** 远征定时器回调 — 向队列插入远征任务，由调度器按优先级消费。 */
   private handleExpeditionTrigger(): void {
+    if (!this.systemActive || !this.autoExpedition) return;
     if (this.currentTask?.type === 'expedition') return;
     if (this._taskQueue.hasType('expedition')) return;
 
     const id = generateTaskId();
     const task: SchedulerTask = {
       id,
+      logicalId: id,
       name: '远征检查',
       type: 'expedition',
       priority: TaskPriority.EXPEDITION,
@@ -675,7 +841,6 @@ export class Scheduler {
       },
 
       onWsStatusChange: (connected) => {
-        this.connected = connected;
         this.callbacks.onConnectionChange?.(connected);
         if (!connected && this._status !== 'not_connected') {
           // WebSocket 断开但系统可能还在运行，不改状态

@@ -1,123 +1,133 @@
+/** 渲染设置页面、收集表单输入并发出保存和检测意图。 */
 /**
- * ConfigView —— 配置页纯渲染组件。
+ * ConfigView —— 设置页纯渲染组件。
  * 接收 ConfigViewObject 填充表单，用户修改后由 Controller 收集。
  */
-import type { ConfigViewObject } from '../../types/view';
+import type { NormalFightTaskConfig } from '../../types/model.js';
+import type { ConfigViewObject } from '../../types/view.js';
+
+type StatusKind = 'ok' | 'error' | 'unknown';
+
+function element<T extends HTMLElement>(id: string): T {
+  const target = document.getElementById(id);
+  if (!target) throw new Error(`设置控件不存在: ${id}`);
+  return target as T;
+}
 
 export class ConfigView {
-  private emuType: HTMLSelectElement;
-  private emuPath: HTMLInputElement;
-  private emuSerial: HTMLInputElement;
-  private gameApp: HTMLSelectElement;
-  private updateMode: HTMLSelectElement;
-  private autoExpedition: HTMLInputElement;
-  private expeditionInterval: HTMLInputElement;
-  private autoBattle: HTMLInputElement;
-  private battleType: HTMLSelectElement;
-  private autoExercise: HTMLInputElement;
-  private exerciseFleetId: HTMLSelectElement;
-  private battleTimes: HTMLInputElement;
-  private autoNormalFight: HTMLInputElement;
-  private autoDecisive: HTMLInputElement;
-  private decisiveTicketReserve: HTMLInputElement;
-  private decisiveTemplate: HTMLSelectElement;
-  private autoLoot: HTMLInputElement;
-  private lootPlan: HTMLSelectElement;
-  private lootStopCount: HTMLInputElement;
-  private autoExpeditionBody: HTMLElement | null;
-  private autoBattleBody: HTMLElement | null;
-  private autoExerciseBody: HTMLElement | null;
-  private autoDecisiveBody: HTMLElement | null;
-  private autoLootBody: HTMLElement | null;
-  private themeMode: HTMLSelectElement;
-  private accentColor: HTMLInputElement;
-  private accentLabel: HTMLElement;
-  private debugMode: HTMLInputElement;
-  private backendPort: HTMLInputElement;
-  private backendStartupMode: HTMLInputElement;
-  private backendRepoPath: HTMLInputElement;
-  private ocrGpuMode: HTMLSelectElement;
-  private cudaPath: HTMLInputElement;
-  private cudaStatus: HTMLElement | null;
-  private validateCudaBtn: HTMLButtonElement | null;
-  private saveBackendScreenshots: HTMLInputElement;
-  private debugAdvancedWrap: HTMLElement | null;
-  private backendRepoWrap: HTMLElement | null;
-  private pythonPath: HTMLInputElement;
-  private pythonStatus: HTMLElement | null;
-  private adbStatus: HTMLElement | null;
-  private validatePythonBtn: HTMLButtonElement | null;
+  private configTabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-config-tab]'));
+  private configPanels = Array.from(document.querySelectorAll<HTMLElement>('[data-config-panel]'));
+  private configTabDescription = document.getElementById('config-tab-description');
+  private normalFightTasks: NormalFightTaskConfig[] = [];
+  private normalFightFleetNames = new Map<string, string>();
+
+  private emuType = element<HTMLSelectElement>('cfg-emu-type');
+  private emuPath = element<HTMLInputElement>('cfg-emu-path');
+  private emuSerial = element<HTMLInputElement>('cfg-emu-serial');
+  private gameApp = element<HTMLSelectElement>('cfg-game-app');
+  private updateMode = element<HTMLSelectElement>('cfg-update-mode');
+  private autoExpedition = element<HTMLInputElement>('cfg-auto-expedition');
+  private expeditionInterval = element<HTMLInputElement>('cfg-expedition-interval');
+  private autoBattle = element<HTMLInputElement>('cfg-auto-battle');
+  private battleType = element<HTMLSelectElement>('cfg-battle-type');
+  private autoExercise = element<HTMLInputElement>('cfg-auto-exercise');
+  private exerciseFleetId = element<HTMLSelectElement>('cfg-exercise-fleet');
+  private battleTimes = element<HTMLInputElement>('cfg-battle-times');
+  private autoNormalFight = element<HTMLInputElement>('cfg-auto-normal-fight');
+  private autoLoot = element<HTMLInputElement>('cfg-auto-loot');
+  private lootPlan = element<HTMLSelectElement>('cfg-loot-plan');
+  private lootStopCount = element<HTMLInputElement>('cfg-loot-stop-count');
+  private autoBattleBody = document.getElementById('cfg-auto-battle-body');
+  private autoExerciseBody = document.getElementById('cfg-auto-exercise-body');
+  private autoNormalFightBody = document.getElementById('cfg-auto-normal-fight-body');
+  private autoLootBody = document.getElementById('cfg-auto-loot-body');
+  private normalFightTaskList = element<HTMLElement>('cfg-normal-fight-tasks');
+
+  private logLevel = element<HTMLSelectElement>('cfg-log-level');
+  private logRoot = element<HTMLInputElement>('cfg-log-root');
+  private themeMode = element<HTMLSelectElement>('cfg-theme-mode');
+  private accentColor = element<HTMLInputElement>('cfg-accent-color');
+  private accentLabel = element<HTMLElement>('cfg-accent-label');
+  private debugMode = element<HTMLInputElement>('cfg-debug-mode');
+  private backendPort = element<HTMLInputElement>('cfg-backend-port');
+  private backendStatus = document.getElementById('cfg-backend-status');
+  private backendStartupMode = element<HTMLInputElement>('cfg-use-external-backend');
+  private backendRepoPath = element<HTMLInputElement>('cfg-backend-repo-path');
+  private ocrGpuMode = element<HTMLSelectElement>('cfg-ocr-gpu-mode');
+  private ocrGpu = element<HTMLInputElement>('cfg-ocr-gpu');
+  private ocrMirror = element<HTMLSelectElement>('cfg-ocr-mirror');
+  private ocrConfidence = element<HTMLInputElement>('cfg-ocr-confidence');
+  private ocrConfidenceRange = element<HTMLInputElement>('cfg-ocr-confidence-range');
+  private shipNameAliases = element<HTMLTextAreaElement>('cfg-ship-name-aliases');
+  private shipNameCorrections = element<HTMLTextAreaElement>('cfg-ship-name-corrections');
+  private cudaPath = element<HTMLInputElement>('cfg-cuda-path');
+  private cudaStatus = document.getElementById('cfg-cuda-status');
+  private validateCudaBtn = document.getElementById('btn-validate-cuda') as HTMLButtonElement | null;
+  private saveBackendScreenshots = element<HTMLInputElement>('cfg-save-backend-screenshots');
+  private debugAdvancedWrap = document.getElementById('cfg-debug-advanced');
+  private backendRepoWrap = document.getElementById('cfg-backend-repo-wrap');
+  private pythonPath = element<HTMLInputElement>('cfg-python-path');
+  private pythonStatus = document.getElementById('cfg-python-status');
+  private adbStatus = document.getElementById('cfg-adb-status');
+  private validatePythonBtn = document.getElementById('btn-validate-python') as HTMLButtonElement | null;
+  private shipLibraryStatus = document.getElementById('ship-library-status');
+  private updateShipLibraryBtn = document.getElementById('btn-update-ship-library') as HTMLButtonElement | null;
+  private defaultWindowWidth = element<HTMLInputElement>('cfg-window-width');
+  private defaultWindowHeight = element<HTMLInputElement>('cfg-window-height');
+  private rememberWindowBounds = element<HTMLInputElement>('cfg-remember-window-bounds');
+
+  private delayMin = element<HTMLInputElement>('cfg-delay-min');
+  private delayMinRange = element<HTMLInputElement>('cfg-delay-min-range');
+  private delayMax = element<HTMLInputElement>('cfg-delay-max');
+  private delayMaxRange = element<HTMLInputElement>('cfg-delay-max-range');
+  private dockFullDestroy = element<HTMLInputElement>('cfg-dock-full-destroy');
+  private repairManually = element<HTMLSelectElement>('cfg-repair-manually');
+  private bathroomCount = element<HTMLInputElement>('cfg-bathroom-count');
+  private destroyShipWorkMode = element<HTMLSelectElement>('cfg-destroy-ship-mode');
+  private destroyShipTypes = element<HTMLElement>('cfg-destroy-ship-types');
+  private removeEquipmentMode = element<HTMLInputElement>('cfg-remove-equipment-mode');
+  private planRoot = element<HTMLInputElement>('cfg-plan-root');
 
   constructor() {
-    this.emuType = document.getElementById('cfg-emu-type') as HTMLSelectElement;
-    this.emuPath = document.getElementById('cfg-emu-path') as HTMLInputElement;
-    this.emuSerial = document.getElementById('cfg-emu-serial') as HTMLInputElement;
-    this.gameApp = document.getElementById('cfg-game-app') as HTMLSelectElement;
-    this.updateMode = document.getElementById('cfg-update-mode') as HTMLSelectElement;
-    this.autoExpedition = document.getElementById('cfg-auto-expedition') as HTMLInputElement;
-    this.expeditionInterval = document.getElementById('cfg-expedition-interval') as HTMLInputElement;
-    this.autoBattle = document.getElementById('cfg-auto-battle') as HTMLInputElement;
-    this.battleType = document.getElementById('cfg-battle-type') as HTMLSelectElement;
-    this.autoExercise = document.getElementById('cfg-auto-exercise') as HTMLInputElement;
-    this.exerciseFleetId = document.getElementById('cfg-exercise-fleet') as HTMLSelectElement;
-    this.battleTimes = document.getElementById('cfg-battle-times') as HTMLInputElement;
-    this.autoNormalFight = document.getElementById('cfg-auto-normal-fight') as HTMLInputElement;
-    this.autoDecisive = document.getElementById('cfg-auto-decisive') as HTMLInputElement;
-    this.decisiveTicketReserve = document.getElementById('cfg-decisive-ticket-reserve') as HTMLInputElement;
-    this.decisiveTemplate = document.getElementById('cfg-decisive-template') as HTMLSelectElement;
-    this.autoLoot = document.getElementById('cfg-auto-loot') as HTMLInputElement;
-    this.lootPlan = document.getElementById('cfg-loot-plan') as HTMLSelectElement;
-    this.lootStopCount = document.getElementById('cfg-loot-stop-count') as HTMLInputElement;
-    this.autoExpeditionBody = document.getElementById('cfg-auto-expedition-body');
-    this.autoBattleBody = document.getElementById('cfg-auto-battle-body');
-    this.autoExerciseBody = document.getElementById('cfg-auto-exercise-body');
-    this.autoDecisiveBody = document.getElementById('cfg-auto-decisive-body');
-    this.autoLootBody = document.getElementById('cfg-auto-loot-body');
-    this.themeMode = document.getElementById('cfg-theme-mode') as HTMLSelectElement;
-    this.accentColor = document.getElementById('cfg-accent-color') as HTMLInputElement;
-    this.accentLabel = document.getElementById('cfg-accent-label')!;
-    this.debugMode = document.getElementById('cfg-debug-mode') as HTMLInputElement;
-    this.backendPort = document.getElementById('cfg-backend-port') as HTMLInputElement;
-    this.backendStartupMode = document.getElementById('cfg-use-external-backend') as HTMLInputElement;
-    this.backendRepoPath = document.getElementById('cfg-backend-repo-path') as HTMLInputElement;
-    this.ocrGpuMode = document.getElementById('cfg-ocr-gpu-mode') as HTMLSelectElement;
-    this.cudaPath = document.getElementById('cfg-cuda-path') as HTMLInputElement;
-    this.cudaStatus = document.getElementById('cfg-cuda-status');
-    this.validateCudaBtn = document.getElementById('btn-validate-cuda') as HTMLButtonElement | null;
-    this.saveBackendScreenshots = document.getElementById('cfg-save-backend-screenshots') as HTMLInputElement;
-    this.debugAdvancedWrap = document.getElementById('cfg-debug-advanced');
-    this.backendRepoWrap = document.getElementById('cfg-backend-repo-wrap');
-    this.pythonPath = document.getElementById('cfg-python-path') as HTMLInputElement;
-    this.pythonStatus = document.getElementById('cfg-python-status');
-    this.adbStatus = document.getElementById('cfg-adb-status');
-    this.validatePythonBtn = document.getElementById('btn-validate-python') as HTMLButtonElement | null;
+    for (const tab of this.configTabs) {
+      tab.addEventListener('click', () => this.showConfigTab(tab.dataset['configTab'] ?? 'system'));
+    }
+    this.showConfigTab('system');
 
-    // 调色盘实时预览
     this.accentColor.addEventListener('input', () => {
       this.accentLabel.textContent = this.accentColor.value;
     });
-
     this.debugMode.addEventListener('change', () => {
       this.updateDebugAdvancedVisibility();
       this.updateBackendRepoVisibility();
     });
-
-    this.backendStartupMode.addEventListener('change', () => {
-      this.updateBackendRepoVisibility();
+    this.backendStartupMode.addEventListener('change', () => this.updateBackendRepoVisibility());
+    this.cudaPath.addEventListener('input', () => {
+      const hasPath = this.cudaPath.value.trim().length > 0;
+      this.setCudaStatus(
+        hasPath ? '待检测' : '系统环境',
+        'unknown',
+        hasPath ? 'CUDA 路径已修改，请点击检测' : 'CUDA 路径留空，将检测当前系统环境',
+      );
     });
-
-    this.autoExpedition.addEventListener('change', () => this.updateAutoOptionVisibility());
     this.autoBattle.addEventListener('change', () => this.updateAutoOptionVisibility());
     this.autoExercise.addEventListener('change', () => this.updateAutoOptionVisibility());
-    this.autoDecisive.addEventListener('change', () => this.updateAutoOptionVisibility());
+    this.autoNormalFight.addEventListener('change', () => this.updateAutoOptionVisibility());
     this.autoLoot.addEventListener('change', () => this.updateAutoOptionVisibility());
+    this.bindNumberRange(this.delayMinRange, this.delayMin);
+    this.bindNumberRange(this.delayMaxRange, this.delayMax);
+    this.bindNumberRange(this.ocrConfidenceRange, this.ocrConfidence);
 
-    this.updateDebugAdvancedVisibility();
-    this.updateBackendRepoVisibility();
-    this.updateAutoOptionVisibility();
+    this.ocrGpuMode.addEventListener('change', () => {
+      if (this.ocrGpuMode.value === 'cpu') this.ocrGpu.checked = false;
+      if (this.ocrGpuMode.value === 'cuda') this.ocrGpu.checked = true;
+    });
+    this.ocrGpu.addEventListener('change', () => {
+      this.ocrGpuMode.value = this.ocrGpu.checked ? 'cuda' : 'cpu';
+    });
   }
 
-  /** 用 ViewObject 填充表单 */
+  /** 用 ViewObject 填充表单。 */
   render(vo: ConfigViewObject): void {
     this.emuType.value = vo.emulatorType;
     this.emuPath.value = vo.emulatorPath;
@@ -132,13 +142,14 @@ export class ConfigView {
     this.exerciseFleetId.value = String(vo.exerciseFleetId);
     this.battleTimes.value = String(vo.battleTimes);
     this.autoNormalFight.checked = vo.autoNormalFight;
-    this.autoDecisive.checked = vo.autoDecisive;
-    this.decisiveTicketReserve.value = String(vo.decisiveTicketReserve);
-    // 决战模板下拉列表由 Controller 填充 options
-    this.decisiveTemplate.value = vo.decisiveTemplateId;
+    this.normalFightTasks = structuredClone(vo.normalFightTasks);
+    this.normalFightFleetNames.clear();
+    this.renderNormalFightTasks();
     this.autoLoot.checked = vo.autoLoot;
     this.lootPlan.value = String(vo.lootPlanIndex);
     this.lootStopCount.value = String(vo.lootStopCount);
+    this.logLevel.value = vo.logLevel;
+    this.logRoot.value = vo.logRoot;
     this.themeMode.value = vo.themeMode;
     this.accentColor.value = vo.accentColor;
     this.accentLabel.textContent = vo.accentColor;
@@ -147,22 +158,180 @@ export class ConfigView {
     this.backendStartupMode.checked = vo.backendStartupMode === 'external';
     this.backendRepoPath.value = vo.backendRepoPath;
     this.ocrGpuMode.value = vo.ocrGpuMode;
+    this.ocrGpu.checked = vo.ocrGpu;
+    this.ocrMirror.value = vo.ocrMirror;
+    this.setRangeValue(this.ocrConfidenceRange, this.ocrConfidence, vo.ocrConfidence);
+    this.shipNameAliases.value = vo.shipNameAliasesText;
+    this.shipNameCorrections.value = vo.shipNameCorrectionsText;
     this.cudaPath.value = vo.cudaPath;
+    this.setCudaStatus(
+      vo.cudaPath ? '待检测' : '系统环境',
+      'unknown',
+      vo.cudaPath ? '已配置 CUDA 路径，请点击检测' : 'CUDA 路径留空，将检测当前系统环境',
+    );
     this.saveBackendScreenshots.checked = vo.saveBackendScreenshots;
     this.pythonPath.value = vo.pythonPath;
+    this.defaultWindowWidth.value = String(vo.defaultWindowWidth);
+    this.defaultWindowHeight.value = String(vo.defaultWindowHeight);
+    this.rememberWindowBounds.checked = vo.rememberWindowBounds;
+    this.setRangeValue(this.delayMinRange, this.delayMin, vo.operationDelayMin);
+    this.setRangeValue(this.delayMaxRange, this.delayMax, vo.operationDelayMax);
+    this.dockFullDestroy.checked = vo.dockFullDestroy;
+    this.repairManually.value = String(vo.repairManually);
+    this.bathroomCount.value = String(vo.bathroomCount);
+    this.destroyShipWorkMode.value = String(vo.destroyShipWorkMode);
+    this.removeEquipmentMode.checked = vo.removeEquipmentMode;
+    this.planRoot.value = vo.planRoot;
+    for (const checkbox of Array.from(
+      this.destroyShipTypes.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+    )) {
+      checkbox.checked = vo.destroyShipTypes.includes(checkbox.value);
+    }
 
     this.updateDebugAdvancedVisibility();
     this.updateBackendRepoVisibility();
     this.updateAutoOptionVisibility();
   }
 
+  /** 收集并校验当前表单。 */
+  collect(): ConfigViewObject {
+    const operationDelayMin = this.clamp(this.delayMin.value, 0, 10, 0);
+    const operationDelayMax = this.clamp(this.delayMax.value, 0, 10, 0);
+    if (operationDelayMin > operationDelayMax) {
+      throw new Error('全局延迟的最小值不能大于最大值');
+    }
+    return {
+      emulatorType: this.emuType.value,
+      emulatorPath: this.emuPath.value.trim(),
+      emulatorSerial: this.emuSerial.value.trim(),
+      gameApp: this.gameApp.value,
+      updateMode: this.updateMode.value === 'manual' ? 'manual' : 'auto',
+      autoExpedition: this.autoExpedition.checked,
+      expeditionInterval: this.clamp(this.expeditionInterval.value, 1, 120, 15),
+      autoBattle: this.autoBattle.checked,
+      battleType: this.battleType.value,
+      autoExercise: this.autoExercise.checked,
+      exerciseFleetId: Math.trunc(this.clamp(this.exerciseFleetId.value, 1, 4, 1)),
+      battleTimes: Math.trunc(this.clamp(this.battleTimes.value, 1, 99, 3)),
+      autoNormalFight: this.autoNormalFight.checked,
+      normalFightTasks: this.collectNormalFightTasks(),
+      autoLoot: this.autoLoot.checked,
+      lootPlanIndex: Math.trunc(this.clamp(this.lootPlan.value, 0, 999, 0)),
+      lootStopCount: Math.trunc(this.clamp(this.lootStopCount.value, 1, 50, 50)),
+      logLevel: this.logLevel.value as ConfigViewObject['logLevel'],
+      logRoot: this.logRoot.value.trim() || 'log',
+      themeMode: this.themeMode.value as ConfigViewObject['themeMode'],
+      accentColor: this.accentColor.value,
+      debugMode: this.debugMode.checked,
+      backendPort: Math.trunc(this.clamp(this.backendPort.value, 1, 65535, 8438)),
+      backendStartupMode: this.backendStartupMode.checked ? 'external' : 'managed',
+      backendRepoPath: this.backendRepoPath.value.trim(),
+      ocrGpuMode: this.ocrGpuMode.value as ConfigViewObject['ocrGpuMode'],
+      ocrGpu: this.ocrGpu.checked,
+      ocrMirror: this.ocrMirror.value as ConfigViewObject['ocrMirror'],
+      ocrConfidence: this.clamp(this.ocrConfidence.value, 0, 1, 0.65),
+      shipNameAliasesText: this.shipNameAliases.value,
+      shipNameCorrectionsText: this.shipNameCorrections.value,
+      cudaPath: this.cudaPath.value.trim(),
+      saveBackendScreenshots: this.saveBackendScreenshots.checked,
+      pythonPath: this.pythonPath.value.trim(),
+      defaultWindowWidth: Math.trunc(this.clamp(this.defaultWindowWidth.value, 854, 10000, 1280)),
+      defaultWindowHeight: Math.trunc(this.clamp(this.defaultWindowHeight.value, 480, 10000, 720)),
+      rememberWindowBounds: this.rememberWindowBounds.checked,
+      operationDelayMin,
+      operationDelayMax,
+      dockFullDestroy: this.dockFullDestroy.checked,
+      repairManually: this.repairManually.value === 'true',
+      bathroomCount: Math.trunc(this.clamp(this.bathroomCount.value, 1, 12, 2)),
+      destroyShipWorkMode: Math.trunc(this.clamp(this.destroyShipWorkMode.value, 0, 2, 0)),
+      destroyShipTypes: Array.from(
+        this.destroyShipTypes.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked'),
+        checkbox => checkbox.value,
+      ),
+      removeEquipmentMode: this.removeEquipmentMode.checked,
+      planRoot: this.planRoot.value.trim(),
+    };
+  }
+
+  setNormalFightPlan(
+    path: string,
+    fleetPresetIndex: number,
+    fleetName: string,
+  ): void {
+    this.normalFightTasks = [{
+      name: path,
+      fleet_preset_index: fleetPresetIndex,
+    }];
+    this.normalFightFleetNames.clear();
+    this.normalFightFleetNames.set(
+      this.normalFightFleetKey(path, fleetPresetIndex),
+      fleetName,
+    );
+    this.renderNormalFightTasks();
+  }
+
+  private collectNormalFightTasks(): NormalFightTaskConfig[] {
+    return structuredClone(this.normalFightTasks);
+  }
+
+  private renderNormalFightTasks(): void {
+    this.normalFightTaskList.replaceChildren();
+    if (this.normalFightTasks.length === 0) {
+      const empty = document.createElement('span');
+      empty.className = 'config-empty-note';
+      empty.textContent = '尚未加载计划';
+      this.normalFightTaskList.appendChild(empty);
+      return;
+    }
+    const primaryTask = this.normalFightTasks[0];
+    if (!primaryTask) return;
+    const name = document.createElement('span');
+    const fileName = primaryTask.name.split(/[\\/]/).pop() ?? primaryTask.name;
+    const displayName = fileName
+      .replace(/\.ya?ml$/i, '')
+      .replace(/^bettle-/i, '');
+    name.className = 'config-task-name';
+    name.title = this.normalFightTasks.map(task => task.name).join('\n');
+    name.textContent = this.normalFightTasks.length > 1
+      ? `${displayName} 等 ${this.normalFightTasks.length} 个任务`
+      : displayName;
+    this.normalFightTaskList.appendChild(name);
+
+    if (primaryTask.fleet_preset_index != null) {
+      const fleetIndex = primaryTask.fleet_preset_index;
+      const fleetName = this.normalFightFleetNames.get(
+        this.normalFightFleetKey(primaryTask.name, fleetIndex),
+      ) ?? `队伍 ${fleetIndex + 1}`;
+      const fleetTag = document.createElement('span');
+      fleetTag.className = 'tg-fleet-tag';
+      fleetTag.textContent = fleetName;
+      fleetTag.title = `使用队伍：${fleetName}`;
+      this.normalFightTaskList.appendChild(fleetTag);
+    }
+  }
+
+  private normalFightFleetKey(path: string, fleetPresetIndex: number): string {
+    return `${path.toLowerCase()}\u0000${fleetPresetIndex}`;
+  }
+
+  private showConfigTab(tag: string): void {
+    const descriptions: Record<string, string> = {
+      system: '管理运行环境、自动任务、日志和界面设置。',
+      behavior: '管理操作延迟、OCR 识别和舰队相关行为。',
+    };
+    for (const tab of this.configTabs) {
+      const active = tab.dataset['configTab'] === tag;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', String(active));
+    }
+    for (const panel of this.configPanels) panel.hidden = panel.dataset['configPanel'] !== tag;
+    if (this.configTabDescription) this.configTabDescription.textContent = descriptions[tag] ?? '';
+  }
+
   private updateDebugAdvancedVisibility(): void {
     if (!this.debugAdvancedWrap) return;
-    const show = this.debugMode.checked;
-    this.debugAdvancedWrap.style.display = show ? '' : 'none';
-    if (!show && this.backendRepoWrap) {
-      this.backendRepoWrap.style.display = 'none';
-    }
+    this.debugAdvancedWrap.style.display = this.debugMode.checked ? '' : 'none';
+    if (!this.debugMode.checked && this.backendRepoWrap) this.backendRepoWrap.style.display = 'none';
   }
 
   private updateBackendRepoVisibility(): void {
@@ -173,85 +342,68 @@ export class ConfigView {
   }
 
   private updateAutoOptionVisibility(): void {
-    if (this.autoExpeditionBody) {
-      this.autoExpeditionBody.style.display = this.autoExpedition.checked ? '' : 'none';
-    }
-    if (this.autoBattleBody) {
-      this.autoBattleBody.style.display = this.autoBattle.checked ? '' : 'none';
-    }
-    if (this.autoExerciseBody) {
-      this.autoExerciseBody.style.display = this.autoExercise.checked ? '' : 'none';
-    }
-    if (this.autoDecisiveBody) {
-      this.autoDecisiveBody.style.display = this.autoDecisive.checked ? '' : 'none';
-    }
-    if (this.autoLootBody) {
-      this.autoLootBody.style.display = this.autoLoot.checked ? '' : 'none';
-    }
+    if (this.autoBattleBody) this.autoBattleBody.style.display = this.autoBattle.checked ? '' : 'none';
+    if (this.autoExerciseBody) this.autoExerciseBody.style.display = this.autoExercise.checked ? '' : 'none';
+    if (this.autoNormalFightBody) this.autoNormalFightBody.style.display = this.autoNormalFight.checked ? '' : 'none';
+    if (this.autoLootBody) this.autoLootBody.style.display = this.autoLoot.checked ? '' : 'none';
   }
 
-  /** 从表单收集当前值 (Controller 调用) */
-  collect(): ConfigViewObject {
-    return {
-      emulatorType: this.emuType.value,
-      emulatorPath: this.emuPath.value,
-      emulatorSerial: this.emuSerial.value,
-      gameApp: this.gameApp.value,
-      updateMode: this.updateMode.value === 'manual' ? 'manual' : 'auto',
-      autoExpedition: this.autoExpedition.checked,
-      expeditionInterval: Math.max(1, Math.min(120, Number(this.expeditionInterval.value) || 15)),
-      autoBattle: this.autoBattle.checked,
-      battleType: this.battleType.value,
-      autoExercise: this.autoExercise.checked,
-      exerciseFleetId: Number(this.exerciseFleetId.value) || 1,
-      battleTimes: Number(this.battleTimes.value) || 3,
-      autoNormalFight: this.autoNormalFight.checked,
-      autoDecisive: this.autoDecisive.checked,
-      decisiveTicketReserve: Math.max(0, Number(this.decisiveTicketReserve.value) || 0),
-      decisiveTemplateId: this.decisiveTemplate.value,
-      autoLoot: this.autoLoot.checked,
-      lootPlanIndex: Number(this.lootPlan.value) || 0,
-      lootStopCount: Math.max(1, Math.min(50, Number(this.lootStopCount.value) || 50)),
-      themeMode: this.themeMode.value as 'dark' | 'light' | 'system',
-      accentColor: this.accentColor.value,
-      debugMode: this.debugMode.checked,
-      backendPort: Math.max(1, Math.min(65535, Number(this.backendPort.value) || 8438)),
-      backendStartupMode: this.backendStartupMode.checked ? 'external' : 'managed',
-      backendRepoPath: this.backendRepoPath.value.trim(),
-      ocrGpuMode: (['auto', 'cpu', 'cuda'].includes(this.ocrGpuMode.value) ? this.ocrGpuMode.value : 'auto') as 'auto' | 'cpu' | 'cuda',
-      cudaPath: this.cudaPath.value.trim(),
-      saveBackendScreenshots: this.saveBackendScreenshots.checked,
-      pythonPath: this.pythonPath.value.trim(),
-    };
+  private bindNumberRange(range: HTMLInputElement, number: HTMLInputElement): void {
+    range.addEventListener('input', () => { number.value = range.value; });
+    number.addEventListener('input', () => { range.value = number.value; });
   }
 
-  /* ── 单字段 setter / getter（Controller 用） ── */
-
-  setEmulatorPath(path: string): void {
-    this.emuPath.value = path;
+  private setRangeValue(range: HTMLInputElement, number: HTMLInputElement, value: number): void {
+    range.value = String(value);
+    number.value = String(value);
   }
 
-  setPythonPath(path: string): void {
-    this.pythonPath.value = path;
+  private clamp(value: string, min: number, max: number, fallback: number): number {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
   }
 
-  setBackendRepoPath(path: string): void {
-    this.backendRepoPath.value = path;
+  private setStatus(target: HTMLElement | null, text: string, status: StatusKind): void {
+    if (!target) return;
+    target.textContent = text;
+    const cls = status === 'ok'
+      ? 'adb-status-online'
+      : status === 'error'
+        ? 'adb-status-offline'
+        : 'adb-status-unknown';
+    target.className = `adb-status ${cls}`;
   }
 
-  setCudaPath(path: string): void {
-    this.cudaPath.value = path;
-  }
+  setEmulatorPath(path: string): void { this.emuPath.value = path; }
+  setEmulatorSerial(serial: string): void { this.emuSerial.value = serial; }
+  setPythonPath(path: string): void { this.pythonPath.value = path; }
+  setBackendRepoPath(path: string): void { this.backendRepoPath.value = path; }
+  setLogRoot(path: string): void { this.logRoot.value = path; }
+  setPlanRoot(path: string): void { this.planRoot.value = path; }
+  setCudaPath(path: string): void { this.cudaPath.value = path; }
+  getEmulatorSerial(): string { return this.emuSerial.value.trim(); }
+  getCudaPath(): string { return this.cudaPath.value.trim(); }
+  getPythonPath(): string { return this.pythonPath.value.trim(); }
+  getBackendPort(): number { return Math.trunc(this.clamp(this.backendPort.value, 1, 65535, 8438)); }
 
-  getCudaPath(): string {
-    return this.cudaPath.value.trim();
+  setCudaStatus(text: string, status: StatusKind, details = text): void {
+    this.setStatus(this.cudaStatus, text, status);
+    if (this.cudaStatus) this.cudaStatus.title = details;
   }
-
-  setCudaStatus(text: string, status: 'ok' | 'error' | 'unknown'): void {
-    if (!this.cudaStatus) return;
-    this.cudaStatus.textContent = text;
-    const cls = status === 'ok' ? 'adb-status-online' : status === 'error' ? 'adb-status-offline' : 'adb-status-unknown';
-    this.cudaStatus.className = `adb-status ${cls}`;
+  setPythonStatus(text: string, status: StatusKind): void { this.setStatus(this.pythonStatus, text, status); }
+  setBackendStatus(text: string, status: StatusKind): void { this.setStatus(this.backendStatus, text, status); }
+  setShipLibraryStatus(text: string, status: StatusKind): void { this.setStatus(this.shipLibraryStatus, text, status); }
+  setAdbStatus(text: string, status: 'online' | 'offline' | 'unknown'): void {
+    if (!this.adbStatus) return;
+    this.adbStatus.title = text;
+    this.adbStatus.textContent = status === 'online'
+      ? '在线'
+      : status === 'offline'
+        ? '离线'
+        : text.includes('中')
+          ? text
+          : '未检测';
+    this.adbStatus.className = `adb-status adb-status-${status}`;
   }
 
   setCudaValidateLoading(loading: boolean): void {
@@ -260,35 +412,20 @@ export class ConfigView {
     this.validateCudaBtn.textContent = loading ? '检测中…' : '检测';
   }
 
-  getPythonPath(): string {
-    return this.pythonPath.value.trim();
-  }
-
-  setPythonStatus(text: string, status: 'ok' | 'error' | 'unknown'): void {
-    if (!this.pythonStatus) return;
-    this.pythonStatus.textContent = text;
-    const cls = status === 'ok' ? 'adb-status-online' : status === 'error' ? 'adb-status-offline' : 'adb-status-unknown';
-    this.pythonStatus.className = `adb-status ${cls}`;
-  }
-
   setPythonValidateLoading(loading: boolean): void {
     if (!this.validatePythonBtn) return;
     this.validatePythonBtn.disabled = loading;
     this.validatePythonBtn.textContent = loading ? '检测中…' : '检测';
   }
 
-  setEmulatorSerial(serial: string): void {
-    this.emuSerial.value = serial;
+  setShipLibraryUpdateLoading(loading: boolean): void {
+    if (!this.updateShipLibraryBtn) return;
+    this.updateShipLibraryBtn.disabled = loading;
+    this.updateShipLibraryBtn.textContent = loading ? '正在更新…' : '更新舰船数据库';
   }
 
   resetAccentColor(defaultColor: string): void {
     this.accentColor.value = defaultColor;
     this.accentLabel.textContent = defaultColor;
-  }
-
-  setAdbStatus(text: string, status: 'online' | 'offline' | 'unknown'): void {
-    if (!this.adbStatus) return;
-    this.adbStatus.textContent = text;
-    this.adbStatus.className = `adb-status adb-status-${status}`;
   }
 }

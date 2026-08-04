@@ -1,20 +1,24 @@
+/** 绑定 Scheduler 回调并同步日志、进度、队列和连接状态。 */
 /**
  * SchedulerBinder —— 调度器回调绑定子控制器。
  * 封装 Scheduler / CronScheduler 的回调绑定逻辑 + 关联的可变状态。
  */
 import { TaskPriority, type Scheduler, type SchedulerStatus, type CronScheduler } from '../../model/scheduler';
 import type { ApiClient } from '../../model/ApiClient';
+import type { ConfigModel } from '../../model/ConfigModel';
 import type { TemplateModel } from '../../model/TemplateModel';
 import { PlanModel } from '../../model/PlanModel';
-import type { NormalFightReq } from '../../types/api';
+import type { NormalFightReq } from '../../types/api.js';
 import { Logger } from '../../utils/Logger';
 import { normalizeSelectedNodesForBackend } from '../plan/selectedNodes';
+import { buildPlanQueueRequest } from '../taskGroup/queueLoader';
 
 export interface SchedulerBinderHost {
   readonly scheduler: Scheduler;
   readonly cronScheduler: CronScheduler;
   readonly api: ApiClient;
   readonly templateModel: TemplateModel;
+  readonly configModel: ConfigModel;
   renderMain(): void;
   updateOpsAvailability(connected: boolean): void;
 }
@@ -27,6 +31,7 @@ export class SchedulerBinder {
   private pendingExerciseTaskId: string | null = null;
   private pendingBattleTaskId: string | null = null;
   private pendingLootTaskId: string | null = null;
+  private pendingNormalFightTaskIds = new Set<string>();
   private exerciseTotal = SchedulerBinder.DEFAULT_EXERCISE_TOTAL;
   private exerciseCurrent = 0;
   private exerciseRoundInProgress = false;
@@ -61,7 +66,7 @@ export class SchedulerBinder {
         this.host.renderMain();
       },
 
-      onTaskCompleted: (taskId, success, _result, _error) => {
+      onTaskCompleted: (_taskId, _success, _result, _error) => {
         this.currentProgress = '';
         this.resetExerciseProgress();
         this.lastParsedLogMessage = '';
@@ -69,7 +74,11 @@ export class SchedulerBinder {
         this.lastParsedLogAt = 0;
         this.trackedLoot = '';
         this.trackedShip = '';
-        if (taskId === this.pendingExerciseTaskId) {
+        this.host.renderMain();
+      },
+
+      onLogicalTaskCompleted: (logicalId, success) => {
+        if (logicalId === this.pendingExerciseTaskId) {
           if (success) {
             this.host.cronScheduler.markExerciseCompleted();
           } else {
@@ -77,13 +86,17 @@ export class SchedulerBinder {
           }
           this.pendingExerciseTaskId = null;
         }
-        if (taskId === this.pendingBattleTaskId) {
+        if (logicalId === this.pendingBattleTaskId) {
           this.host.cronScheduler.markBattleHandled();
           this.pendingBattleTaskId = null;
         }
-        if (taskId === this.pendingLootTaskId) {
+        if (logicalId === this.pendingLootTaskId) {
           this.host.cronScheduler.markLootHandled();
           this.pendingLootTaskId = null;
+        }
+        if (this.pendingNormalFightTaskIds.delete(logicalId)
+          && this.pendingNormalFightTaskIds.size === 0) {
+          this.host.cronScheduler.markNormalFightHandled();
         }
         this.host.renderMain();
       },
@@ -150,7 +163,7 @@ export class SchedulerBinder {
 
     // 仅当后端报告的剩余次数更小时才同步（说明有其他战役消耗了次数）
     if (remains < campaignRemaining) {
-      const diff = campaignRemaining - remains;
+      let diff = campaignRemaining - remains;
       Logger.info(`战役次数同步: 后端报告剩余 ${remains}，前端队列待执行 ${campaignRemaining}，减少 ${diff} 次`);
 
       // 优先从队列末尾的战役任务扣减
@@ -159,6 +172,7 @@ export class SchedulerBinder {
         if (task.type !== 'campaign') continue;
         const deduct = Math.min(diff, task.remainingTimes);
         task.remainingTimes -= deduct;
+        diff -= deduct;
         if (task.remainingTimes <= 0) {
           scheduler.removeTask(task.id);
         }
@@ -344,10 +358,128 @@ export class SchedulerBinder {
         this.autoLoadLootTask(planIndex, stopCount);
       },
 
+      onNormalFightDue: () => {
+        void this.autoLoadNormalFightTasks();
+      },
+
       onLog: (level, message) => {
         Logger.logLevel(level, message);
       },
     });
+  }
+
+  /** 自动出征：按照 usersettings.yaml 中的顺序加载并加入队列。 */
+  private async autoLoadNormalFightTasks(): Promise<void> {
+    const queuedTasks = [
+      this.host.scheduler.currentRunningTask,
+      ...this.host.scheduler.taskQueue,
+    ];
+    if (queuedTasks.some(task => (
+      task?.unlimited === true
+      && task.name.startsWith('自动出征·')
+    ))) {
+      this.host.cronScheduler.markNormalFightHandled();
+      Logger.info('已有无限自动出征任务在运行，本次不重复加入');
+      return;
+    }
+
+    const tasks = this.host.configModel.current.daily_automation.normal_fight_tasks;
+    if (tasks.length === 0) {
+      Logger.warn('自动出征已启用，但任务列表为空');
+      this.host.cronScheduler.markNormalFightHandled();
+      return;
+    }
+    const bridge = window.electronBridge;
+    if (!bridge) {
+      this.host.cronScheduler.clearNormalFightPending();
+      return;
+    }
+
+    let loaded = 0;
+    for (const task of tasks) {
+      try {
+        const resolved = await this.resolveNormalFightPlan(task.name);
+        if (!resolved) throw new Error(`找不到出征计划: ${task.name}`);
+        const plan = PlanModel.fromYaml(resolved.content, resolved.path);
+        const { req: request, selectedFleetId } = buildPlanQueueRequest(
+          {
+            path: resolved.path,
+            kind: 'plan',
+            times: task.times ?? 1,
+            label: plan.mapName,
+            fleet_id: task.fleet_id,
+            fleetPresetIndex: task.fleet_preset_index,
+          },
+          plan,
+          resolved.path,
+        );
+        const id = this.host.scheduler.addTask(
+          `自动出征·${plan.mapName}`,
+          plan.isEvent ? 'event_fight' : 'normal_fight',
+          request,
+          TaskPriority.DAILY,
+          task.times ?? Number.POSITIVE_INFINITY,
+          plan.data.stop_condition,
+          undefined,
+          selectedFleetId,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        );
+        this.pendingNormalFightTaskIds.add(id);
+        loaded++;
+      } catch (error) {
+        Logger.error(
+          `自动出征加载「${task.name}」失败: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+
+    if (loaded === 0) {
+      this.host.cronScheduler.clearNormalFightPending();
+      return;
+    }
+    Logger.info(`自动出征已按顺序加入 ${loaded} 个任务`);
+    this.host.scheduler.startConsuming();
+  }
+
+  /** 支持绝对路径、plan_root 目录和 GUI 自带后端数据目录。 */
+  private async resolveNormalFightPlan(
+    name: string,
+  ): Promise<{ path: string; content: string } | null> {
+    const bridge = window.electronBridge;
+    if (!bridge) return null;
+    const root = this.host.configModel.current.plan_root?.replace(/[\\/]$/, '');
+    const suffixes = /\.ya?ml$/i.test(name) ? [name] : [name, `${name}.yaml`];
+    const candidates = new Set<string>(suffixes);
+    for (const category of ['normal_fight', 'event']) {
+      for (const suffix of suffixes) {
+        if (root) candidates.add(`${root}/${category}/${suffix}`);
+        candidates.add(`autowsgr/data/plan/${category}/${suffix}`);
+      }
+    }
+    for (const candidate of candidates) {
+      if (bridge.readCombatPlanFile) {
+        const result = await bridge.readCombatPlanFile(candidate);
+        if (
+          result.success
+          && result.content?.trim()
+          && result.path
+        ) {
+          return {
+            path: result.runtimePath ?? result.path,
+            content: result.content,
+          };
+        }
+        continue;
+      }
+      const content = await bridge.readFile(candidate);
+      if (content.trim()) return { path: candidate, content };
+    }
+    return null;
   }
 
   /** 自动战利品：加载内置捞胖次方案并加入队列 */

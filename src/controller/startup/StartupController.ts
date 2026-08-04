@@ -1,8 +1,9 @@
+/** 统一协调应用启动、后端连接、环境检查和资源释放。 */
 /**
  * StartupController —— 应用启动流程控制器（精简版）。
  * 环境检查 → envAndUpdates.ts，后端连接 → connection.ts。
  */
-import type { ElectronBridge } from '../../types/electronBridge';
+import type { ElectronBridge } from '../../types/ipc.js';
 import type { Scheduler, CronScheduler } from '../../model/scheduler';
 import type { ConfigModel } from '../../model/ConfigModel';
 import { Logger } from '../../utils/Logger';
@@ -38,6 +39,8 @@ export interface StartupHost {
 // ════════════════════════════════════════
 
 export class StartupController {
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
   constructor(private readonly host: StartupHost) {}
 
   /** 完整的异步启动流程 */
@@ -87,7 +90,11 @@ export class StartupController {
     } else {
       Logger.info('正在启动后端服务…');
     }
-    await bridge.startBackend();
+    const backendResult = await bridge.startBackend();
+    if (!backendResult.success) {
+      Logger.error(`后端启动失败: ${backendResult.message}`);
+      return;
+    }
     waitForBackendAndConnect(this.host);
   }
 
@@ -109,5 +116,33 @@ export class StartupController {
   /** 代理: 启动系统 */
   startSystem(): void {
     import('./connection.js').then(m => m.startSystem(this.host));
+  }
+
+  startHeartbeat(): void {
+    this.stopHeartbeat();
+    let consecutiveFails = 0;
+    this.heartbeatTimer = setInterval(async () => {
+      try {
+        const alive = await this.host.scheduler.ping();
+        consecutiveFails = alive ? 0 : consecutiveFails + 1;
+      } catch {
+        consecutiveFails++;
+      }
+      if (consecutiveFails < 3) return;
+
+      Logger.error('后端连续 3 次心跳失败，尝试自动重启…');
+      this.stopHeartbeat();
+      const bridge = window.electronBridge;
+      if (bridge?.startBackend) {
+        await bridge.startBackend();
+        this.waitForBackendAndConnect();
+      }
+    }, 30_000);
+  }
+
+  stopHeartbeat(): void {
+    if (!this.heartbeatTimer) return;
+    clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = null;
   }
 }

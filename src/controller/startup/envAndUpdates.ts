@@ -1,7 +1,8 @@
+/** 编排运行环境准备、依赖安装和 GUI 更新检查。 */
 /**
  * envAndUpdates —— 环境检查、依赖安装、更新检查逻辑。
  */
-import type { ElectronBridge } from '../../types/electronBridge';
+import type { ElectronBridge } from '../../types/ipc.js';
 import type { StartupHost } from './StartupController';
 import { Logger } from '../../utils/Logger';
 

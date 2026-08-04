@@ -38,6 +38,7 @@ release/
 # 安装临时文件
 _setup_tmp/
 .tmp/
+.tmp_*
 node/
 python/
 redist/
@@ -45,6 +46,10 @@ adb/
 
 # 缓存
 .cache/
+.dbg/
+__pycache__/
+*.py[cod]
+/debug-backend-pipe-epipe.md
 
 # Kilo 工作区
 .kilo/

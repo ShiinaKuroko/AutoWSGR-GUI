@@ -75,8 +75,8 @@
 /* ═══ 方案预览页整体布局 ═══ */
 .plan-page-layout {
   display: flex;
-  gap: 16px;
-  height: calc(100vh - 52px - 32px);
+  gap: clamp(12px, 1.25vw, 18px);
+  height: 100%;
   align-items: stretch;
 }
 
@@ -88,7 +88,7 @@
 }
 
 .plan-page-layout .template-library-card {
-  width: 260px;
+  width: clamp(230px, 20vw, 280px);
   flex-shrink: 0;
   margin-bottom: 0;
   overflow: hidden;
@@ -125,19 +125,24 @@
 /* ═══ 方案预览双栏布局 ═══ */
 .plan-layout {
   display: flex;
-  gap: 16px;
+  gap: 5px;
   flex: 1;
   min-height: 0;
 }
 
 .plan-left {
-  width: 360px;
-  min-width: 300px;
+  width: clamp(340px, 31vw, 460px);
+  min-width: 340px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  gap: 5px;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+.plan-left > .card {
+  margin-bottom: 0;
 }
 
 .plan-editor-area {
@@ -146,12 +151,60 @@
   overflow-y: auto;
 }
 
+.plan-node-workspace {
+  padding: 8px 10px;
+  margin-bottom: 0;
+  overflow: hidden;
+}
+
+.plan-node-workspace > .node-list {
+  flex: 1 1 56%;
+  min-height: 180px;
+  margin-bottom: 8px;
+}
+
+.plan-node-info-area {
+  flex: 1 1 44%;
+  min-height: 130px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.plan-node-info-area .node-editor-placeholder {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.plan-node-info-area .node-editor-placeholder h3,
+.plan-node-info-area .node-editor-placeholder p {
+  margin: 0;
+}
+
+.plan-node-info-area .node-info {
+  padding: 10px 4px;
+}
+
 .plan-right {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.plan-right-mode {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.plan-right-mode[hidden] {
+  display: none;
 }
 
 .plan-right-header {
@@ -163,12 +216,26 @@
   flex-shrink: 0;
 }
 
+.plan-right-header.plan-module-header {
+  align-items: center;
+}
+
+.plan-right-actions-header {
+  justify-content: flex-end;
+}
+
 .plan-right-header > h3 {
   flex-shrink: 0;
   margin: 0;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+.plan-right-header > h3 > span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
 }
 
 .plan-actions-top {
@@ -179,5 +246,33 @@
 }
 
 .plan-actions-top .btn {
+  height: 26px;
+  padding: 4px 8px;
+  line-height: 1;
   white-space: nowrap;
+}
+
+@media (max-width: 1000px) {
+  .plan-layout {
+    gap: 5px;
+  }
+
+  .plan-left {
+    width: 330px;
+    min-width: 330px;
+  }
+}
+
+@media (max-width: 760px) {
+  .plan-layout {
+    overflow-x: auto;
+  }
+
+  .plan-left {
+    min-width: 320px;
+  }
+
+  .plan-right {
+    min-width: 420px;
+  }
 }

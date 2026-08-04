@@ -1,5 +1,5 @@
 /**
- * Preload 脚本 —— 通过 contextBridge 安全暴露 IPC 方法给渲染进程。
+ * 通过 contextBridge 向渲染进程安全暴露 IPC 方法。
  */
 import { contextBridge, ipcRenderer } from 'electron';
 
@@ -30,6 +30,49 @@ contextBridge.exposeInMainWorld('electronBridge', {
 
   getSaveBackendScreenshots: () => {
     return ipcRenderer.sendSync('get-save-backend-screenshots-sync') as boolean;
+  },
+
+  getWindowPreferences: () => {
+    return ipcRenderer.sendSync('get-window-preferences-sync') as {
+      defaultWidth: number;
+      defaultHeight: number;
+      rememberBounds: boolean;
+    };
+  },
+
+  setWindowPreferences: (preferences: {
+    defaultWidth: number;
+    defaultHeight: number;
+    rememberBounds: boolean;
+  }) => {
+    return ipcRenderer.invoke('set-window-preferences', preferences);
+  },
+
+  getGuiAutomationSettings: () => {
+    return ipcRenderer.invoke('get-gui-automation-settings');
+  },
+
+  setGuiAutomationSettings: (settings: {
+    expeditionInterval: number;
+    battleTimes: number;
+    autoLoot: boolean;
+    lootPlanIndex: number;
+    lootStopCount: number;
+  }) => {
+    return ipcRenderer.invoke('set-gui-automation-settings', settings);
+  },
+
+  getDecisivePlanSettings: () => {
+    return ipcRenderer.invoke('get-decisive-plan-settings');
+  },
+
+  setDecisivePlanSettings: (settings: {
+    chapter: number;
+    useQuickRepair: boolean;
+    level1: string[];
+    level2: string[];
+  }) => {
+    return ipcRenderer.invoke('set-decisive-plan-settings', settings);
   },
 
   setBackendPort: (port: number) => {
@@ -68,6 +111,128 @@ contextBridge.exposeInMainWorld('electronBridge', {
     return ipcRenderer.invoke('set-update-mode', mode);
   },
 
+  getShipLibraryStatus: () => {
+    return ipcRenderer.invoke('get-ship-library-status');
+  },
+
+  getShipLibraryManifest: () => {
+    return ipcRenderer.invoke('get-ship-library-manifest');
+  },
+
+  updateShipLibrary: () => {
+    return ipcRenderer.invoke('update-ship-library');
+  },
+
+  onShipLibraryUpdateProgress: (callback: (progress: { message: string }) => void) => {
+    ipcRenderer.on('ship-library-update-progress', (_event, progress) => callback(progress));
+  },
+
+  saveUserTeamPlan: (
+    plan: unknown,
+    overwrite = false,
+    currentFile?: string,
+    source: 'system' | 'user' = 'user',
+  ) => {
+    return ipcRenderer.invoke(
+      'save-user-team-plan',
+      plan,
+      overwrite,
+      currentFile,
+      source,
+    );
+  },
+
+  pickUserTeamPlan: () => {
+    return ipcRenderer.invoke('pick-user-team-plan');
+  },
+
+  listTeamPlans: () => {
+    return ipcRenderer.invoke('list-team-plans');
+  },
+
+  getPlanManagement: () => {
+    return ipcRenderer.invoke('get-plan-management');
+  },
+
+  exportUserPlans: (
+    selections: Array<{
+      kind: 'battle' | 'team';
+      file: string;
+    }>,
+  ) => {
+    return ipcRenderer.invoke('export-user-plans', selections);
+  },
+
+  importLocalCombatPlan: () => {
+    return ipcRenderer.invoke('import-local-combat-plan');
+  },
+
+  setPlanUnlinkedIgnored: (
+    kind: 'battle' | 'team',
+    source: 'system' | 'user',
+    file: string,
+    ignored: boolean,
+  ) => {
+    return ipcRenderer.invoke(
+      'set-plan-unlinked-ignored',
+      kind,
+      source,
+      file,
+      ignored,
+    );
+  },
+
+  readManagedCombatPlan: (
+    source: 'system' | 'user',
+    file: string,
+  ) => {
+    return ipcRenderer.invoke('read-managed-combat-plan', source, file);
+  },
+
+  readCombatPlanFile: (filePath: string) => {
+    return ipcRenderer.invoke('read-combat-plan-file', filePath);
+  },
+
+  prepareCombatPlanExecution: (
+    content: string,
+    hint: string,
+  ) => {
+    return ipcRenderer.invoke(
+      'prepare-combat-plan-execution',
+      content,
+      hint,
+    );
+  },
+
+  saveManagedCombatPlan: (
+    name: string,
+    content: string,
+    overwrite = false,
+    currentFile?: string,
+    source: 'system' | 'user' = 'user',
+  ) => {
+    return ipcRenderer.invoke(
+      'save-managed-combat-plan',
+      name,
+      content,
+      overwrite,
+      currentFile,
+      source,
+    );
+  },
+
+  renameUserCombatPlan: (file: string, newName: string) => {
+    return ipcRenderer.invoke('rename-user-combat-plan', file, newName);
+  },
+
+  deleteUserCombatPlan: (file: string) => {
+    return ipcRenderer.invoke('delete-user-combat-plan', file);
+  },
+
+  deleteUserTeamPlan: (file: string) => {
+    return ipcRenderer.invoke('delete-user-team-plan', file);
+  },
+
   openDirectoryDialog: (title?: string) => {
     return ipcRenderer.invoke('open-directory-dialog', title);
   },
@@ -100,6 +265,14 @@ contextBridge.exposeInMainWorld('electronBridge', {
     return ipcRenderer.invoke('check-adb-devices');
   },
 
+  connectAdbDevice: (serial: string) => {
+    return ipcRenderer.invoke('connect-adb-device', serial);
+  },
+
+  disconnectAdbDevice: (serial: string) => {
+    return ipcRenderer.invoke('disconnect-adb-device', serial);
+  },
+
   getAppRoot: () => {
     return ipcRenderer.invoke('get-app-root');
   },
@@ -128,23 +301,9 @@ contextBridge.exposeInMainWorld('electronBridge', {
     return ipcRenderer.invoke('check-environment');
   },
 
-  /*
-   * 测试期接口（后端源码更新）已停用，逻辑保留便于回滚恢复。
-  checkUpdates: () => {
-    return ipcRenderer.invoke('check-updates');
-  },
-  */
-
   installDeps: () => {
     return ipcRenderer.invoke('install-deps');
   },
-
-  /*
-   * 测试期接口（后端源码更新）已停用，逻辑保留便于回滚恢复。
-  pullUpdates: () => {
-    return ipcRenderer.invoke('pull-updates');
-  },
-  */
 
   startBackend: () => {
     return ipcRenderer.invoke('start-backend');
@@ -158,7 +317,7 @@ contextBridge.exposeInMainWorld('electronBridge', {
     return ipcRenderer.invoke('install-portable-python');
   },
 
-  // ── Python 路径配置 ──
+  // Python 路径配置
   getPythonPath: () => {
     return ipcRenderer.sendSync('get-python-path-sync') as string | null;
   },
@@ -171,7 +330,7 @@ contextBridge.exposeInMainWorld('electronBridge', {
     return ipcRenderer.invoke('validate-python', pythonPath);
   },
 
-  // ── GUI 自动更新 ──
+  // GUI 自动更新
   checkGuiUpdates: () => {
     return ipcRenderer.invoke('check-gui-updates');
   },

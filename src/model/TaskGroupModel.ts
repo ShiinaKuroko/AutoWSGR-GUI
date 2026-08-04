@@ -1,8 +1,11 @@
+/** 持有任务组及条目状态，并负责 JSON 迁移和持久化。 */
 /**
  * TaskGroupModel —— 任务组数据模型。
  * 管理多个任务组的增删改查和持久化（通过 IPC 读写 task_groups.json）。
  */
 import { Logger } from '../utils/Logger';
+import { jsonCodec, rendererFileRepository } from '../adapter/index.js';
+import type { PlanPresetSource } from '../types/ipc.js';
 
 // ════════════════════════════════════════
 // 数据结构
@@ -10,8 +13,13 @@ import { Logger } from '../utils/Logger';
 
 /** 任务组中的单个条目 */
 export interface TaskGroupItem {
+  [key: string]: unknown;
   /** 文件路径 (战斗方案/预设 YAML) — plan/preset 类型必填 */
   path?: string;
+  /** 计划管理目录来源；与 managedFile 一起使用，避免持久化绝对路径 */
+  managedSource?: PlanPresetSource;
+  /** 计划管理目录中的实际文件名 */
+  managedFile?: string;
   /** 模板 ID — template 类型必填 */
   templateId?: string;
   /** 条目类型: plan=战斗方案YAML, preset=任务预设YAML, template=模板库引用 */
@@ -32,12 +40,11 @@ export interface TaskGroupItem {
   chapter?: number;
   /** 编队预设索引（plan 类型条目指定默认使用的编队预设） */
   fleetPresetIndex?: number;
-  /** 是否因“第一分队不支持自动编队”而自动切换到第二分队 */
-  autoFleetFallback?: boolean;
 }
 
 /** 一个任务组 */
 export interface TaskGroup {
+  [key: string]: unknown;
   /** 唯一名称 */
   name: string;
   /** 有序的任务条目 */
@@ -46,6 +53,8 @@ export interface TaskGroup {
 
 /** 持久化格式 */
 interface TaskGroupsData {
+  [key: string]: unknown;
+  version: number;
   /** 当前选中的组名 */
   activeGroup: string;
   /** 所有组 */
@@ -57,9 +66,20 @@ interface TaskGroupsData {
 // ════════════════════════════════════════
 
 const STORAGE_FILE = 'task_groups.json';
+const TASK_GROUPS_VERSION = 3;
+const LEGACY_SYSTEM_PLAN_FILES: Readonly<Record<string, string>> = {
+  '活动20260730-E1炸鱼.yaml': 'bettle-E1炸鱼.yaml',
+  '活动20260730-E5夜战.yaml': 'bettle-E5夜战.yaml',
+  '活动20260730-H1炸鱼.yaml': 'bettle-H1炸鱼.yaml',
+  '活动20260730-H5夜战.yaml': 'bettle-H5夜战.yaml',
+  'E1炸鱼.yaml': 'bettle-E1炸鱼.yaml',
+  'E5夜战.yaml': 'bettle-E5夜战.yaml',
+  'H1炸鱼.yaml': 'bettle-H1炸鱼.yaml',
+  'H5夜战.yaml': 'bettle-H5夜战.yaml',
+};
 
 export class TaskGroupModel {
-  private data: TaskGroupsData = { activeGroup: '', groups: [] };
+  private data: TaskGroupsData = { version: TASK_GROUPS_VERSION, activeGroup: '', groups: [] };
 
   get groups(): ReadonlyArray<TaskGroup> {
     return this.data.groups;
@@ -159,28 +179,100 @@ export class TaskGroupModel {
   /** 从文件加载 */
   async load(): Promise<void> {
     try {
-      const bridge = (window as any).electronBridge;
-      if (!bridge?.readFile) return;
-      const content = await bridge.readFile(STORAGE_FILE);
-      const parsed = JSON.parse(content) as TaskGroupsData;
+      const content = await rendererFileRepository.readFile(STORAGE_FILE);
+      const parsed = jsonCodec.parse<Partial<TaskGroupsData> & { groups?: unknown }>(content);
       if (parsed && Array.isArray(parsed.groups)) {
-        this.data = parsed;
-        Logger.debug(`任务组已加载: ${parsed.groups.length} 个组`);
+        const needsMigration = parsed.version !== TASK_GROUPS_VERSION;
+        this.data = this.migrate({ ...parsed, groups: parsed.groups });
+        if (needsMigration) await this.save();
+        Logger.debug(`任务组已加载: ${this.data.groups.length} 个组 (v${this.data.version})`);
       }
     } catch {
       // 文件不存在是正常的
     }
   }
 
+  private migrate(raw: Partial<TaskGroupsData> & { groups: unknown[] }): TaskGroupsData {
+    const groups = raw.groups.flatMap((group): TaskGroup[] => {
+      if (!group || typeof group !== 'object' || Array.isArray(group)) return [];
+      const source = group as unknown as Record<string, unknown>;
+      const name = typeof source.name === 'string' && source.name.trim()
+        ? source.name
+        : '默认';
+      const items = Array.isArray(source.items)
+        ? source.items.flatMap(item => this.migrateItem(item))
+        : [];
+      return [{ ...source, name, items } as TaskGroup];
+    });
+    const activeGroup = typeof raw.activeGroup === 'string'
+      && groups.some(group => group.name === raw.activeGroup)
+      ? raw.activeGroup
+      : groups[0]?.name ?? '';
+    return {
+      ...raw,
+      version: TASK_GROUPS_VERSION,
+      activeGroup,
+      groups,
+    };
+  }
+
+  private migrateItem(raw: unknown): TaskGroupItem[] {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+    const source = { ...(raw as Record<string, unknown>) };
+    const kind = source.kind === 'preset' || source.kind === 'template'
+      ? source.kind
+      : 'plan';
+    const pathValue = typeof source.path === 'string' && source.path.trim()
+      ? source.path
+      : undefined;
+    const managedFile = typeof source.managedFile === 'string' && source.managedFile.trim()
+      ? source.managedFile
+      : undefined;
+    const managedSource = source.managedSource === 'system' || source.managedSource === 'user'
+      ? source.managedSource
+      : this.inferManagedSource(pathValue);
+    const inferredFile = managedFile ?? this.inferManagedFile(pathValue);
+    const migratedFile = managedSource === 'system' && inferredFile
+      ? LEGACY_SYSTEM_PLAN_FILES[inferredFile] ?? inferredFile
+      : inferredFile;
+    const label = typeof source.label === 'string' && source.label.trim()
+      ? source.label
+      : (migratedFile ?? pathValue ?? '任务').split(/[\\/]/).pop()?.replace(/\.ya?ml$/i, '') ?? '任务';
+    return [{
+      ...source,
+      kind,
+      path: pathValue,
+      managedSource,
+      managedFile: migratedFile,
+      times: typeof source.times === 'number' && source.times > 0 ? source.times : 1,
+      label,
+    } as TaskGroupItem];
+  }
+
+  private inferManagedSource(value: string | undefined): PlanPresetSource | undefined {
+    if (!value) return undefined;
+    if (/system_battle_plans|builtin_plans|system[\\/]/i.test(value)) return 'system';
+    if (/user_battle_plans|plans[\\/]|user[\\/]/i.test(value)) return 'user';
+    return undefined;
+  }
+
+  private inferManagedFile(value: string | undefined): string | undefined {
+    if (!value || !/\.ya?ml$/i.test(value)) return undefined;
+    const source = this.inferManagedSource(value);
+    if (!source) return undefined;
+    const file = value.split(/[\\/]/).pop();
+    return file && file.trim() ? file : undefined;
+  }
+
   /** 保存到文件 */
-  async save(): Promise<void> {
+  async save(): Promise<boolean> {
     try {
-      const bridge = (window as any).electronBridge;
-      if (!bridge?.saveFile) return;
-      await bridge.saveFile(STORAGE_FILE, JSON.stringify(this.data, null, 2));
+      await rendererFileRepository.saveFile(STORAGE_FILE, jsonCodec.stringify(this.data));
       Logger.debug(`任务组已保存: ${this.data.groups.length} 个组`);
+      return true;
     } catch (e) {
       Logger.error(`保存任务组失败: ${e instanceof Error ? e.message : String(e)}`);
+      return false;
     }
   }
 

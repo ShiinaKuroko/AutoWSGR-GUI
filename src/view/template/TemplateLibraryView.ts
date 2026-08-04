@@ -1,11 +1,12 @@
+/** 渲染模板库卡片并发出使用、编辑和删除意图。 */
 /**
  * TemplateLibraryView —— 模板库纯渲染组件。
  * 接收 TemplateLibraryItemVO[] 并渲染模板卡片列表；不包含业务逻辑。
  */
-import type { TemplateLibraryItemVO } from '../../types/view';
+import type { TemplateLibraryItemVO } from '../../types/view.js';
 
 export class TemplateLibraryView {
-  private container: HTMLElement;
+  private container: HTMLElement | null;
 
   onUse?: (id: string) => void;
   onEdit?: (id: string) => void;
@@ -13,10 +14,10 @@ export class TemplateLibraryView {
   onRename?: (id: string) => void;
 
   constructor() {
-    this.container = document.getElementById('template-library-items')!;
+    this.container = document.getElementById('template-library-items');
 
     // 委托点击
-    this.container.addEventListener('click', (e) => {
+    this.container?.addEventListener('click', (e) => {
       const btn = (e.target as HTMLElement).closest('[data-tpl-action]') as HTMLElement | null;
       if (!btn) return;
       const id = btn.dataset.tplId!;
@@ -29,6 +30,7 @@ export class TemplateLibraryView {
   }
 
   render(items: TemplateLibraryItemVO[]): void {
+    if (!this.container) return;
     if (items.length === 0) {
       this.container.innerHTML = '<p class="tpl-empty">暂无模板，点击「创建模板」添加</p>';
       return;

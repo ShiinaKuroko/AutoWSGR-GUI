@@ -1,3 +1,4 @@
+/** 提供统一日志级别、频道和控制台输出格式。 */
 /**
  * Logger —— 集中式前端日志工具。
  *
@@ -41,13 +42,12 @@ function dateTag(): string {
 class LoggerImpl {
   private opts: LoggerOptions | null = null;
   private buffer: string[] = [];
-  private flushTimer: ReturnType<typeof setInterval> | null = null;
 
   /** 初始化 Logger（应在 AppController.initAsync 中调用一次） */
   init(opts: LoggerOptions): void {
     this.opts = opts;
     // 定时 flush，避免频繁 IPC
-    this.flushTimer = setInterval(() => this.flush(), 2000);
+    setInterval(() => this.flush(), 2000);
   }
 
   info(message: string, channel = 'GUI'): void {

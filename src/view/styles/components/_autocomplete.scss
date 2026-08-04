@@ -28,12 +28,12 @@
 .ship-ac-item:hover,
 .ship-ac-item.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-foreground);
 }
 
 .ship-ac-item.active .ship-ac-meta,
 .ship-ac-item:hover .ship-ac-meta {
-  color: rgba(255, 255, 255, 0.8);
+  color: color-mix(in srgb, var(--accent-foreground) 78%, transparent);
 }
 
 .ship-ac-name {
@@ -50,7 +50,7 @@
 
 .ship-ac-item:hover .ship-ac-name b,
 .ship-ac-item.active .ship-ac-name b {
-  color: #fff;
+  color: var(--accent-foreground);
 }
 
 .ship-ac-meta {

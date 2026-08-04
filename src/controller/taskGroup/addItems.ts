@@ -1,10 +1,13 @@
+/** 将方案、模板和预设添加为任务组条目。 */
 /**
  * addItems —— 向任务组添加条目的独立函数。
  */
 import type { TaskGroupModel } from '../../model/TaskGroupModel';
 import type { PlanModel } from '../../model/PlanModel';
-import type { TaskPreset } from '../../types/model';
+import type { TaskPreset } from '../../types/model.js';
+import type { ManagedBattlePlan } from '../../types/ipc.js';
 import { Logger } from '../../utils/Logger';
+import { yamlCodec } from '../../adapter';
 
 function buildInlinePlanPath(plan: PlanModel, plansDir: string): string {
   const safeMap = plan.mapName.replace(/[^a-zA-Z0-9_-]+/g, '_');
@@ -21,6 +24,27 @@ function ensureActiveGroup(taskGroupModel: TaskGroupModel) {
     group = taskGroupModel.getActiveGroup()!;
   }
   return group;
+}
+
+/** 将计划管理中的系统或用户方案添加到任务列表 */
+export function addManagedPlanToGroup(
+  taskGroupModel: TaskGroupModel,
+  plan: ManagedBattlePlan,
+  fleetPresetIndex: number | undefined,
+  render: () => void,
+): void {
+  const group = ensureActiveGroup(taskGroupModel);
+  taskGroupModel.addItem(group.name, {
+    managedSource: plan.source,
+    managedFile: plan.file,
+    kind: plan.kind === 'preset' ? 'preset' : 'plan',
+    times: Math.max(1, plan.times || 1),
+    label: plan.name,
+    fleetPresetIndex,
+  });
+  void taskGroupModel.save();
+  render();
+  Logger.info(`已将「${plan.name}」加入任务列表「${group.name}」`);
 }
 
 /** 将当前已加载的 Plan 添加到任务组 */
@@ -69,17 +93,23 @@ export async function addFileToGroup(
   ], plansDir || undefined);
   if (!result) return;
 
-  const parsed = (await import('js-yaml')).load(result.content) as Record<string, unknown>;
+  const parsed = yamlCodec.parse<Record<string, unknown>>(result.content);
   let itemKind: 'plan' | 'preset' = 'plan';
-  if (parsed && typeof parsed === 'object' && 'task_type' in parsed && !('chapter' in parsed)) {
+  if (
+    parsed
+    && typeof parsed === 'object'
+    && 'task_type' in parsed
+    && !('map' in parsed)
+  ) {
     itemKind = 'preset';
   }
 
   const label = result.path.split(/[\\/]/).pop()?.replace(/\.ya?ml$/i, '') ?? result.path;
+  const parsedTimes = Number(parsed?.times);
   taskGroupModel.addItem(group.name, {
     path: result.path,
     kind: itemKind,
-    times: (parsed as any)?.times ?? 1,
+    times: Number.isFinite(parsedTimes) && parsedTimes > 0 ? parsedTimes : 1,
     label,
   });
   taskGroupModel.save();
