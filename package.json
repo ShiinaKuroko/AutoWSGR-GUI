@@ -1,0 +1,119 @@
+{
+  "name": "wsgrgui",
+  "version": "1.4.2",
+  "description": "AutoWSGR 图形界面 — MVP",
+  "main": "dist/electron/main.js",
+  "scripts": {
+    "build:css": "sass src/view/styles/main.scss src/view/styles/styles.css --no-source-map --style=expanded",
+    "clean": "node -e \"fs.rmSync('dist/src',{recursive:true,force:true});fs.rmSync('dist/electron',{recursive:true,force:true});console.log('dist cleaned')\" ",
+    "build": "npm run clean && npm run build:css && tsc && node scripts/bundle.js",
+    "start": "chcp 65001 >nul && npm run build && electron .",
+    "dev": "chcp 65001 >nul && npm run clean && npm run build:css && tsc && node scripts/bundle.js && electron .",
+    "prepare-python": "node scripts/prepare-python.js",
+    "prepare-adb": "node scripts/prepare-adb.js",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run prepare-python && npm run prepare-adb && npm run build && electron-builder"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^26.8.1",
+    "esbuild": "^0.27.3",
+    "sass": "^1.98.0",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.3",
+    "js-yaml": "^4.1.0"
+  },
+  "build": {
+    "appId": "com.autowsgr.gui",
+    "productName": "AutoWSGR-GUI",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "src/view/**/*",
+      "scripts/**/*",
+      "!node_modules/.cache"
+    ],
+    "extraResources": [
+      {
+        "from": "resource",
+        "to": "resource",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "plans",
+        "to": "plans",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "setup.bat",
+        "to": "setup.bat"
+      },
+      {
+        "from": "debug_deps.bat",
+        "to": "debug_deps.bat"
+      }
+    ],
+    "extraFiles": [
+      {
+        "from": "python",
+        "to": "python",
+        "filter": [
+          "**/*",
+          "!site-packages",
+          "!site-packages/**"
+        ]
+      },
+      {
+        "from": "redist",
+        "to": "redist",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "adb",
+        "to": "adb",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "icon": "resource/images/logo.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "runAfterFinish": true,
+      "include": "build/installer.nsh",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "toolsets": {
+      "winCodeSign": "1.1.0"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "yltx",
+      "repo": "AutoWSGR-GUI"
+    }
+  }
+}
