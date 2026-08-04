@@ -67,7 +67,8 @@ export async function loadGroupToQueue(
             if (resolved.length > 0) {
               req.plan = req.plan ?? {};
               req.plan.fleet = resolved.map(toBackendName);
-              req.plan.fleet_rules = resolveFleetPresetRules(preset.ships);
+              const rules = resolveFleetPresetRules(preset.ships);
+              if (rules.length > 0) req.plan.fleet_rules = rules;
             }
           }
         }
@@ -201,7 +202,8 @@ export async function loadSingleItemToQueue(
           if (resolved.length > 0) {
             req.plan = req.plan ?? {};
             req.plan.fleet = resolved.map(toBackendName);
-            req.plan.fleet_rules = resolveFleetPresetRules(preset.ships);
+            const rules = resolveFleetPresetRules(preset.ships);
+            if (rules.length > 0) req.plan.fleet_rules = rules;
           }
         }
       }

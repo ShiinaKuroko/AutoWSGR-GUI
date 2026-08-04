@@ -198,6 +198,16 @@ export class PlanModel {
     if (args.detour != null) out.detour = args.detour;
     if (args.SL_when_detour_fails != null) out.SL_when_detour_fails = args.SL_when_detour_fails;
     if (args.enemy_rules && args.enemy_rules.length > 0) out.enemy_rules = args.enemy_rules;
+    if (args.enemy_formation_rules && args.enemy_formation_rules.length > 0) {
+      out.enemy_formation_rules = args.enemy_formation_rules;
+    }
+    if (args.SL_when_spot_enemy_fails != null) {
+      out.SL_when_spot_enemy_fails = args.SL_when_spot_enemy_fails;
+    }
+    if (args.SL_when_enter_fight != null) out.SL_when_enter_fight = args.SL_when_enter_fight;
+    if (args.formation_when_spot_enemy_fails != null) {
+      out.formation_when_spot_enemy_fails = args.formation_when_spot_enemy_fails;
+    }
     if (args.proceed_stop) out.proceed_stop = args.proceed_stop;
     return out;
   }
@@ -248,13 +258,14 @@ export class PlanModel {
     return String(raw);
   }
 
-  private static normalizeRuleAction(actionRaw: unknown): string | number {
+  private static normalizeRuleAction(actionRaw: unknown): EnemyRule[1] | null {
     if (typeof actionRaw === 'number' && Number.isFinite(actionRaw)) {
-      return Math.trunc(actionRaw);
+      const value = Math.trunc(actionRaw);
+      return value >= 1 && value <= 5 ? (value as EnemyRule[1]) : null;
     }
 
     const raw = String(actionRaw ?? '').trim();
-    if (!raw) return raw;
+    if (!raw) return null;
 
     const aliases: Record<string, string> = {
       detour: 'detour',
@@ -266,9 +277,12 @@ export class PlanModel {
     const lower = raw.toLowerCase();
     const normalized = aliases[lower] ?? aliases[raw] ?? raw;
     if (/^\d+$/.test(normalized)) {
-      return Number(normalized);
+      const value = Number(normalized);
+      return value >= 1 && value <= 5 ? (value as EnemyRule[1]) : null;
     }
-    return normalized;
+    return normalized === 'retreat' || normalized === 'detour'
+      ? normalized
+      : null;
   }
 
   private static normalizeEnemyRules(rules: unknown): EnemyRule[] | undefined {
@@ -280,6 +294,7 @@ export class PlanModel {
       const expr = String(item[0] ?? '').trim();
       if (!expr) continue;
       const action = PlanModel.normalizeRuleAction(item[1]);
+      if (action === null) continue;
       normalized.push([expr, action]);
     }
 
@@ -290,6 +305,7 @@ export class PlanModel {
     if (!args) return undefined;
     const normalized: NodeArgs = { ...args };
     normalized.enemy_rules = PlanModel.normalizeEnemyRules(args.enemy_rules);
+    normalized.enemy_formation_rules = PlanModel.normalizeEnemyRules(args.enemy_formation_rules);
     return normalized;
   }
 

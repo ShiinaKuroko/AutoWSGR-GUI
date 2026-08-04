@@ -266,11 +266,15 @@ export class TaskQueue {
       const fleet = resolved.map(toBackendName);
       const fleetRules = resolveFleetPresetRules(preset.ships);
       if (req.plan) {
-        req.plan.fleet = fleet;
-        req.plan.fleet_rules = fleetRules;
+        if (fleet.length > 0) req.plan.fleet = fleet;
+        if (fleetRules.length > 0) req.plan.fleet_rules = fleetRules;
         req.plan.fleet_id = task.fleetId;
       } else {
-        (req as any).plan = { fleet, fleet_rules: fleetRules, fleet_id: task.fleetId };
+        (req as any).plan = {
+          ...(fleet.length > 0 ? { fleet } : {}),
+          ...(fleetRules.length > 0 ? { fleet_rules: fleetRules } : {}),
+          fleet_id: task.fleetId,
+        };
       }
       if (req.type === 'event_fight') req.fleet_id = task.fleetId;
     }

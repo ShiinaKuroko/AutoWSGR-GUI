@@ -253,7 +253,17 @@ export class PlanController {
     if (args.proceed_stop != null) mapped.proceed_stop = args.proceed_stop;
     if (args.SL_when_detour_fails != null) mapped.SL_when_detour_fails = args.SL_when_detour_fails;
     if (args.enemy_rules && args.enemy_rules.length > 0) {
-      mapped.enemy_rules = args.enemy_rules.map(([cond, action]) => [String(cond), String(action)]);
+      mapped.enemy_rules = args.enemy_rules.map(([cond, action]) => [String(cond), action]);
+    }
+    if (args.enemy_formation_rules && args.enemy_formation_rules.length > 0) {
+      mapped.enemy_formation_rules = args.enemy_formation_rules.map(([cond, action]) => [String(cond), action]);
+    }
+    if (args.SL_when_spot_enemy_fails != null) {
+      mapped.SL_when_spot_enemy_fails = args.SL_when_spot_enemy_fails;
+    }
+    if (args.SL_when_enter_fight != null) mapped.SL_when_enter_fight = args.SL_when_enter_fight;
+    if (args.formation_when_spot_enemy_fails != null) {
+      mapped.formation_when_spot_enemy_fails = args.formation_when_spot_enemy_fails;
     }
     return Object.keys(mapped).length > 0 ? mapped : undefined;
   }
@@ -357,7 +367,8 @@ export class PlanController {
         if (!req.plan) req.plan = {};
         req.plan.fleet = resolved.map(toBackendName);
         req.plan.fleet_id = effectiveFleetId;
-        req.plan.fleet_rules = resolveFleetPresetRules(firstPreset.ships);
+        const fleetRules = resolveFleetPresetRules(firstPreset.ships);
+        if (fleetRules.length > 0) req.plan.fleet_rules = fleetRules;
       }
     }
 
