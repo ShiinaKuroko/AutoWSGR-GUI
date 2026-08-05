@@ -8,15 +8,17 @@
 
 | # | 文档 | 说明 |
 |---|------|------|
-| 0 | [总架构文档](00-overview.md) | 项目简介、分层架构、目录结构、启动流程、关键模式、Types 层组织 |
-| 1 | [Controller 层](01-controller-layer.md) | ControllerHost/DI 模式、6 个子目录结构、StartupController 启动编排 |
+| 0 | [总架构文档](00-overview.md) | 项目简介、主进程组合根/IPC/Service 分层、渲染进程架构、启动流程 |
+| 1 | [Controller 层](01-controller-layer.md) | 最小 Host 接口、6 个子目录结构、StartupController 启动编排 |
 | 2 | [任务调度系统](02-task-scheduling.md) | Scheduler、TaskQueue、CronScheduler、远征轮询、停止条件、修理轮换 |
 | 3 | [配置系统](03-configuration.md) | ConfigModel、ConfigController、ConfigView、usersettings.yaml、gui_settings.json |
 | 4 | [出击计划系统](04-battle-plan.md) | PlanModel、PlanController(拆分)、PlanPreviewView(Facade)、MapDataLoader |
 | 5 | [模板与任务组](05-template-and-taskgroup.md) | TemplateController(拆分)、TaskGroupController(拆分)、模板视图、队列加载 |
 | 6 | [后端通信](06-backend-communication.md) | IPC Bridge、ApiClient、REST API、WebSocket 事件 |
-| 7 | [环境管理](07-environment-management.md) | pythonEnv/ 子模块(7 文件)、模拟器检测、后端进程生命周期 |
+| 7 | [环境管理](07-environment-management.md) | pythonEnv/ 子模块(12 文件)、Python/CUDA/ADB 服务、后端进程生命周期 |
 | 8 | [开发环境搭建](08-dev-setup.md) | 依赖安装、开发/构建/打包命令、SCSS 架构、调试技巧 |
+| 9 | [`src` TypeScript 模块目录](09-src-typescript-catalog.md) | 当前 `src` 模块及其职责索引；文件数量以该文档为准 |
+| 10 | [当前运行时边界 ADR](10-runtime-boundaries-adr.md) | 存储、IPC 权限、迁移、调度身份和更新安装决策 |
 
 ## 阅读建议
 

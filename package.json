@@ -1,20 +1,43 @@
 {
   "name": "wsgrgui",
-  "version": "1.4.2",
-  "description": "AutoWSGR 图形界面 — MVP",
+  "version": "2.0.0-alpha",
+  "description": "AutoWSGR YAML 管理与自动化桌面界面",
   "main": "dist/electron/main.js",
   "scripts": {
     "build:css": "sass src/view/styles/main.scss src/view/styles/styles.css --no-source-map --style=expanded",
-    "clean": "node -e \"fs.rmSync('dist/src',{recursive:true,force:true});fs.rmSync('dist/electron',{recursive:true,force:true});console.log('dist cleaned')\" ",
+    "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true});console.log('dist cleaned')\"",
+    "clean:release": "node -e \"fs.rmSync('release',{recursive:true,force:true});console.log('release cleaned')\"",
     "build": "npm run clean && npm run build:css && tsc && node scripts/bundle.js",
+    "sync:fleet-types": "node scripts/sync-fleet-ship-types.js",
+    "check:fleet-types": "node scripts/sync-fleet-ship-types.js --check",
+    "sync:maps": "node scripts/sync-map-resources.js",
+    "check:maps": "node scripts/sync-map-resources.js --check",
+    "test:legacy-config-upgrade": "npm run build && node scripts/test-legacy-config-upgrade.js && node scripts/test-task-group-migration.js",
+    "test:legacy-plan": "npm run build && node scripts/test-legacy-plan-migration.js",
+    "test:task-group-migration": "npm run build && node scripts/test-task-group-migration.js",
+    "test:api-contract": "npm run check:fleet-types && npm run build && node scripts/test-api-contract.js",
+    "test:fleet-domain": "npm run build && node scripts/test-fleet-domain.mjs",
+    "test:plan-management-delete": "node scripts/test-plan-management-delete-scope.mjs",
+    "test:scheduler-domain": "npm run build && node scripts/test-scheduler-domain.mjs",
+    "test:daily-sortie-stats": "node scripts/test-daily-sortie-stats.mjs",
+    "test:ship-library-updater": "node scripts/test-ship-library-updater.js",
+    "test:ocr-log-analyzer": "node scripts/test-ocr-log-analyzer.js",
+    "test:event-resources": "node scripts/test-event-20260730-resources.js && node scripts/test-event-map-loader.js",
+    "test:settings": "npm run build && electron scripts/test-settings-persistence.js",
+    "test:controller-boundaries": "node scripts/test-controller-boundaries.js",
+    "test:main-services": "npm run build && node scripts/test-main-services.js",
+    "test:main-ipc": "npm run build && node scripts/test-main-ipc.js",
+    "test:python-environment": "npm run build && node scripts/test-python-environment.js",
+    "test:release-package": "node scripts/test-release-package.js",
     "start": "chcp 65001 >nul && npm run build && electron .",
     "dev": "chcp 65001 >nul && npm run clean && npm run build:css && tsc && node scripts/bundle.js && electron .",
     "prepare-python": "node scripts/prepare-python.js",
     "prepare-adb": "node scripts/prepare-adb.js",
-    "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run prepare-python && npm run prepare-adb && npm run build && electron-builder"
+    "pack": "npm run clean:release && npm run build && electron-builder --dir --publish never",
+    "dist": "npm run clean:release && npm run prepare-python && npm run prepare-adb && npm run build && electron-builder --publish never"
   },
   "devDependencies": {
+    "@electron/asar": "^3.4.1",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
     "electron": "^33.0.0",
@@ -25,7 +48,8 @@
   },
   "dependencies": {
     "electron-updater": "^6.8.3",
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.1.0",
+    "jszip": "^3.10.1"
   },
   "build": {
     "appId": "com.autowsgr.gui",
@@ -34,9 +58,11 @@
       "output": "release"
     },
     "files": [
-      "dist/**/*",
-      "src/view/**/*",
-      "scripts/**/*",
+      "dist/electron/**/*",
+      "dist/src/shared/**/*",
+      "dist/renderer.bundle.js",
+      "src/view/index.html",
+      "src/view/styles/styles.css",
       "!node_modules/.cache"
     ],
     "extraResources": [
@@ -44,14 +70,9 @@
         "from": "resource",
         "to": "resource",
         "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "plans",
-        "to": "plans",
-        "filter": [
-          "**/*"
+          "**/*",
+          "!user_battle_plans/**/*",
+          "!user_team_plans/**/*"
         ]
       },
       {
@@ -61,6 +82,14 @@
       {
         "from": "debug_deps.bat",
         "to": "debug_deps.bat"
+      },
+      {
+        "from": "tools/ship_library",
+        "to": "tools/ship_library",
+        "filter": [
+          "update_ship_library.py",
+          "native_fleet_types.py"
+        ]
       }
     ],
     "extraFiles": [
@@ -113,7 +142,8 @@
     "publish": {
       "provider": "github",
       "owner": "yltx",
-      "repo": "AutoWSGR-GUI"
+      "repo": "AutoWSGR-GUI",
+      "channel": "alpha"
     }
   }
 }

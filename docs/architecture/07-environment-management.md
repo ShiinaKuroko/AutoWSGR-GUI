@@ -1,6 +1,6 @@
 # 环境管理
 
-> 涉及文件：`electron/pythonEnv/`（context · finder · envCheck · installer · updater · utils）· `electron/emulatorDetect.ts` · `electron/backend.ts` · `electron/main.ts`
+> 涉及文件：`electron/pythonEnv/` · `electron/services/PythonEnvironmentService.ts` · `electron/services/CudaEnvironmentService.ts` · `electron/services/AdbService.ts` · `electron/services/BackendService.ts` · `electron/services/BackendShutdownService.ts` · `electron/ipc/EnvironmentIpc.ts` · `electron/ipc/DeviceIpc.ts` · `electron/ipc/BackendIpc.ts` · `electron/emulatorDetect.ts`
 
 ## 概述
 
@@ -18,13 +18,23 @@ Python 环境管理位于 `electron/pythonEnv/` 子目录，采用依赖注入�
 
 | 文件 | 职责 |
 |------|------|
+| `backendRequirement.ts` | 固定 managed 模式使用的 AutoWSGR 来源，安装和自动更新共用同一契约 |
+| `backendContractProbe.ts` | 在隔离检查进程中验证外部后端是否支持 GUI 所需的正式运行时契约 |
 | `context.ts` | 共享上下文与缓存状态（`PythonEnvContext` 接口、缓存变量） |
+| `dependencies.ts` | 集中声明 GUI 运行时和舰船资料库工具所需的 Python 依赖 |
 | `finder.ts` | Python 可执行文件发现（用户配置 → 便携版 → 系统全局） |
+| `environment.ts` | 统一描述解释器、源码、安装目标和运行路径 |
+| `cuda.ts` | 校验 CUDA 路径并在同一个 Python 环境上叠加 CUDA 变量 |
 | `envCheck.ts` | 环境验证主流程（VC++ Redistributable 检查、标记文件管理、依赖包验证） |
 | `installer.ts` | Python 安装与依赖管理（pip 设置、autowsgr 安装） |
-| `updater.ts` | autowsgr 自动更新逻辑（PyPI 版本检查 + 升级） |
+| `updater.ts` | managed 模式后端契约检查与固定提交安装 |
 | `utils.ts` | 工具函数与共享接口（路径工具、环境变量、pip 命令、.pth 文件处理） |
 | `index.ts` | 聚合导出 |
+
+`PythonEnvironmentService` 是 IPC 使用的无状态用例入口，负责保持 Python
+路径校验结果、环境检查和安装返回结构。它不复制 `pythonEnv/context.ts` 的缓存；
+Python 发现状态仍只有一个所有者。`CudaEnvironmentService` 负责 Toolkit、
+Runtime DLL 和当前 Python/PyTorch CUDA 能力检测。
 
 ### 发现优先级
 
@@ -46,6 +56,20 @@ flowchart TD
 **Shim 解析**：pyenv 等工具使用 `.bat` shim 文件，Node.js `spawn()` 无法直接执行。通过 Python 自身的 `sys.executable` 获取真实 `.exe` 路径。
 
 **缓存**：发现结果缓存在 `context.ts` 的 `PythonEnvContext` 中，用户切换路径时调用 `clearPythonCache()` 清除。
+
+### 统一环境描述
+
+`environment.ts` 生成的同一个环境描述同时用于依赖安装、依赖检查和
+`BackendService` 启动。安装规则如下：
+
+| 后端模式 | Python 来源 | 依赖安装位置 | 启动路径 |
+|---------|-------------|-------------|---------|
+| managed | 任意兼容解释器 | `{appRoot}/python/site-packages` | GUI site-packages |
+| external | GUI 内置 Python | `{appRoot}/python/site-packages` | GUI site-packages + 本地仓库 |
+| external | 用户选择的外部 Python | 该解释器自身环境 | 解释器自身环境 + 本地仓库 |
+
+external 仓库无效时，环境检查、依赖安装和后端启动都会明确失败，不会回退到
+managed 后端，也不会把 GUI 的依赖目录混入外部解释器。
 
 ### 便携版 Python
 
@@ -70,19 +94,19 @@ flowchart TD
 flowchart TD
   A["checkEnvironment()"] --> B{".env_ready 标记存在?"}
   B -->|是| C["读取缓存: pythonCmd, version, autowsgrVersion"]
-  C --> D{"Python 可执行文件仍存在?<br/>autowsgr 版本 ≥ 2.1.0?"}
-  D -->|是| E["自动更新 autowsgr<br/>(后台, 非阻塞)"]
+  C --> D{"Python、环境身份和<br/>GUI 运行契约仍有效?"}
+  D -->|是| E["自动模式检查固定提交契约<br/>不兼容时安装兼容版本"]
   E --> F["返回 {allReady: true}<br/>⚡ 快速路径"]
   D -->|否| G["删除标记, 走完整路径"]
   
   B -->|否| H["findPython()"]
   H --> I{"找到 Python?"}
   I -->|否| J["返回 {allReady: false, pythonCmd: null}"]
-  I -->|是| K["ensurePthFile()"]
-  K --> L["单次 Python 调用:<br/>检查 uvicorn/fastapi/autowsgr"]
+  I -->|是| K["resolvePythonEnvironment()"]
+  K --> L["按环境描述检查<br/>uvicorn/fastapi/autowsgr"]
   L --> M{"所有依赖就绪?"}
   M -->|否| N["返回 {allReady: false, missingPackages}"]
-  M -->|是| O["自动更新 autowsgr"]
+  M -->|是| O["managed 自动模式校验<br/>固定提交运行契约"]
   O --> P["写入 .env_ready 标记"]
   P --> F
 ```
@@ -95,39 +119,54 @@ flowchart TD
 {
   "pythonCmd": "C:\\path\\to\\python.exe",
   "pythonVersion": "Python 3.12.8",
-  "autowsgrVersion": "2.1.9"
+  "autowsgrVersion": "2.1.9",
+  "environmentIdentity": "{\"startupMode\":\"managed\",...}"
 }
 ```
 
 - **路径**：`{appRoot}/.env_ready`
-- **失效时机**：安装依赖后删除、Python 路径配置变更后删除
-- **验证条件**：Python 文件存在 + autowsgr 版本 ≥ 2.1.0
+- **失效时机**：安装依赖后删除；Python、模式、仓库或安装目标变化后失效
+- **验证条件**：Python 文件存在、环境身份一致、依赖可导入，且 AutoWSGR
+  提供 GUI 所需运行契约和活动资源
 
 ### 依赖安装
 
-`installer.ts` 中的 `installDependencies()`:
+`installer.ts` 中的 `installDependencies()`：
 1. 删除 `.env_ready` 标记
 2. 确保 pip 可用 (`ensurePip()`)
-3. 安装到本地目录：
+3. 按统一环境描述安装：
    ```
-   pip install --target {appRoot}/python/site-packages --upgrade setuptools autowsgr
+   managed/内置 Python:
+   pip install --target {appRoot}/python/site-packages ...
+
+   external + 外部 Python:
+   <external-python> -m pip install ...
    ```
 
-**所有包安装到 `{appRoot}/python/site-packages/`**，不影响全局 Python 环境。
+外部模式选中的 Python、pip 安装目标、依赖检查解释器和后端启动解释器必须一致。
 
-### 自动更新
+### managed 后端兼容更新
 
-`updater.ts` 中的 `checkForUpdates()` 在每次启动环境检查通过后自动执行：
-1. 单次 Python 调用：获取本地 autowsgr 版本 + PyPI 最新版本
-2. 若有新版：`pip install --target ... --upgrade autowsgr`
-3. 清理旧 `.dist-info` 目录避免版本检测错误
-4. 验证升级：重新检查 autowsgr 版本 + 关键依赖
+`updater.ts` 中的 `autoUpdateAutowsgr()` 不追随 PyPI 最新版本，而是验证当前
+AutoWSGR 是否具备 GUI 所需的运行时接口和活动资源：
+
+1. 单次隔离检查读取本地版本、活动资源和正式运行契约。
+2. 已兼容时保留当前后端，不做无意义重装。
+3. 不兼容时安装 `backendRequirement.ts` 固定的 AutoWSGR 提交。
+4. 安装后重新验证运行契约、活动资源、FastAPI 和 Uvicorn。
+
+该流程只在 managed + 自动更新模式执行。external 模式始终使用用户选择的
+本地仓库，手动更新模式也不会在启动时改动后端。固定提交提高了 GUI 与后端的
+可复现性，但首次安装或修复不兼容环境时仍需要联网。
 
 ---
 
 ## 模拟器检测
 
 `detectEmulator()` 通过 Windows 注册表自动识别已安装的模拟器：
+
+`DeviceIpc` 只保持通道和异常边界。ADB 可执行文件选择、设备列表解析以及
+connect/disconnect 的结果由 `AdbService` 统一处理。
 
 ### 支持的模拟器
 
@@ -171,7 +210,8 @@ flowchart TD
 
 ### 启动流程
 
-`startBackend()` (`electron/backend.ts`) 负责启动 Python 后端：
+`startBackend()` (`electron/services/BackendService.ts`) 负责启动 Python 后端。
+`BackendIpc` 只转换启动结果，后端子进程引用仍只存在于 `BackendService`。
 
 ```mermaid
 sequenceDiagram
@@ -223,51 +263,72 @@ sequenceDiagram
 
 ### 停止
 
-`stopBackend()` 直接 `kill()` 子进程。应用退出时 (`app.on('before-quit')`) 自动调用。
+`stopBackend()` 与更新安装共用 `BackendShutdownService`，关闭步骤固定为：
+
+1. `POST /api/system/stop`，给运行中的任务最多 35 秒执行正式清理。
+2. 若服务进程仍在，Windows 执行 `taskkill /PID <pid> /T` 终止完整进程树；
+   其他平台发送 `SIGTERM`。
+3. 等待进程 `close` 最多 5 秒，确认操作系统已释放进程资源和文件锁。
+4. 超时后 Windows 执行 `/T /F`，其他平台发送 `SIGKILL`，再等待 5 秒。
+5. 仍无法确认退出时抛出错误，不清空活动进程引用。
+
+后端停止接口失败只会进入进程树终止回退，不会假装关闭成功。应用退出时
+`before-quit` 会阻止立即退出并等待完整流程；失败时应用保持运行并显示错误。
+更新安装也必须等待同一流程，失败时取消 `quitAndInstall()`。
 
 ---
 
 ## 启动时序（完整视角）
 
+主进程先获取 Electron 单实例锁。只有持锁进程会迁移旧配置、创建窗口并进入下列
+环境流程；重复启动只会唤醒已有窗口，不会并发执行 pip。
+
 ```mermaid
 sequenceDiagram
+  participant Main as Electron 主进程
   participant App as AppController
   participant IPC as IPC Bridge
-  participant PyEnv as pythonEnv.ts
-  participant Back as backend.ts
+  participant PyEnv as pythonEnv/
+  participant Back as BackendService
   participant Py as Python 后端
 
-  App->>IPC: checkEnvironment()
-  IPC->>PyEnv: checkEnvironment()
-  
-  alt .env_ready 有效
-    PyEnv-->>App: {allReady: true}
-  else 环境缺失
-    PyEnv-->>App: {allReady: false}
-    App->>IPC: installPortablePython()
-    IPC->>PyEnv: 安装便携版 Python + pip
-    App->>IPC: installDeps()
-    IPC->>PyEnv: pip install autowsgr
-    App->>IPC: checkEnvironment() (重试)
-    PyEnv-->>App: {allReady: true}
-  end
+  Main->>Main: requestSingleInstanceLock()
+  alt 重复启动
+    Main->>Main: 退出次实例并聚焦已有窗口
+  else 主实例
+    Main->>Main: 迁移旧配置并创建窗口
+    App->>IPC: checkEnvironment()
+    IPC->>PyEnv: checkEnvironment()
 
-  App->>IPC: startBackend()
-  IPC->>Back: startBackend()
-  Back->>Back: ensurePthFile() + findPython()
-  Back->>Back: ADB connect
-  Back->>Py: spawn 子进程
-  
-  App->>App: waitForBackendAndConnect()
-  loop 轮询直到就绪
-    App->>Py: GET /api/health
+    alt .env_ready 有效
+      PyEnv-->>App: {allReady: true}
+    else 环境缺失
+      PyEnv-->>App: {allReady: false}
+      App->>IPC: installPortablePython()
+      IPC->>PyEnv: 安装便携版 Python + pip
+      App->>IPC: installDeps()
+      IPC->>PyEnv: pip install autowsgr
+      App->>IPC: checkEnvironment() (重试)
+      PyEnv-->>App: {allReady: true}
+    end
+
+    App->>IPC: startBackend()
+    IPC->>Back: startBackend()
+    Back->>Back: resolvePythonEnvironment()
+    Back->>Back: ADB connect
+    Back->>Py: spawn 子进程
+
+    App->>App: waitForBackendAndConnect()
+    loop 轮询直到就绪
+      App->>Py: GET /api/health
+    end
+
+    App->>Py: POST /api/system/start
+    Note over App,Py: 连接模拟器 + 启动游戏
+
+    App->>App: scheduler.start()
+    App->>App: cronScheduler.start()
   end
-  
-  App->>Py: POST /api/system/start
-  Note over App,Py: 连接模拟器 + 启动游戏
-  
-  App->>App: scheduler.start()
-  App->>App: cronScheduler.start()
 ```
 
 ---

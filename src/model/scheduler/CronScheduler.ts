@@ -1,3 +1,10 @@
+/** 维护定时任务触发器、最后执行时间和 pending 状态。 */
+import { browserStorageStore, type StorageStore } from '../../adapter/index.js';
+import type { LootPlanSource } from '../../shared/lootPlans.js';
+import type {
+  DecisiveAutomationSource,
+} from '../../shared/decisiveAutomation.js';
+
 /**
  * CronScheduler —— 基于系统时钟的定时任务调度器。
  *
@@ -8,7 +15,7 @@
  *   - 支持 YAML 中 scheduled_time 定时触发
  *
  * 核心机制:
- *   通过 localStorage 记录演习/战役任务的【实际完成】时间戳，
+ *   通过注入的持久化存储记录演习/战役任务的【实际完成】时间戳，
  *   而非记录"是否已触发"。这样即使 App 因 ADB 断开等原因重启，
  *   只要任务未真正完成、时间戳就不更新，下次启动后仍会补发任务。
  */
@@ -30,10 +37,16 @@ export interface CronConfig {
   battleTimes: number;
   /** 启用自动常规出击（每日执行任务列表） */
   autoNormalFight: boolean;
+  /** 启用每日自动决战 */
+  autoDecisive: boolean;
+  /** 自动决战使用计划页方案或系统预设 */
+  decisiveTemplateId: DecisiveAutomationSource;
   /** 启用每日自动刷战利品 */
   autoLoot: boolean;
-  /** 战利品方案索引 (builtin_farm_loot.planPaths) */
-  lootPlanIndex: number;
+  /** 战利品受管计划来源。 */
+  lootPlanSource: LootPlanSource;
+  /** 战利品受管计划文件名，不依赖列表顺序。 */
+  lootPlanId: string;
   /** 战利品停止数量 */
   lootStopCount: number;
 }
@@ -46,8 +59,14 @@ export interface CronCallbacks {
   onCampaignDue?: (campaignName: string, times: number) => void;
   /** 请求执行任务列表中所有任务 */
   onNormalFightDue?: () => void;
+  /** 请求按指定来源添加一轮决战任务 */
+  onDecisiveDue?: (source: DecisiveAutomationSource) => void;
   /** 请求添加战利品任务 */
-  onLootDue?: (planIndex: number, stopCount: number) => void;
+  onLootDue?: (
+    source: LootPlanSource,
+    planId: string,
+    stopCount: number,
+  ) => void;
   /** 请求添加定时方案任务 */
   onScheduledTaskDue?: (taskKey: string) => void;
   /** 日志 */
@@ -67,10 +86,11 @@ export interface ScheduledTask {
 // 演习刷新时间点 (小时)
 const EXERCISE_REFRESH_HOURS = [0, 12, 18];
 
-/** localStorage key — 记录任务实际完成时间 */
+/** 持久化 key — 记录任务实际完成时间 */
 const LS_KEY_LAST_EXERCISE_RUN = 'cron_lastExerciseRun';   // ISO 时间戳
 const LS_KEY_LAST_BATTLE_RUN   = 'cron_lastBattleRun';     // YYYY-MM-DD
 const LS_KEY_LAST_NORMAL_FIGHT_RUN = 'cron_lastNormalFightRun'; // YYYY-MM-DD
+const LS_KEY_LAST_DECISIVE_RUN = 'cron_lastDecisiveRun';   // YYYY-MM-DD
 const LS_KEY_LAST_LOOT_RUN = 'cron_lastLootRun';           // YYYY-MM-DD
 
 // ════════════════════════════════════════
@@ -81,6 +101,7 @@ export class CronScheduler {
   private config: CronConfig;
   private callbacks: CronCallbacks = {};
   private timer: ReturnType<typeof setInterval> | null = null;
+  private storage: StorageStore;
 
   /** 上一次演习任务实际完成的时间 */
   private lastExerciseRun: Date | null = null;
@@ -97,15 +118,22 @@ export class CronScheduler {
   private lastNormalFightRun = '';
   private normalFightPending = false;
   private normalFightPendingDate = '';
+  /** 上一次自动决战实际处理的日期 (YYYY-MM-DD) */
+  private lastDecisiveRun = '';
+  private decisivePending = false;
+  private decisivePendingDate = '';
   /** 上一次战利品任务实际完成的日期 (YYYY-MM-DD) */
   private lastLootRun = '';
   private lootPending = false;
   private lootPendingDate = '';
   /** 注册的定时方案任务 */
   private scheduledTasks: ScheduledTask[] = [];
+  /** 上次检查定时方案标记时的日期 */
+  private scheduledTaskDate = '';
 
-  constructor(config: CronConfig) {
+  constructor(config: CronConfig, storage: StorageStore = browserStorageStore) {
     this.config = { ...config };
+    this.storage = storage;
   }
 
   setCallbacks(cb: CronCallbacks): void {
@@ -121,7 +149,11 @@ export class CronScheduler {
   start(): void {
     this.stop();
     this.loadTimestamps();
-    this.log('info', `定时调度配置: 演习=${this.config.autoExercise}, 战役=${this.config.autoBattle}, 常规出击=${this.config.autoNormalFight}`);
+    this.log(
+      'info',
+      `定时调度配置: 演习=${this.config.autoExercise}, 战役=${this.config.autoBattle}, `
+        + `常规出击=${this.config.autoNormalFight}, 决战=${this.config.autoDecisive}`,
+    );
     if (this.lastExerciseRun) {
       this.log('info', `上次演习完成: ${this.lastExerciseRun.toLocaleString()}`);
     }
@@ -149,9 +181,22 @@ export class CronScheduler {
     this.lastExerciseRun = new Date();
     this.exercisePending = false;
     try {
-      localStorage.setItem(LS_KEY_LAST_EXERCISE_RUN, this.lastExerciseRun.toISOString());
+      this.storage.set(LS_KEY_LAST_EXERCISE_RUN, this.lastExerciseRun.toISOString());
     } catch { /* ignore */ }
     this.log('info', '演习任务完成，已记录运行时间');
+  }
+
+  /** 演习任务被用户取消，本刷新时段不再重复触发。 */
+  markExerciseHandled(): void {
+    this.lastExerciseRun = new Date();
+    this.exercisePending = false;
+    try {
+      this.storage.set(
+        LS_KEY_LAST_EXERCISE_RUN,
+        this.lastExerciseRun.toISOString(),
+      );
+    } catch { /* ignore */ }
+    this.log('info', '演习任务已取消，本刷新时段不再重复触发');
   }
 
   /** Controller 在战役任务成功完成后调用 */
@@ -159,7 +204,7 @@ export class CronScheduler {
     this.lastBattleRun = this.dateKey(new Date());
     this.battlePending = false;
     try {
-      localStorage.setItem(LS_KEY_LAST_BATTLE_RUN, this.lastBattleRun);
+      this.storage.set(LS_KEY_LAST_BATTLE_RUN, this.lastBattleRun);
     } catch { /* ignore */ }
     this.log('info', '战役任务完成，已记录运行时间');
   }
@@ -174,7 +219,7 @@ export class CronScheduler {
     this.lastBattleRun = this.dateKey(new Date());
     this.battlePending = false;
     try {
-      localStorage.setItem(LS_KEY_LAST_BATTLE_RUN, this.lastBattleRun);
+      this.storage.set(LS_KEY_LAST_BATTLE_RUN, this.lastBattleRun);
     } catch { /* ignore */ }
     this.log('info', '战役任务已处理，今日不再重复触发');
   }
@@ -194,7 +239,7 @@ export class CronScheduler {
     this.lastNormalFightRun = this.dateKey(new Date());
     this.normalFightPending = false;
     try {
-      localStorage.setItem(LS_KEY_LAST_NORMAL_FIGHT_RUN, this.lastNormalFightRun);
+      this.storage.set(LS_KEY_LAST_NORMAL_FIGHT_RUN, this.lastNormalFightRun);
     } catch { /* ignore */ }
     this.log('info', '自动常规出击完成，已记录运行时间');
   }
@@ -204,7 +249,7 @@ export class CronScheduler {
     this.lastNormalFightRun = this.dateKey(new Date());
     this.normalFightPending = false;
     try {
-      localStorage.setItem(LS_KEY_LAST_NORMAL_FIGHT_RUN, this.lastNormalFightRun);
+      this.storage.set(LS_KEY_LAST_NORMAL_FIGHT_RUN, this.lastNormalFightRun);
     } catch { /* ignore */ }
   }
 
@@ -213,12 +258,40 @@ export class CronScheduler {
     this.normalFightPending = false;
   }
 
+  /** 自动决战成功完成，记录今日执行状态。 */
+  markDecisiveCompleted(): void {
+    this.lastDecisiveRun = this.dateKey(new Date());
+    this.decisivePending = false;
+    try {
+      this.storage.set(LS_KEY_LAST_DECISIVE_RUN, this.lastDecisiveRun);
+    } catch { /* ignore */ }
+    this.log('info', '自动决战完成，已记录运行时间');
+  }
+
+  /**
+   * 自动决战已结束，无论成功与否今日均不重复。
+   * 决战可能在失败前消耗票数，禁止同日盲目重试。
+   */
+  markDecisiveHandled(): void {
+    this.lastDecisiveRun = this.dateKey(new Date());
+    this.decisivePending = false;
+    try {
+      this.storage.set(LS_KEY_LAST_DECISIVE_RUN, this.lastDecisiveRun);
+    } catch { /* ignore */ }
+    this.log('info', '自动决战已处理，今日不再重复触发');
+  }
+
+  /** 决战任务尚未入队时清除 pending，允许下次 tick 重试。 */
+  clearDecisivePending(): void {
+    this.decisivePending = false;
+  }
+
   /** Controller 在战利品任务完成后调用 */
   markLootCompleted(): void {
     this.lastLootRun = this.dateKey(new Date());
     this.lootPending = false;
     try {
-      localStorage.setItem(LS_KEY_LAST_LOOT_RUN, this.lastLootRun);
+      this.storage.set(LS_KEY_LAST_LOOT_RUN, this.lastLootRun);
     } catch { /* ignore */ }
     this.log('info', '自动战利品任务完成，已记录运行时间');
   }
@@ -228,7 +301,7 @@ export class CronScheduler {
     this.lastLootRun = this.dateKey(new Date());
     this.lootPending = false;
     try {
-      localStorage.setItem(LS_KEY_LAST_LOOT_RUN, this.lastLootRun);
+      this.storage.set(LS_KEY_LAST_LOOT_RUN, this.lastLootRun);
     } catch { /* ignore */ }
   }
 
@@ -239,17 +312,18 @@ export class CronScheduler {
 
   // ── 持久化 ──
 
-  /** 从 localStorage 加载上次运行时间戳 */
+  /** 从持久化存储加载上次运行时间戳 */
   private loadTimestamps(): void {
     try {
-      const exRaw = localStorage.getItem(LS_KEY_LAST_EXERCISE_RUN);
+      const exRaw = this.storage.get(LS_KEY_LAST_EXERCISE_RUN);
       if (exRaw) {
         const d = new Date(exRaw);
         if (!isNaN(d.getTime())) this.lastExerciseRun = d;
       }
-      this.lastBattleRun = localStorage.getItem(LS_KEY_LAST_BATTLE_RUN) || '';
-      this.lastNormalFightRun = localStorage.getItem(LS_KEY_LAST_NORMAL_FIGHT_RUN) || '';
-      this.lastLootRun = localStorage.getItem(LS_KEY_LAST_LOOT_RUN) || '';
+      this.lastBattleRun = this.storage.get(LS_KEY_LAST_BATTLE_RUN) || '';
+      this.lastNormalFightRun = this.storage.get(LS_KEY_LAST_NORMAL_FIGHT_RUN) || '';
+      this.lastDecisiveRun = this.storage.get(LS_KEY_LAST_DECISIVE_RUN) || '';
+      this.lastLootRun = this.storage.get(LS_KEY_LAST_LOOT_RUN) || '';
     } catch { /* ignore */ }
   }
 
@@ -283,12 +357,13 @@ export class CronScheduler {
 
   private tick(): void {
     const now = new Date();
+    this.resetDailyFlags(now);
     this.checkExercise(now);
     this.checkCampaign(now);
     this.checkNormalFight(now);
+    this.checkDecisive(now);
     this.checkLoot(now);
     this.checkScheduledTasks(now);
-    this.resetDailyFlags(now);
   }
 
   /**
@@ -370,6 +445,31 @@ export class CronScheduler {
   }
 
   /**
+   * 检查决战:
+   * 每日最多加入一轮。无法查询剩余票数，因此不推导票数保留或执行轮数。
+   */
+  private checkDecisive(now: Date): void {
+    if (!this.config.autoDecisive) return;
+
+    const todayStr = this.dateKey(now);
+    if (
+      this.decisivePending
+      && this.decisivePendingDate === todayStr
+    ) {
+      return;
+    }
+    if (this.lastDecisiveRun >= todayStr) return;
+
+    this.decisivePending = true;
+    this.decisivePendingDate = todayStr;
+    this.log(
+      'info',
+      `自动决战触发 (方案=${this.config.decisiveTemplateId}, 轮数=1)`,
+    );
+    this.callbacks.onDecisiveDue?.(this.config.decisiveTemplateId);
+  }
+
+  /**
    * 检查战利品:
    * 每日 0 点刷新。若 lastLootRun 不是今天则触发。
    * 跨日时即使上一天的战利品任务仍在排队也会重新触发。
@@ -386,8 +486,15 @@ export class CronScheduler {
 
     this.lootPending = true;
     this.lootPendingDate = todayStr;
-    this.log('info', `自动战利品触发 (方案#${this.config.lootPlanIndex}, 停止数量=${this.config.lootStopCount})`);
-    this.callbacks.onLootDue?.(this.config.lootPlanIndex, this.config.lootStopCount);
+    this.log(
+      'info',
+      `自动战利品触发 (来源=${this.config.lootPlanSource}, 方案=${this.config.lootPlanId}, 停止数量=${this.config.lootStopCount})`,
+    );
+    this.callbacks.onLootDue?.(
+      this.config.lootPlanSource,
+      this.config.lootPlanId,
+      this.config.lootStopCount,
+    );
   }
 
   /** 检查定时方案任务 */
@@ -406,11 +513,16 @@ export class CronScheduler {
 
   /** 跨日重置: 日期变化时清除 firedToday 标记 */
   private resetDailyFlags(now: Date): void {
-    // 重置定时方案的 firedToday (0:00 附近)
-    if (now.getHours() === 0 && now.getMinutes() === 0) {
-      for (const task of this.scheduledTasks) {
-        task.firedToday = false;
-      }
+    const today = this.dateKey(now);
+    if (!this.scheduledTaskDate) {
+      this.scheduledTaskDate = today;
+      return;
+    }
+    if (this.scheduledTaskDate === today) return;
+
+    this.scheduledTaskDate = today;
+    for (const task of this.scheduledTasks) {
+      task.firedToday = false;
     }
   }
 

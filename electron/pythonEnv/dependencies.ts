@@ -1,0 +1,34 @@
+/** GUI Python 运行时必须可导入的模块。 */
+export const PYTHON_DEPENDENCY_SPECS = Object.freeze([
+  {
+    key: 'uvicorn',
+    importName: 'uvicorn',
+    packageName: 'uvicorn',
+  },
+  {
+    key: 'fastapi',
+    importName: 'fastapi',
+    packageName: 'fastapi',
+  },
+  {
+    key: 'scipy',
+    importName: 'scipy._lib',
+    packageName: 'scipy',
+  },
+  {
+    key: 'requests',
+    importName: 'requests',
+    packageName: 'requests',
+  },
+  {
+    key: 'beautifulSoup',
+    importName: 'bs4',
+    packageName: 'beautifulsoup4',
+  },
+] as const);
+
+/** 舰船资料库更新器不由 AutoWSGR 后端依赖间接保证的包。 */
+export const SHIP_LIBRARY_REQUIREMENTS: readonly string[] = Object.freeze([
+  'requests>=2.32.5',
+  'beautifulsoup4>=4.12.0',
+]);

@@ -1,26 +1,599 @@
 /* ═══ 配置页布局 ═══ */
 #page-config {
-  overflow: auto;
-}
+  --config-control-height: 28px;
+  --config-text-field-width: 320px;
+  --config-short-field-width: 84px;
+  --config-row-width: 460px;
 
-.config-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-  flex-shrink: 0;
+  height: calc(100vh - var(--nav-height) - var(--page-block-space));
+  overflow: auto;
+
+  input.input:not([type='range']):not([type='color']),
+  select.input {
+    height: var(--config-control-height);
+    min-height: var(--config-control-height);
+    padding: 0 8px;
+    font-size: 11px;
+    line-height: 1.2;
+  }
+
+  select.input {
+    width: var(--config-select-width, 124px);
+    min-width: 0;
+    max-width: min(100%, var(--config-select-width, 124px));
+    flex: 0 1 var(--config-select-width, 124px);
+  }
+
+  textarea.input {
+    padding: 6px 8px;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .color-picker {
+    width: 36px;
+    height: var(--config-control-height);
+  }
+
+  .accent-label {
+    font-size: 11px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: var(--config-control-height);
+    min-height: var(--config-control-height);
+    padding: 0 10px;
+    font-size: 11px;
+    line-height: 1;
+    white-space: nowrap;
+  }
 }
 
 .config-header-actions {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
-.config-page-title {
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+.config-navigation-row {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  display: flex;
+  align-items: center;
+  width: min(100%, 1080px);
+  gap: 8px;
+  margin: 0 auto 5px;
+  padding: 4px 0;
+  background: var(--bg);
+}
+
+.config-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 3px;
+  padding: 3px;
+  overflow-x: auto;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.config-tab {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  height: var(--config-control-height);
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--text-secondary);
+    background: var(--bg-hover);
+  }
+
+  &.active {
+    color: var(--text);
+    background: var(--bg-card-solid);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  }
+}
+
+.config-tab-description {
+  flex: 1 1 260px;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-list-panels {
+  width: min(100%, 1080px);
+  margin: 0 auto;
+  padding-bottom: 10px;
+
+  [hidden] {
+    display: none !important;
+  }
+}
+
+.config-list-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.config-list-section {
+  overflow: hidden;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.config-section-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-inset);
+  border-bottom: 1px solid var(--border);
+
+  h3 {
+    flex: 0 0 auto;
+    margin: 0;
+    color: var(--text);
+    font-size: 13px;
+  }
+
+  p {
+    flex: 1 1 260px;
+    min-width: 0;
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+}
+
+.config-setting-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.config-setting-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(300px, 1.1fr);
+  gap: 14px;
+  align-items: center;
+  min-height: 46px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.config-setting-copy {
+  display: block;
+  line-height: 1.45;
+
+  strong {
+    display: inline;
+    margin-right: 8px;
+    color: var(--text);
+    font-size: 12px;
+  }
+
+  span {
+    display: inline;
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+}
+
+.config-setting-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+
+  > .input-row {
+    width: min(100%, var(--config-row-width));
+  }
+
+  > input.input {
+    width: min(100%, var(--config-text-field-width));
+    max-width: var(--config-text-field-width);
+  }
+
+  .input {
+    padding: 6px 9px;
+    font-size: 12px;
+  }
+
+  .btn-small {
+    flex: 0 0 auto;
+  }
+}
+
+.config-cuda-path-row {
+  flex-wrap: nowrap;
+
+  .config-cuda-input-wrap {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+
+    .input {
+      width: 100%;
+      padding-right: 82px;
+    }
+
+    #cfg-cuda-status {
+      position: absolute;
+      top: 50%;
+      right: 6px;
+      max-width: 72px;
+      margin: 0;
+      padding: 2px 6px;
+      overflow: hidden;
+      font-size: 9px;
+      line-height: 1.2;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      transform: translateY(-50%);
+    }
+  }
+}
+
+.config-setting-control-stack {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.config-auto-task-control {
+  flex-wrap: nowrap;
+
+  > .config-switch {
+    flex: 0 0 auto;
+  }
+}
+
+.config-auto-loot-control {
+  min-width: 0;
+  gap: 6px;
+
+  .config-auto-task-options {
+    min-width: 0;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  #cfg-loot-stop-count {
+    width: 56px !important;
+    flex-basis: 56px;
+  }
+}
+
+.config-adb-controls {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+
+  .config-adb-input-wrap {
+    position: relative;
+    width: min(100%, 210px);
+    min-width: 180px;
+    max-width: 210px;
+    flex: 0 1 210px;
+
+    .input {
+      width: 100%;
+      padding-right: 66px;
+    }
+
+    .adb-status {
+      position: absolute;
+      top: 50%;
+      right: 6px;
+      margin: 0;
+      padding: 2px 6px;
+      font-size: 10px;
+      pointer-events: none;
+      transform: translateY(-50%);
+    }
+  }
+}
+
+.config-setting-control > .config-compact-path-row {
+  width: min(100%, 360px);
+}
+
+.config-setting-control > .config-backend-controls {
+  width: min(100%, 300px);
+  justify-content: flex-end;
+
+  #cfg-backend-port {
+    width: 72px !important;
+    flex-basis: 72px;
+  }
+}
+
+.config-setting-control > .config-update-controls {
+  justify-content: flex-end;
+}
+
+.config-inline-options {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  > span {
+    color: var(--text-muted);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+}
+
+.config-auto-task-options {
+  min-width: 0;
+}
+
+.config-status-badge {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  color: var(--warning);
+  background: var(--warning-bg);
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.config-status-readonly {
+  color: var(--text-muted);
+  background: var(--bg-inset);
+}
+
+.config-prefix {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.config-advanced-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 16px 12px;
+  padding: 12px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.config-range-preview {
+  width: min(100%, 345px);
+  justify-self: end;
+  flex-direction: column;
+  align-items: stretch;
+
+  label {
+    display: grid;
+    grid-template-columns: 40px minmax(90px, 1fr) 64px;
+    gap: 8px;
+    align-items: center;
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+
+  input[type='number'] {
+    width: 64px;
+  }
+}
+
+.config-confidence-preview {
+  input[type='range'] {
+    min-width: 160px;
+  }
+
+  input[type='number'] {
+    width: var(--config-short-field-width);
+    flex: 0 0 var(--config-short-field-width);
+  }
+}
+
+.config-normal-fight-editor {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  max-width: 320px;
+}
+
+#page-config #btn-add-normal-fight-task {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  min-height: 24px;
+  padding: 0 9px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.config-task-list {
+  display: flex;
+  min-width: 0;
+  max-width: 230px;
+  align-items: center;
+  gap: 5px;
+}
+
+.config-task-name {
+  display: block;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-empty-note {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: right;
+}
+
+.config-map-editor {
+  width: min(100%, 460px) !important;
+  max-width: 460px !important;
+  min-height: 60px;
+  resize: vertical;
+  font-family: Consolas, monospace;
+}
+
+.config-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: 620px;
+
+  label {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 6px;
+    color: var(--text);
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    font-size: 10px;
+    cursor: pointer;
+  }
+
+  input {
+    margin: 0;
+    accent-color: var(--accent);
+  }
+}
+
+.config-disabled-control {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.config-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+
+  input[type='checkbox'] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+  }
+
+  input[type='checkbox']:focus-visible + .config-switch-track {
+    box-shadow: 0 0 0 3px var(--accent-subtle);
+  }
+
+  input[type='checkbox']:checked + .config-switch-track {
+    background: var(--accent);
+    border-color: var(--accent);
+
+    &::after {
+      transform: translateX(16px);
+    }
+  }
+
+  input[type='checkbox']:disabled + .config-switch-track,
+  input[type='checkbox']:disabled ~ span {
+    opacity: 0.45;
+  }
+}
+
+.config-switch-track {
+  position: relative;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 20px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    background: #fff;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+    transition: transform 0.16s ease;
+  }
+}
+
+.config-compat-controls {
+  display: none !important;
+}
+
+.ship-library-update-control {
+  justify-content: flex-end;
+
+  .adb-status {
+    margin-left: 0;
+    max-width: 360px;
+    white-space: normal;
+    text-align: right;
+  }
+}
+
+.window-size-control {
+  justify-content: flex-end;
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+
+  input[type='number'] {
+    width: var(--config-short-field-width);
+  }
 }
 
 .config-grid {
@@ -28,6 +601,21 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 6px;
   align-items: stretch;
+}
+
+.config-grid-tabs {
+  .config-col-left,
+  .config-col-right {
+    display: contents;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+}
+
+.config-card-wide {
+  grid-column: 1 / -1;
 }
 
 .config-col-left {
@@ -89,8 +677,8 @@
 }
 
 .config-inline-number {
-  width: 104px !important;
-  flex: 0 0 104px;
+  width: var(--config-short-field-width) !important;
+  flex: 0 0 var(--config-short-field-width);
 }
 
 .config-inline-note {
@@ -101,6 +689,14 @@
 
 .config-accent-row {
   align-items: center;
+}
+
+.config-theme-accent-row {
+  justify-content: flex-end;
+
+  .accent-label {
+    flex: 0 0 auto;
+  }
 }
 
 .config-ui-theme-row {
@@ -254,6 +850,44 @@
   line-height: 1.25;
 }
 
+.config-draft-warning {
+  margin: 0 0 6px;
+  padding: 6px 8px;
+  color: var(--warning);
+  background: var(--warning-bg);
+  border-radius: var(--radius);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.config-draft-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+
+  > div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 9px 10px;
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  strong {
+    color: var(--text);
+    font-size: 12px;
+  }
+
+  span {
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.4;
+  }
+}
+
 @media (max-width: 1180px) {
   .config-grid {
     grid-template-columns: 1fr;
@@ -263,5 +897,106 @@
 
   .config-col-right > .card {
     flex: none;
+  }
+
+  .config-card-wide {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .config-section-heading {
+    align-items: flex-start;
+    gap: 5px;
+  }
+
+  .config-tab-description {
+    display: none;
+  }
+
+  .config-draft-list {
+    grid-template-columns: 1fr;
+  }
+
+  .config-setting-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .config-setting-control,
+  .config-setting-control-stack {
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+
+  .config-setting-control > input.input:not(.config-inline-number),
+  .config-setting-control > select.input,
+  .config-setting-control > .input-row {
+    width: 100%;
+    max-width: none;
+  }
+
+  .config-inline-options {
+    align-items: stretch;
+    flex-direction: column;
+
+    &:not(.config-auto-task-options) select.input {
+      width: 100%;
+      max-width: none;
+      flex-basis: auto;
+    }
+  }
+
+  .config-auto-task-control {
+    align-items: center;
+    flex-direction: row;
+    justify-content: flex-start;
+  }
+
+  .config-auto-task-options {
+    align-items: center;
+    flex-direction: row;
+  }
+
+  .config-theme-accent-row {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+
+    #cfg-theme-mode {
+      flex-basis: 100%;
+    }
+  }
+
+  .ship-library-update-control {
+    align-items: flex-start;
+    flex-direction: column;
+
+    .adb-status {
+      text-align: left;
+    }
+  }
+
+  .config-confidence-preview {
+    display: grid;
+    grid-template-columns: 1fr 84px;
+
+    .config-status-badge {
+      grid-column: 1 / -1;
+      justify-self: start;
+    }
+  }
+
+  .config-normal-fight-editor,
+  .config-map-editor {
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .config-task-list {
+    max-width: min(230px, 40vw);
+  }
+
+  .config-chip-list {
+    justify-content: flex-start;
   }
 }

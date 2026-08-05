@@ -1,7 +1,8 @@
 # 04 — Electron 主进程拆分
 
 > **前置阅读**：[00-overview](00-overview.md)  
-> **核心原则**：`main.ts` 只做窗口管理 + IPC 注册，业务逻辑提取到独立模块并通过 Context 注入依赖。
+> **核心原则**：`main.ts` 是组合根，只负责组装服务、注册 IPC 和应用生命周期；
+> 文件、配置、计划、环境和后端进程逻辑由独立 Service 承担。
 
 ---
 
@@ -19,33 +20,45 @@ electron/
 
 ```
 electron/
-├── main.ts            (401 行，只保留窗口 + IPC)
-├── backend.ts         (176 行，后端子进程生命周期)
-├── emulatorDetect.ts  (114 行，模拟器检测)
-├── preload.ts         (104 行)
-└── pythonEnv/         (Python 环境管理)
-    ├── index.ts       (15 行，barrel re-export)
-    ├── context.ts     (33 行，共享上下文)
-    ├── finder.ts      (90 行，Python 查找)
-    ├── envCheck.ts    (208 行，环境检查)
-    ├── installer.ts   (225 行，安装)
-    ├── updater.ts     (178 行，更新)
-    └── utils.ts       (101 行，工具函数)
+├── main.ts                 (服务组装 + IPC 注册 + 生命周期)
+├── preload.ts              (受限渲染进程桥接)
+├── emulatorDetect.ts       (模拟器检测)
+├── ipc/                    (薄 IPC 适配器)
+│   ├── BackendIpc.ts
+│   ├── EnvironmentIpc.ts
+│   └── ...
+├── services/               (主进程业务用例)
+│   ├── BackendService.ts
+│   ├── BackendShutdownService.ts
+│   ├── PythonEnvironmentService.ts
+│   └── ...
+└── pythonEnv/              (Python 环境领域实现)
+    ├── index.ts            (barrel re-export)
+    ├── context.ts          (共享运行上下文)
+    ├── environment.ts      (统一环境描述)
+    ├── finder.ts           (Python 查找)
+    ├── envCheck.ts         (环境检查)
+    ├── installer.ts        (依赖安装)
+    ├── updater.ts          (managed 后端契约更新)
+    └── utils.ts            (底层工具)
 ```
 
 ---
 
-## 模式：Context 注入
+## 模式：组合根 + 依赖注入
 
-子模块不通过 `import` 读取 `main.ts` 的全局变量。而是由 `main.ts` 在启动时调用 `init()` 注入运行上下文。
+子模块不通过 `import` 读取 `main.ts` 的全局变量。长期运行的后端和 Python
+领域模块通过 Context 接收 Electron 能力；普通用例 Service 通过构造函数接收
+文件系统、Repository 或底层函数；IPC 层只转换通道输入输出。
 
-### backend.ts
+### services/BackendService.ts
 
 ```typescript
-// electron/backend.ts
+// electron/services/BackendService.ts
 
 export interface BackendContext {
   appRoot: () => string;
+  userDataRoot: () => string;
   resourceRoot: () => string;
   BACKEND_PORT: number;
   getMainWindow: () => BrowserWindow | null;
@@ -57,11 +70,11 @@ export function initBackend(context: BackendContext): void {
   ctx = context;
 }
 
-// 之后所有函数通过 ctx 访问，不依赖 main.ts 全局变量
-export async function startBackend(): Promise<{ success: boolean; message: string }> {
-  const pythonCmd = findPython();
-  // 使用 ctx.appRoot(), ctx.BACKEND_PORT ...
+export function getBackendProcess(): ChildProcess | null {
+  return backendProcess;
 }
+
+// startBackend()、stopBackend() 通过 ctx 访问路径和窗口能力。
 ```
 
 ### pythonEnv/context.ts
@@ -73,6 +86,9 @@ export interface PythonEnvContext {
   appRoot: () => string;
   sendProgress: (msg: string) => void;
   getConfiguredPythonPath: () => string | null;
+  getUpdateMode: () => 'auto' | 'manual';
+  getBackendStartupMode: () => 'managed' | 'external';
+  getBackendRepoPath: () => string | null;
   getTempDir: () => string;
 }
 
@@ -83,40 +99,70 @@ export function initPythonEnv(context: PythonEnvContext): void {
 }
 
 export function getCtx(): PythonEnvContext {
-  return ctx;   // 内部各模块通过此函数获取上下文
+  return ctx;
 }
 ```
 
-### main.ts 的启动流程
+### services/PythonEnvironmentService.ts
+
+无状态用例 Service 使用构造函数依赖，不持有第二份 Python 发现缓存：
 
 ```typescript
-// electron/main.ts — 启动时注入上下文
+export class PythonEnvironmentService {
+  constructor(
+    private readonly dependencies: PythonEnvironmentDependencies,
+  ) {}
 
-import { initBackend, startBackend, stopBackend } from './backend';
-import { initPythonEnv, findPython, checkEnvironment } from './pythonEnv';
-import { detectEmulator } from './emulatorDetect';
+  check(): Promise<EnvCheckResult> {
+    return this.dependencies.checkEnvironment();
+  }
+}
+```
 
+### main.ts 的组装流程
+
+```typescript
 app.whenReady().then(() => {
+  initPythonEnv({
+    appRoot,
+    sendProgress,
+    getConfiguredPythonPath: () =>
+      guiConfigurationService.configuredPythonPath(),
+    getUpdateMode: () => guiConfigurationService.updateMode(),
+    getBackendStartupMode: () =>
+      guiConfigurationService.backendStartupMode(),
+    getBackendRepoPath: () =>
+      guiConfigurationService.backendRepoPath(),
+    getTempDir: () => app.getPath('temp'),
+  });
   initBackend({
-    appRoot: () => appRoot(),
-    resourceRoot: () => resourceRoot(),
+    appRoot,
+    userDataRoot,
+    resourceRoot,
     BACKEND_PORT,
     getMainWindow: () => mainWindow,
   });
 
-  initPythonEnv({
-    appRoot: () => appRoot(),
-    sendProgress: (msg) => mainWindow?.webContents.send('setup-log', msg),
-    getConfiguredPythonPath: () => getConfiguredPythonPath(),
-    getTempDir: () => app.getPath('temp'),
-  });
-
+  // 初始化用户目录、执行迁移、注册更新 IPC。
   createWindow();
 });
+```
 
-// IPC handler — 每个只做转发
-ipcMain.handle('start-backend', () => startBackend());
-ipcMain.handle('detect-emulator', () => detectEmulator());
+### ipc/ 薄适配器
+
+IPC 文件只处理通道和错误边界，实际行为由注入依赖负责：
+
+```typescript
+registerBackendIpc(ipcMain, {
+  getBackendProcess,
+  startBackend,
+  runSetupScript,
+});
+
+registerEnvironmentIpc(
+  ipcMain,
+  pythonEnvironmentService,
+);
 ```
 
 ---

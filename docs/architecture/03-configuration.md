@@ -1,6 +1,6 @@
 # 配置系统
 
-> 涉及文件：`src/model/ConfigModel.ts` · `src/view/config/ConfigView.ts` · `src/controller/app/ConfigController.ts` · `src/controller/app/theme.ts` · `src/types/model.ts` · `usersettings.yaml` · `gui_settings.json`
+> 涉及文件：`src/model/ConfigModel.ts` · `src/view/config/ConfigView.ts` · `src/view/theme.ts` · `src/controller/app/ConfigController.ts` · `src/types/model.ts` · `electron/services/GuiSettingsStore.ts` · `electron/services/GuiConfigurationService.ts` · `electron/ipc/ConfigurationIpc.ts`
 
 ## 概述
 
@@ -8,8 +8,8 @@
 
 | 层级 | 文件 | 内容 | 读写方式 |
 |------|------|------|----------|
-| **GUI 级** | `gui_settings.json` | 后端端口、Python 路径 | Electron 主进程直接读写 |
-| **用户级** | `usersettings.yaml` | 模拟器、账号、日常自动化 | 渲染进程通过 IPC 读写 |
+| **GUI 级** | `userData/gui_settings.json` | 后端、Python、CUDA、窗口和 GUI 自动化设置 | Electron 配置服务读写 |
+| **用户级** | `userData/usersettings.yaml` | 模拟器、账号、日常自动化 | 渲染进程通过 IPC 读写 |
 
 另外，主题/调试模式等纯 UI 偏好存储在浏览器 `localStorage` 中。
 
@@ -47,20 +47,40 @@ interface UserSettings {
 
 | 字段 | 类型 | 默认 | 说明 |
 |------|------|------|------|
-| `auto_expedition` | `boolean` | `true` | 自动远征 |
-| `expedition_interval` | `number` | `15` | 远征检查间隔（分钟，1~120） |
+| `auto_expedition` | `boolean` | `false` | 自动远征 |
+| `auto_gain_bonus` | `boolean` | `false` | 自动领取奖励 |
+| `auto_bath_repair` | `boolean` | `false` | 自动浴室修理 |
+| `auto_set_support` | `boolean` | `false` | 自动设置支援 |
+| `bath_repair_blacklist` | `string[]` | `[]` | 浴室修理黑名单 |
 | `auto_exercise` | `boolean` | `false` | 自动演习 |
-| `exercise_fleet_id` | `number` | `1` | 演习舰队 (1~4) |
+| `exercise_fleet_id` | `number?` | `null` | 演习舰队 (1~4) |
 | `auto_battle` | `boolean` | `false` | 自动战役 |
 | `battle_type` | `string` | `"困难潜艇"` | 战役类型 |
-| `battle_times` | `number` | `3` | 战役次数 |
 | `auto_normal_fight` | `boolean` | `false` | 自动常规出击 |
-| `auto_decisive` | `boolean` | `false` | 自动决战 |
-| `decisive_ticket_reserve` | `number` | `0` | 决战票保留数 |
-| `decisive_template_id` | `string` | `""` | 决战模板 ID |
-| `auto_loot` | `boolean` | `false` | 自动刷战利品 |
-| `loot_plan_index` | `number` | `0` | 战利品方案索引 |
-| `loot_stop_count` | `number` | `50` | 战利品停止数量 |
+| `normal_fight_tasks` | `NormalFightTaskConfig[]` | `[]` | 自动出击任务及顺序 |
+| `quick_repair_limit` | `number?` | `null` | 快修限制 |
+| `stop_max_ship` | `boolean` | `false` | 船坞满时停止 |
+| `stop_max_loot` | `boolean` | `false` | 战利品满时停止 |
+
+#### GuiAutomationSettings — GUI 自动化
+
+这些字段仅属于 GUI 调度器，保存在 `gui_settings.json.automation`，不会写回
+`usersettings.yaml`：
+
+| 字段 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `expeditionInterval` | `number` | `15` | 远征检查间隔（分钟，1~120） |
+| `battleTimes` | `number` | `3` | 每日战役次数 |
+| `autoDecisive` | `boolean` | `false` | 每日自动决战 |
+| `decisiveTemplateId` | `string` | `"builtin_decisive_6"` | 决战模板 ID |
+| `autoLoot` | `boolean` | `false` | 每日自动刷胖次 |
+| `lootPlanId` | `string` | 内置稳定 ID | 系统出征计划文件名 |
+| `lootStopCount` | `number` | `50` | 胖次停止数量（1~50） |
+
+旧版 YAML 中的 `expedition_interval`、`battle_times`、胖次字段和决战字段会在
+启动时迁移。`auto_decisive` 与 `decisive_template_id` 升级为正式 automation；
+`decisive_ticket_reserve` 只原样归档到 `legacy_decisive_automation`，不参与
+执行轮数。独立的 `decisive_plan` 不会被旧字段覆盖。
 
 ---
 
@@ -84,8 +104,8 @@ interface UserSettings {
 ```mermaid
 flowchart LR
   subgraph Storage["持久化存储"]
-    YAML["usersettings.yaml"]
-    GUI["gui_settings.json"]
+    YAML["userData/usersettings.yaml"]
+    GUI["userData/gui_settings.json"]
     LS["localStorage"]
   end
 
@@ -105,7 +125,7 @@ flowchart LR
   subgraph Side["副作用"]
     Cron["CronScheduler"]
     Sched["Scheduler"]
-    IPC["Electron IPC"]
+    IPC["Electron IPC / GuiConfigurationService"]
   end
 
   YAML -->|"bridge.readFile()"| AC
@@ -117,6 +137,8 @@ flowchart LR
   CC -->|"update()"| CM
   CM -->|"toYaml()"| CC
   CC -->|"bridge.saveFile()"| YAML
+  CC -->|"setGuiAutomation()"| IPC
+  IPC -->|"顶层浅合并"| GUI
   CC -->|"updateConfig()"| Cron
   CC -->|"setExpeditionInterval()"| Sched
   AC -->|"setBackendPort()"| IPC
@@ -134,16 +156,17 @@ flowchart LR
 1. 用户点击“保存配置”
 2. `ConfigView.collect()` 从表单提取当前值 → `ConfigViewObject`
 3. `ConfigController.saveConfig()` 执行以下操作：
-   - 保存 UI 偏好到 `localStorage`（主题、调试模式）
-   - 调用 `bridge.setBackendPort()` 更新端口（需重启生效）
-   - 调用 `ConfigModel.update()` 深合并
+   - 在候选 `ConfigModel` 中校验并合并表单字段
+   - 通过 `ConfigurationGateway.commitGuiSettings()` 提交 YAML、GUI 设置和窗口偏好
+   - Main 进程先写 YAML，再原子提交 JSON；JSON 失败时恢复原 YAML
+   - 提交成功后才更新内存模型和 `localStorage` UI 偏好
    - 同步 `CronScheduler.updateConfig()` 更新定时任务规则
    - 同步 `Scheduler.setExpeditionInterval()` 更新远征检查间隔
-   - 序列化写入 `usersettings.yaml`
 
 ### 主题管理
 
-主题相关逻辑位于 `controller/app/theme.ts`，支持亮色/暗色/自动切换和强调色应用。
+主题 DOM 逻辑位于 `view/theme.ts`，通过 `StorageAdapter` 读取偏好，支持亮色、
+暗色、自动切换和强调色应用。
 
 ---
 
@@ -177,25 +200,52 @@ flowchart LR
 
 ## gui_settings.json
 
-由 Electron 主进程直接管理的配置：
+由 Electron 主进程直接管理的配置，位于 Electron `userData`：
 
 ```json
 {
   "backend_port": 8438,
-  "python_path": null
+  "python_path": "",
+  "update_mode": "auto",
+  "backend_startup_mode": "managed",
+  "backend_repo_path": "",
+  "ocr_gpu_mode": "auto",
+  "cuda_path": "",
+  "save_backend_screenshots": false,
+  "automation": {
+    "expeditionInterval": 15,
+    "battleTimes": 3,
+    "autoDecisive": false,
+    "decisiveTemplateId": "builtin_decisive_6",
+    "autoLoot": false,
+    "lootPlanId": "bettle-old-8-5AI六潜胖次.yaml",
+    "lootStopCount": 50
+  }
 }
 ```
 
 - `backend_port`：Python 后端 HTTP 服务端口
-- `python_path`：用户手动指定的 Python 路径（`null` = 自动检测）
+- `python_path`：用户手动指定的 Python 路径（空字符串 = 自动检测）
+- `backend_startup_mode`：`managed` 使用 GUI 管理的环境，`external` 使用指定仓库
+- `ocr_gpu_mode` / `cuda_path`：OCR GPU 模式与 CUDA 路径
+- `automation`：GUI 私有自动化设置
+- `decisive_plan`：决战计划页单独维护的当前配置
+- `legacy_decisive_automation`：旧决战字段无损归档
+- `window`：窗口位置与尺寸偏好
 
-读写在主进程 `main.ts` 中通过 `readGuiSettings()` / `writeGuiSettings()` 完成，渲染进程通过 IPC (`get-backend-port-sync`, `set-backend-port`, `get-python-path`, `set-python-path`) 间接访问。
+`GuiSettingsStore` 是唯一 JSON 存储入口，每次写入执行顶层浅合并，因此未参与
+本次更新的未知顶层字段不会丢失。`GuiConfigurationService` 负责默认值、边界、
+旧决战字段迁移和 Python 缓存清理；`ConfigurationIpc` 只保持通道契约。
+
+渲染进程通过 `get-backend-port-sync`、`get-python-path-sync` 等同步 getter
+读取启动配置，通过 `set-backend-port`、`set-python-path` 等异步 setter 写入。
+同步 getter 必须继续使用 `ipcMain.on` / `sendSync`，不能改成 Promise。
 
 ---
 
 ## 与其他系统的关系
 
-- **任务调度**：`daily_automation` 字段直接驱动 `CronScheduler` 的触发规则和 `ExpeditionTimer` 的间隔
+- **任务调度**：`daily_automation` 提供后端自动化开关和出击任务；`automation` 提供远征间隔、战役次数、自动决战和胖次参数
 - **环境管理**：`gui_settings.json` 中的 `python_path` 影响 Python 发现优先级
 - **后端通信**：`backend_port` 决定 `ApiClient` 的连接地址
 - **模拟器检测**：初始化时若 `emulator` 字段为空，自动调用 `detectEmulator()` 填充

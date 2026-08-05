@@ -1,7 +1,8 @@
+/** 检测后端可用性并管理启动阶段的连接等待。 */
 /**
  * connection —— 后端连接与系统启动逻辑。
  */
-import type { StartupHost } from './StartupController';
+import type { StartupHost } from '../contracts.js';
 import { Logger } from '../../utils/Logger';
 
 /** 等待后端 HTTP 服务就绪, 然后启动系统 */
@@ -28,13 +29,14 @@ export function waitForBackendAndConnect(host: StartupHost, retries = 30): void 
 
 /** 向后端发送 system/start (连接模拟器+启动游戏) */
 export function startSystem(host: StartupHost): void {
-  const configPath = host.appRoot
-    ? `${host.appRoot.replace(/\\/g, '/')}/usersettings.yaml`
+  const configPath = host.configDir
+    ? `${host.configDir.replace(/\\/g, '/')}/usersettings.yaml`
     : undefined;
 
-  host.scheduler.setExpeditionInterval(
-    host.configModel.current.daily_automation.expedition_interval,
-  );
+  const automation = host.configModel.current.daily_automation;
+  const guiAutomation = host.configModel.currentGuiAutomation;
+  host.scheduler.setAutoExpedition(automation.auto_expedition);
+  host.scheduler.setExpeditionInterval(guiAutomation.expeditionInterval);
 
   host.scheduler.start(configPath).then((ok) => {
     if (ok) {

@@ -1,0 +1,95 @@
+# 周常第5章 — 地图 5-5
+# 默认复纵阵
+chapter: 5
+map: 5
+selected_nodes: ['0', C, F, H, I]
+endpoint_nodes: [I]
+fight_condition: 1
+repair_mode: 1
+node_defaults: {formation: 2, night: false, proceed: true}
+node_args:
+  I: {formation: 4, night: true, long_missile_support: false, proceed: true, detour: false}
+times: 3
+fleet_id: 3
+result: S
+fleet_presets:
+  - name: 6潜艇队
+    ships:
+      - min_level: 100
+        candidates:
+          - {name: U-47·改, search_name: U-47, ship_type: [ss], min_level: 100}
+          - {name: U-81·改, search_name: U-81, ship_type: [ss], min_level: 100}
+          - {name: U-96·改, search_name: U-96, ship_type: [ss], min_level: 100}
+          - {name: U-505·改, search_name: U-505, ship_type: [ss], min_level: 100}
+          - {name: U-2540·改, search_name: U-2540, ship_type: [ss], min_level: 100}
+          - {name: U-1405·改, search_name: U-1405, ship_type: [ss], min_level: 100}
+          - {name: U-1206·改, search_name: U-1206, ship_type: [ss], min_level: 100}
+          - {name: 射水鱼·改, search_name: 射水鱼, ship_type: [ss], min_level: 100}
+          - {name: 大青花鱼·改, search_name: 大青花鱼, ship_type: [ss], min_level: 100}
+          - {name: 鲃鱼·改, search_name: 鲃鱼, ship_type: [ss], min_level: 100}
+          - {name: 鹦鹉螺·改, search_name: 鹦鹉螺, ship_type: [ss], min_level: 100}
+      - min_level: 100
+        candidates:
+          - {name: U-47·改, search_name: U-47, ship_type: [ss], min_level: 100}
+          - {name: U-81·改, search_name: U-81, ship_type: [ss], min_level: 100}
+          - {name: U-96·改, search_name: U-96, ship_type: [ss], min_level: 100}
+          - {name: U-505·改, search_name: U-505, ship_type: [ss], min_level: 100}
+          - {name: U-2540·改, search_name: U-2540, ship_type: [ss], min_level: 100}
+          - {name: U-1405·改, search_name: U-1405, ship_type: [ss], min_level: 100}
+          - {name: U-1206·改, search_name: U-1206, ship_type: [ss], min_level: 100}
+          - {name: 射水鱼·改, search_name: 射水鱼, ship_type: [ss], min_level: 100}
+          - {name: 大青花鱼·改, search_name: 大青花鱼, ship_type: [ss], min_level: 100}
+          - {name: 鲃鱼·改, search_name: 鲃鱼, ship_type: [ss], min_level: 100}
+          - {name: 鹦鹉螺·改, search_name: 鹦鹉螺, ship_type: [ss], min_level: 100}
+      - min_level: 100
+        candidates:
+          - {name: U-47·改, search_name: U-47, ship_type: [ss], min_level: 100}
+          - {name: U-81·改, search_name: U-81, ship_type: [ss], min_level: 100}
+          - {name: U-96·改, search_name: U-96, ship_type: [ss], min_level: 100}
+          - {name: U-505·改, search_name: U-505, ship_type: [ss], min_level: 100}
+          - {name: U-2540·改, search_name: U-2540, ship_type: [ss], min_level: 100}
+          - {name: U-1405·改, search_name: U-1405, ship_type: [ss], min_level: 100}
+          - {name: U-1206·改, search_name: U-1206, ship_type: [ss], min_level: 100}
+          - {name: 射水鱼·改, search_name: 射水鱼, ship_type: [ss], min_level: 100}
+          - {name: 大青花鱼·改, search_name: 大青花鱼, ship_type: [ss], min_level: 100}
+          - {name: 鲃鱼·改, search_name: 鲃鱼, ship_type: [ss], min_level: 100}
+          - {name: 鹦鹉螺·改, search_name: 鹦鹉螺, ship_type: [ss], min_level: 100}
+      - min_level: 100
+        candidates:
+          - {name: U-47·改, search_name: U-47, ship_type: [ss], min_level: 100}
+          - {name: U-81·改, search_name: U-81, ship_type: [ss], min_level: 100}
+          - {name: U-96·改, search_name: U-96, ship_type: [ss], min_level: 100}
+          - {name: U-505·改, search_name: U-505, ship_type: [ss], min_level: 100}
+          - {name: U-2540·改, search_name: U-2540, ship_type: [ss], min_level: 100}
+          - {name: U-1405·改, search_name: U-1405, ship_type: [ss], min_level: 100}
+          - {name: U-1206·改, search_name: U-1206, ship_type: [ss], min_level: 100}
+          - {name: 射水鱼·改, search_name: 射水鱼, ship_type: [ss], min_level: 100}
+          - {name: 大青花鱼·改, search_name: 大青花鱼, ship_type: [ss], min_level: 100}
+          - {name: 鲃鱼·改, search_name: 鲃鱼, ship_type: [ss], min_level: 100}
+          - {name: 鹦鹉螺·改, search_name: 鹦鹉螺, ship_type: [ss], min_level: 100}
+      - min_level: 100
+        candidates:
+          - {name: U-47·改, search_name: U-47, ship_type: [ss], min_level: 100}
+          - {name: U-81·改, search_name: U-81, ship_type: [ss], min_level: 100}
+          - {name: U-96·改, search_name: U-96, ship_type: [ss], min_level: 100}
+          - {name: U-505·改, search_name: U-505, ship_type: [ss], min_level: 100}
+          - {name: U-2540·改, search_name: U-2540, ship_type: [ss], min_level: 100}
+          - {name: U-1405·改, search_name: U-1405, ship_type: [ss], min_level: 100}
+          - {name: U-1206·改, search_name: U-1206, ship_type: [ss], min_level: 100}
+          - {name: 射水鱼·改, search_name: 射水鱼, ship_type: [ss], min_level: 100}
+          - {name: 大青花鱼·改, search_name: 大青花鱼, ship_type: [ss], min_level: 100}
+          - {name: 鲃鱼·改, search_name: 鲃鱼, ship_type: [ss], min_level: 100}
+          - {name: 鹦鹉螺·改, search_name: 鹦鹉螺, ship_type: [ss], min_level: 100}
+      - min_level: 100
+        candidates:
+          - {name: U-47·改, search_name: U-47, ship_type: [ss], min_level: 100}
+          - {name: U-81·改, search_name: U-81, ship_type: [ss], min_level: 100}
+          - {name: U-96·改, search_name: U-96, ship_type: [ss], min_level: 100}
+          - {name: U-505·改, search_name: U-505, ship_type: [ss], min_level: 100}
+          - {name: U-2540·改, search_name: U-2540, ship_type: [ss], min_level: 100}
+          - {name: U-1405·改, search_name: U-1405, ship_type: [ss], min_level: 100}
+          - {name: U-1206·改, search_name: U-1206, ship_type: [ss], min_level: 100}
+          - {name: 射水鱼·改, search_name: 射水鱼, ship_type: [ss], min_level: 100}
+          - {name: 大青花鱼·改, search_name: 大青花鱼, ship_type: [ss], min_level: 100}
+          - {name: 鲃鱼·改, search_name: 鲃鱼, ship_type: [ss], min_level: 100}
+          - {name: 鹦鹉螺·改, search_name: 鹦鹉螺, ship_type: [ss], min_level: 100}

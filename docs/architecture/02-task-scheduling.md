@@ -34,7 +34,7 @@
 enum TaskPriority {
   EXPEDITION = 0,   // 远征检查（最高）
   USER_TASK  = 10,  // 用户手动发起的战斗
-  DAILY      = 20,  // 日常自动任务（演习/战役）
+  DAILY      = 20,  // 日常自动任务
 }
 ```
 
@@ -44,13 +44,16 @@ enum TaskPriority {
 
 ```typescript
 interface SchedulerTask {
-  id: string;              // 唯一标识
+  id: string;              // 当前单轮的唯一标识
+  logicalId: string;       // 所有后触发轮次共享的稳定逻辑任务标识
   name: string;            // 显示名称
   type: SchedulerTaskType; // normal_fight | campaign | exercise | decisive | expedition
   priority: TaskPriority;
   request: TaskRequest;    // 发送给后端的 API 请求体
   remainingTimes: number;  // 剩余执行次数
   totalTimes: number;      // 总次数（用于显示进度）
+  unlimited?: boolean;     // 无限任务每轮后继续，但 logicalId 不变
+  backendTaskId?: string;  // 当前轮对应的后端任务 ID
   stopCondition?: StopCondition;    // 可选的提前终止条件
   bathRepairConfig?: BathRepairConfig; // 可选的泡澡修理配置
   fleetPresets?: FleetPreset[];     // 可轮换的编队预设列表
@@ -62,9 +65,9 @@ interface SchedulerTask {
 #### 生产者
 
 三类生产者向队列添加任务：
-1. **用户手动**：通过 UI 导入方案或从任务组加载（`USER_TASK` 优先级）
-2. **定时触发**：`CronScheduler` 在刷新时间点生成演习/战役任务（`DAILY` 优先级）
-3. **后触发**：任务完成后，若 `remainingTimes > 1` 则自动追加下一轮（保持原优先级）
+1. **用户手动**：通过 UI 选择受管方案或从任务组加载（`USER_TASK` 优先级）
+2. **定时触发**：`CronScheduler` 生成演习、战役、出击、决战和胖次任务（`DAILY` 优先级）
+3. **后触发**：单轮完成后按剩余次数或无限标记追加下一轮；新轮次生成新 `id`，但继承原 `logicalId`
 
 #### 消费流程
 
@@ -88,13 +91,33 @@ flowchart TD
   J -->|否| N
   N --> O[状态=running, 等待后端完成]
   O --> P{成功?}
-  P -->|是| Q{remainingTimes > 1?}
+  P -->|是| Q{还有剩余次数<br/>或无限任务?}
   Q -->|是| R[后触发: 重新入队]
-  Q -->|否| S[任务完成, 消费下一个]
+  Q -->|否| S[逻辑任务完成, 消费下一个]
   P -->|否| T{retryCount < maxRetries?}
   T -->|是| U[retryCount++, 5s 后重试]
   T -->|否| V[任务失败, 消费下一个]
 ```
+
+---
+
+### 任务身份与生命周期
+
+调度器严格区分物理轮次和逻辑任务：
+
+| 事件 | 标识 | 含义 |
+|------|------|------|
+| `onTaskCompleted` | `id` | 一轮后端任务结束，可继续生成后触发轮次 |
+| `onLogicalTaskCompleted` | `logicalId` | 已无后触发、满足停止条件或重试耗尽，整个逻辑任务结束 |
+| `onLogicalTaskCanceled` | `logicalId` | 用户删除、清空队列或系统停止；不等同于成功或失败 |
+
+有限和无限任务的每个后触发轮次都有新的 `id`，但共享创建任务时生成的
+`logicalId`。`SchedulerBinder` 只在逻辑完成时清理 cron/pending 状态；单轮
+完成只重置当前进度。取消时还会根据原因区分行为：用户删除或清空表示主动
+放弃，`system_stopped` 只释放 pending，允许下次启动重新触发。
+
+延迟间隔、失败重试和修理等待中的任务也属于同一逻辑任务。删除或清空操作会
+同时检查运行中、就绪队列和等待队列，保证一个 `logicalId` 的停止语义可追踪。
 
 ---
 
@@ -109,21 +132,38 @@ flowchart TD
 | 演习 | 0:00 / 12:00 / 18:00 后 | `localStorage` 记录**实际完成**时间戳 |
 | 战役 | 每日 0:00 后 | `localStorage` 记录完成日期 (YYYY-MM-DD) |
 | 常规出击 | 每日 0:00 后 | 同上 |
+| 决战 | 每日 0:00 后 | 实际任务结束后记录完成日期 |
 | 刷战利品 | 每日 0:00 后 | 同上 |
 | 定时方案 | YAML 中 `scheduled_time: "HH:MM"` | 当日 `firedToday` 标志 |
 
 **关键设计**：记录的是任务**实际完成**的时间戳而非"是否已触发"。这样即使 App 因 ADB 断开等原因重启，只要任务未真正完成，下次启动后仍会补发。
+
+自动决战固定生成一轮（`decisive_rounds: 1`），不查询或推测剩余票数。来源
+只能是 `user_plan` 或 `system_preset`：前者读取决战计划页保存的
+`decisive_plan`，后者读取只读系统预设 `builtin_decisive_6`。任务入队前读取
+或配置失败会清除 pending，允许后续 tick 重试；逻辑任务实际结束后，无论成功
+或失败，当天都不再重复，以免失败前已消耗票数。
 
 #### 事件回调
 
 `CronScheduler` 通过回调通知 `AppController`，由 Controller 调用 `Scheduler.addTask()` 入队：
 
 ```typescript
+import type { LootPlanSource } from '../../src/shared/lootPlans';
+import type {
+  DecisiveAutomationSource,
+} from '../../src/shared/decisiveAutomation';
+
 interface CronCallbacks {
   onExerciseDue?: (fleetId: number) => void;
   onCampaignDue?: (campaignName: string, times: number) => void;
   onNormalFightDue?: () => void;
-  onLootDue?: (planIndex: number, stopCount: number) => void;
+  onDecisiveDue?: (source: DecisiveAutomationSource) => void;
+  onLootDue?: (
+    source: LootPlanSource,
+    planId: string,
+    stopCount: number,
+  ) => void;
 }
 ```
 
@@ -216,8 +256,8 @@ graph LR
 
 ## 与其他系统的关系
 
-- **Controller 层**：`SchedulerBinder`（`controller/app/SchedulerBinder.ts`）封装 Scheduler/CronScheduler 的回调绑定，管理待完成任务的 ID 跟踪
-- **配置系统**：`CronScheduler` 的触发规则来自 `usersettings.yaml` 的 `daily_automation` 字段；远征间隔 (`expedition_interval`) 同步到 `ExpeditionTimer`
+- **Controller 层**：`SchedulerBinder` 绑定 Scheduler/CronScheduler 回调并管理待完成任务 ID；`SchedulerRuntimeTracker` 持有日志派生的主页运行状态；`ScheduledTaskLoader` 负责读取自动化计划并入队
+- **配置系统**：开关类后端设置来自 `usersettings.yaml.daily_automation`；远征间隔、战役次数、自动决战和胖次设置来自 `gui_settings.json.automation`
 - **模板与任务组**：任务组通过 `loadGroupToQueue()`（`controller/taskGroup/queueLoader.ts`）批量向 `Scheduler` 添加任务
 - **出击计划**：方案解析后构建 `TaskRequest`，通过 `Scheduler.addTask()` 入队
 - **后端通信**：`Scheduler` 持有 `ApiClient` 引用，通过 REST API 发起任务、通过 WebSocket 接收进度和完成通知

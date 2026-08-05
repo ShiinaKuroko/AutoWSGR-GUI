@@ -2,12 +2,12 @@
  * presetFlow —— 任务预设相关流程独立函数。
  */
 import type { PlanPreviewView } from '../../view/plan/PlanPreviewView';
-import type { TaskRequest, NormalFightReq } from '../../types/api';
+import type { TaskRequest } from '../../types/api';
 import { TaskPriority } from '../../model/scheduler';
 import type { TaskPreset } from '../../types/model';
 import { TemplateController } from '../template/TemplateController';
 import { Logger } from '../../utils/Logger';
-import type { PlanHost } from './PlanController';
+import type { PlanHost } from '../contracts.js';
 
 export interface PresetState {
   currentPreset: TaskPreset | null;
