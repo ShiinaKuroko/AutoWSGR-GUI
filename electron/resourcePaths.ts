@@ -1,6 +1,6 @@
 import * as path from 'path';
 
-export const SHIP_LIBRARY_ENV = 'AUTOWSGR_SHIP_LIBRARY_ROOT';
+export const SHIP_LIBRARY_ENV = 'AUTOWSGR_SHIP_LIBRARY';
 
 /** Resolve the canonical read-only ship library bundled with the GUI. */
 export function shipLibraryRoot(resourceRoot: string): string {
