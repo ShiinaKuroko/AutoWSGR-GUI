@@ -6,6 +6,9 @@ import type {
   UserTeamPlanSlot,
   UserTeamShipRule,
 } from '../../types/ipc.js';
+import type {
+  BackupFollowMode,
+} from '../../types/fleetEditor.js';
 import {
   FLEET_SHIP_TYPE_CODES,
 } from '../../shared/fleetShipTypes.js';
@@ -36,8 +39,6 @@ export interface FleetDraft {
   source: PlanPresetSource;
   slots: FleetSlotDraft[];
 }
-
-export type BackupFollowMode = 'ship' | 'position';
 
 /**
  * 执行槽位重排。位置跟随模式只移动主选及其规则，备选队列保留在原位置。

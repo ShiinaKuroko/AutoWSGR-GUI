@@ -6,7 +6,11 @@ import type { TemplateModel } from '../../model/TemplateModel';
 import type { TemplateWizardView } from '../../view/template/TemplateWizardView';
 import type { WizardPrefillData } from '../../types/view.js';
 import { Logger } from '../../utils/Logger';
-import { showPrompt, showConfirm, showAlert } from '../shared/DialogHelper';
+import {
+  showAlert,
+  showConfirm,
+  showPrompt,
+} from '../../view/shared/DialogHelper';
 import { showWizardWithTemplate } from './wizard';
 import { jsonCodec } from '../../adapter';
 

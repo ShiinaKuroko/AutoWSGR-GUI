@@ -1,20 +1,12 @@
 /** 渲染本地方案列表并发出导入、导出、重命名和删除意图。 */
 import type {
-  ManagedTeamPlan,
-  PlanFileOperationResult,
-  PlanFileReadError,
-  PlanManagementResult,
   PlanPresetSource,
-  PlanTeamBinding,
-  UserPlanExportResult,
   UserPlanExportSelection,
 } from '../../types/ipc.js';
-import {
-  showAlert,
-  showConfirm,
-  showPrompt,
-  showSaveSuccess,
-} from '../../controller/shared/DialogHelper';
+import type {
+  PlanManagementRowViewObject,
+  PlanManagementViewObject,
+} from '../../types/view.js';
 import {
   captureScrollPosition,
   restoreScrollPosition,
@@ -23,55 +15,36 @@ import {
 type ManagementSource = PlanPresetSource | 'all';
 type ManagementKind = 'battle' | 'team' | 'all';
 
-export interface PlanManagementTaskGroup {
-  name: string;
-  items: ReadonlyArray<{
-    kind: string;
-    path?: string;
-    managedSource?: PlanPresetSource;
-    managedFile?: string;
-  }>;
-}
-
-export interface PlanManagementViewHost {
-  loadPlanManagement(): Promise<PlanManagementResult>;
-  exportUserPlans(
-    selections: UserPlanExportSelection[],
-  ): Promise<UserPlanExportResult>;
-  setPlanUnlinkedIgnored(
+export class PlanManagementView {
+  onRefresh?: () => Promise<void>;
+  onExportPlans?: (
+    selections: readonly UserPlanExportSelection[],
+  ) => Promise<void>;
+  onDeletePlans?: (
+    selections: readonly UserPlanExportSelection[],
+  ) => Promise<void>;
+  onToggleUnlinked?: (
     kind: 'battle' | 'team',
     source: PlanPresetSource,
     file: string,
     ignored: boolean,
-  ): Promise<string[]>;
-  renameUserCombatPlan(
+  ) => Promise<void>;
+  onRenameCombatPlan?: (file: string) => Promise<void>;
+  onDeleteCombatPlan?: (file: string) => Promise<void>;
+  onDeleteTeamPlan?: (
     file: string,
-    newName: string,
-  ): Promise<PlanFileOperationResult>;
-  deleteUserCombatPlan(file: string): Promise<PlanFileOperationResult>;
-  deleteUserTeamPlan(file: string): Promise<PlanFileOperationResult>;
-  taskGroups(): ReadonlyArray<PlanManagementTaskGroup>;
-  openBattlePlan(file: string, source: PlanPresetSource): Promise<void>;
-  openTeamPlan(file: string, source: PlanPresetSource): Promise<void>;
-}
+    name: string,
+    warning: string,
+  ) => Promise<void>;
+  onOpenBattlePlan?: (
+    file: string,
+    source: PlanPresetSource,
+  ) => Promise<void>;
+  onOpenTeamPlan?: (
+    file: string,
+    source: PlanPresetSource,
+  ) => Promise<void>;
 
-interface ManagementRow {
-  kind: 'battle' | 'team';
-  source: PlanPresetSource;
-  name: string;
-  file: string;
-  relations: string[];
-  taskGroups: string[];
-  missingRelations: Set<string>;
-  status: string;
-  statusClass: 'ok' | 'warning' | 'muted';
-  attention: boolean;
-  ignoredUnlinked?: boolean;
-  invalid?: boolean;
-  errorMessage?: string;
-}
-
-export class PlanManagementView {
   private readonly body = document.getElementById(
     'plan-team-management-body',
   ) as HTMLTableSectionElement | null;
@@ -104,45 +77,43 @@ export class PlanManagementView {
   private source: ManagementSource = 'all';
   private kind: ManagementKind = 'all';
   private query = '';
-  private errors: PlanFileReadError[] = [];
-  private ignoredUnlinkedPlans = new Set<string>();
-  private bindings: PlanTeamBinding[] = [];
-  private teamPlans: ManagedTeamPlan[] = [];
+  private viewObject: PlanManagementViewObject = {
+    rows: [],
+    errors: [],
+  };
   private selections = new Map<string, UserPlanExportSelection>();
   private visibleSelections: UserPlanExportSelection[] = [];
   private exporting = false;
   private deleting = false;
 
-  constructor(private readonly host: PlanManagementViewHost) {
+  constructor() {
     this.bindActions();
   }
 
-  async load(): Promise<void> {
+  showLoading(): void {
     if (!this.body) return;
     this.body.innerHTML = '<tr><td colspan="7">正在读取计划…</td></tr>';
-    try {
-      const result = await this.host.loadPlanManagement();
-      this.bindings = result.bindings;
-      this.teamPlans = result.teamPlans;
-      this.errors = result.errors;
-      this.ignoredUnlinkedPlans = new Set(result.ignoredUnlinkedPlans);
-      this.render();
-    } catch (error) {
-      this.body.innerHTML = '';
-      const row = this.body.insertRow();
-      const cell = row.insertCell();
-      cell.colSpan = 7;
-      cell.className = 'plan-management-empty';
-      cell.textContent = error instanceof Error
-        ? error.message
-        : String(error);
-    }
+  }
+
+  showError(message: string): void {
+    if (!this.body) return;
+    this.body.innerHTML = '';
+    const row = this.body.insertRow();
+    const cell = row.insertCell();
+    cell.colSpan = 7;
+    cell.className = 'plan-management-empty';
+    cell.textContent = message;
+  }
+
+  render(viewObject: PlanManagementViewObject): void {
+    this.viewObject = viewObject;
+    this.renderCurrent();
   }
 
   private bindActions(): void {
     document.getElementById('btn-refresh-plan-management')
       ?.addEventListener('click', () => {
-        void this.load();
+        void this.onRefresh?.();
       });
     this.exportButton?.addEventListener('click', () => {
       void this.exportSelectedPlans();
@@ -160,7 +131,7 @@ export class PlanManagementView {
           this.selections.delete(key);
         }
       });
-      this.render();
+      this.renderCurrent();
     });
     this.tabs.forEach(tab => {
       tab.addEventListener('click', () => {
@@ -169,7 +140,7 @@ export class PlanManagementView {
           return;
         }
         this.source = source;
-        this.render();
+        this.renderCurrent();
       });
     });
     this.kindButtons.forEach(button => {
@@ -177,15 +148,15 @@ export class PlanManagementView {
         const kind = button.dataset['planManagementKind'];
         if (kind !== 'all' && kind !== 'battle' && kind !== 'team') return;
         this.kind = kind;
-        this.render();
+        this.renderCurrent();
       });
     });
     this.search?.addEventListener('input', () => {
       this.query = this.search?.value.trim() ?? '';
-      this.render();
+      this.renderCurrent();
     });
     this.attentionOnly?.addEventListener('change', () => {
-      this.render();
+      this.renderCurrent();
     });
     this.body?.addEventListener('change', event => {
       const checkbox = (event.target as HTMLElement)
@@ -218,14 +189,18 @@ export class PlanManagementView {
         const source = button.dataset['planSource'] === 'system'
           ? 'system'
           : 'user';
-        void this.host.openBattlePlan(file, source);
+        void this.onOpenBattlePlan?.(file, source);
       } else if (operation === 'edit-team') {
         const source = button.dataset['planSource'] === 'system'
           ? 'system'
           : 'user';
-        void this.host.openTeamPlan(file, source);
+        void this.onOpenTeamPlan?.(file, source);
       } else if (operation === 'delete-team') {
-        void this.deleteTeamPlan(file, button.dataset['planName'] ?? '');
+        void this.deleteTeamPlan(
+          file,
+          button.dataset['planName'] ?? '',
+          button.dataset['planWarning'] ?? '',
+        );
       } else if (operation === 'toggle-unlinked') {
         const kind = button.dataset['planKind'] === 'team'
           ? 'team'
@@ -243,7 +218,7 @@ export class PlanManagementView {
     });
   }
 
-  private render(): void {
+  private renderCurrent(): void {
     if (!this.body) return;
     const scroll = this.body.closest<HTMLElement>(
       '.plan-team-management-table-wrap',
@@ -251,110 +226,7 @@ export class PlanManagementView {
     const scrollPosition = captureScrollPosition(scroll);
     this.renderActiveFilters();
 
-    const planKey = (
-      source: PlanPresetSource,
-      file: string,
-    ): string => (
-      `${source}:${file.trim().toLocaleLowerCase('zh-CN')}`
-    );
-    const taskGroupUsage = this.collectTaskGroupUsage(planKey);
-    const battlePlans = this.collectBattlePlans();
-    const teamKey = (name: string): string => (
-      name.trim().toLocaleLowerCase('zh-CN')
-    );
-    const availableTeams = new Set(
-      this.teamPlans.map(plan => teamKey(plan.name)),
-    );
-    const teamUsage = new Map<string, Set<string>>();
-    battlePlans.forEach(plan => {
-      plan.teams.forEach(name => {
-        const key = teamKey(name);
-        const usedBy = teamUsage.get(key) ?? new Set<string>();
-        usedBy.add(plan.name);
-        teamUsage.set(key, usedBy);
-      });
-    });
-
-    const rows: ManagementRow[] = [];
-    battlePlans.forEach(plan => {
-      const relations = [...plan.teams];
-      const missingRelations = new Set(relations.filter(name => (
-        !availableTeams.has(teamKey(name))
-      )));
-      const ignoredUnlinked = this.ignoredUnlinkedPlans.has(
-        `battle/${plan.source}/${plan.file}`,
-      );
-      const attention = (
-        (relations.length === 0 && !ignoredUnlinked)
-        || missingRelations.size > 0
-      );
-      rows.push({
-        kind: 'battle',
-        source: plan.source,
-        name: plan.name,
-        file: plan.file,
-        relations,
-        taskGroups: [
-          ...(taskGroupUsage.get(planKey(plan.source, plan.file)) ?? []),
-        ],
-        missingRelations,
-        status: relations.length === 0
-          ? ignoredUnlinked
-            ? ''
-            : '未关联舰队'
-          : missingRelations.size > 0
-            ? '舰队文件缺失'
-            : '关联正常',
-        statusClass: ignoredUnlinked
-          ? 'muted'
-          : attention
-            ? 'warning'
-            : 'ok',
-        attention,
-        ignoredUnlinked,
-      });
-    });
-    this.teamPlans.forEach(plan => {
-      const relations = [...(teamUsage.get(teamKey(plan.name)) ?? [])];
-      const ignoredUnlinked = this.ignoredUnlinkedPlans.has(
-        `team/${plan.source}/${plan.file}`,
-      );
-      rows.push({
-        kind: 'team',
-        source: plan.source,
-        name: plan.name,
-        file: plan.file,
-        relations,
-        taskGroups: [],
-        missingRelations: new Set<string>(),
-        status: relations.length > 0
-          ? `已被 ${relations.length} 个计划引用`
-          : ignoredUnlinked
-            ? ''
-            : '未被引用',
-        statusClass: relations.length > 0 ? 'ok' : 'muted',
-        attention: relations.length === 0 && !ignoredUnlinked,
-        ignoredUnlinked,
-      });
-    });
-    this.errors.forEach(error => {
-      rows.push({
-        kind: error.kind,
-        source: error.source,
-        name: error.file.replace(/\.ya?ml$/i, ''),
-        file: error.file,
-        relations: [],
-        taskGroups: error.kind === 'battle'
-          ? [...(taskGroupUsage.get(planKey(error.source, error.file)) ?? [])]
-          : [],
-        missingRelations: new Set<string>(),
-        status: '无法读取',
-        statusClass: 'warning',
-        attention: true,
-        invalid: true,
-        errorMessage: error.message,
-      });
-    });
+    const rows = this.viewObject.rows;
 
     const sourceRows = rows.filter(row => (
       this.source === 'all' || row.source === this.source
@@ -396,66 +268,10 @@ export class PlanManagementView {
     });
   }
 
-  private collectTaskGroupUsage(
-    planKey: (source: PlanPresetSource, file: string) => string,
-  ): Map<string, Set<string>> {
-    const usage = new Map<string, Set<string>>();
-    this.host.taskGroups().forEach(group => {
-      group.items.forEach(item => {
-        if (item.kind !== 'plan') return;
-        let source = item.managedSource;
-        let file = item.managedFile?.trim();
-        if ((!source || !file) && item.path) {
-          const normalizedPath = item.path.replace(/\\/g, '/');
-          const lowerPath = normalizedPath.toLocaleLowerCase('zh-CN');
-          if (/(^|\/)system_battle_plans\//.test(lowerPath)) {
-            source = 'system';
-          } else if (/(^|\/)user_battle_plans\//.test(lowerPath)) {
-            source = 'user';
-          }
-          file = normalizedPath.split('/').pop()?.trim();
-        }
-        if (!source || !file) return;
-        const key = planKey(source, file);
-        const groups = usage.get(key) ?? new Set<string>();
-        groups.add(group.name);
-        usage.set(key, groups);
-      });
-    });
-    return usage;
-  }
-
-  private collectBattlePlans(): Map<string, {
-    file: string;
-    name: string;
-    source: PlanPresetSource;
-    teams: Set<string>;
-  }> {
-    const plans = new Map<string, {
-      file: string;
-      name: string;
-      source: PlanPresetSource;
-      teams: Set<string>;
-    }>();
-    this.bindings.forEach(binding => {
-      const key = `${binding.source}:${binding.planFile}`;
-      let plan = plans.get(key);
-      if (!plan) {
-        plan = {
-          file: binding.planFile,
-          name: binding.planName,
-          source: binding.source,
-          teams: new Set<string>(),
-        };
-        plans.set(key, plan);
-      }
-      if (binding.teamName) plan.teams.add(binding.teamName);
-    });
-    return plans;
-  }
-
-  private renderCountsAndWarnings(rows: ManagementRow[]): void {
-    const filteredErrors = this.errors.filter(error => (
+  private renderCountsAndWarnings(
+    rows: readonly PlanManagementRowViewObject[],
+  ): void {
+    const filteredErrors = this.viewObject.errors.filter(error => (
       this.source === 'all' || error.source === this.source
     ));
     const linkedCount = rows.filter(row => (
@@ -492,7 +308,9 @@ export class PlanManagementView {
       .join('\n');
   }
 
-  private filterRows(rows: ManagementRow[]): ManagementRow[] {
+  private filterRows(
+    rows: readonly PlanManagementRowViewObject[],
+  ): PlanManagementRowViewObject[] {
     const query = this.query.toLocaleLowerCase('zh-CN');
     const attentionOnly = this.attentionOnly?.checked ?? false;
     return rows.filter(row => {
@@ -514,8 +332,8 @@ export class PlanManagementView {
   }
 
   private syncSelections(
-    rows: ManagementRow[],
-    visibleRows: ManagementRow[],
+    rows: readonly PlanManagementRowViewObject[],
+    visibleRows: readonly PlanManagementRowViewObject[],
   ): void {
     const availableKeys = new Set(
       rows
@@ -534,7 +352,9 @@ export class PlanManagementView {
     this.updateSelectionControls();
   }
 
-  private createRow(item: ManagementRow): HTMLTableRowElement {
+  private createRow(
+    item: PlanManagementRowViewObject,
+  ): HTMLTableRowElement {
     const row = document.createElement('tr');
     row.classList.toggle('needs-attention', item.attention);
     const selectionCell = this.createSelectionCell(item);
@@ -561,7 +381,9 @@ export class PlanManagementView {
     return row;
   }
 
-  private createSelectionCell(item: ManagementRow): HTMLTableCellElement {
+  private createSelectionCell(
+    item: PlanManagementRowViewObject,
+  ): HTMLTableCellElement {
     const cell = document.createElement('td');
     cell.className = 'plan-management-selection-cell';
     if (item.source !== 'user') {
@@ -584,7 +406,9 @@ export class PlanManagementView {
     return cell;
   }
 
-  private createPlanCell(item: ManagementRow): HTMLTableCellElement {
+  private createPlanCell(
+    item: PlanManagementRowViewObject,
+  ): HTMLTableCellElement {
     const cell = document.createElement('td');
     const kind = document.createElement('span');
     kind.className = `plan-kind-badge ${item.kind}`;
@@ -600,7 +424,9 @@ export class PlanManagementView {
     return cell;
   }
 
-  private createSourceCell(item: ManagementRow): HTMLTableCellElement {
+  private createSourceCell(
+    item: PlanManagementRowViewObject,
+  ): HTMLTableCellElement {
     const cell = document.createElement('td');
     const badge = document.createElement('span');
     badge.className = `plan-source-badge ${item.source}`;
@@ -609,7 +435,9 @@ export class PlanManagementView {
     return cell;
   }
 
-  private createRelationCell(item: ManagementRow): HTMLTableCellElement {
+  private createRelationCell(
+    item: PlanManagementRowViewObject,
+  ): HTMLTableCellElement {
     const cell = document.createElement('td');
     if (item.invalid) {
       cell.textContent = item.errorMessage || 'YAML 格式不合法';
@@ -628,11 +456,11 @@ export class PlanManagementView {
       list.className = 'plan-management-relations';
       item.relations.forEach(relation => {
         const chip = document.createElement('span');
-        chip.className = item.missingRelations.has(relation)
+        chip.className = item.missingRelations.includes(relation)
           ? 'plan-relation-chip missing'
           : 'plan-relation-chip';
         chip.textContent = relation;
-        if (item.missingRelations.has(relation)) {
+        if (item.missingRelations.includes(relation)) {
           chip.title = '未找到同名舰队方案';
         }
         list.append(chip);
@@ -642,7 +470,9 @@ export class PlanManagementView {
     return cell;
   }
 
-  private createTaskGroupCell(item: ManagementRow): HTMLTableCellElement {
+  private createTaskGroupCell(
+    item: PlanManagementRowViewObject,
+  ): HTMLTableCellElement {
     const cell = document.createElement('td');
     if (item.kind === 'team') {
       cell.textContent = '—';
@@ -664,7 +494,9 @@ export class PlanManagementView {
     return cell;
   }
 
-  private createActionCell(item: ManagementRow): HTMLTableCellElement {
+  private createActionCell(
+    item: PlanManagementRowViewObject,
+  ): HTMLTableCellElement {
     const cell = document.createElement('td');
     cell.className = 'plan-management-actions';
     if (item.invalid) {
@@ -676,6 +508,7 @@ export class PlanManagementView {
           true,
           item.source,
           item.name,
+          item.deleteWarning,
         ));
       } else {
         cell.textContent = '只读';
@@ -719,13 +552,16 @@ export class PlanManagementView {
           true,
           item.source,
           item.name,
+          item.deleteWarning,
         ));
       }
     }
     return cell;
   }
 
-  private unlinkedButton(item: ManagementRow): HTMLButtonElement {
+  private unlinkedButton(
+    item: PlanManagementRowViewObject,
+  ): HTMLButtonElement {
     const button = this.actionButton(
       item.ignoredUnlinked ? '恢复检查' : '忽略提示',
       'toggle-unlinked',
@@ -790,20 +626,7 @@ export class PlanManagementView {
     this.exporting = true;
     this.updateSelectionControls();
     try {
-      const result = await this.host.exportUserPlans(selections);
-      if (result.canceled) return;
-      if (!result.success) {
-        await showAlert('导出失败', result.error || '未知错误');
-        return;
-      }
-      showSaveSuccess(
-        `已导出 ${result.count ?? selections.length} 个用户配置`,
-      );
-    } catch (error) {
-      await showAlert(
-        '导出失败',
-        error instanceof Error ? error.message : String(error),
-      );
+      await this.onExportPlans?.(selections);
     } finally {
       this.exporting = false;
       this.updateSelectionControls();
@@ -813,54 +636,10 @@ export class PlanManagementView {
   private async deleteSelectedPlans(): Promise<void> {
     if (this.exporting || this.deleting || this.selections.size === 0) return;
     const selections = [...this.selections.values()];
-    const battleCount = selections.filter(
-      selection => selection.kind === 'battle',
-    ).length;
-    const teamCount = selections.length - battleCount;
-    const confirmed = await showConfirm(
-      '批量删除用户配置',
-      `即将删除 ${selections.length} 个用户配置`
-        + `（出征计划 ${battleCount} 个，舰队方案 ${teamCount} 个）。\n`
-        + '引用这些配置的任务不会一并删除，此操作无法撤销。是否继续？',
-    );
-    if (!confirmed) return;
-
     this.deleting = true;
     this.updateSelectionControls();
-    const failures: string[] = [];
-    let deletedCount = 0;
     try {
-      for (const selection of selections) {
-        try {
-          const result = selection.kind === 'battle'
-            ? await this.host.deleteUserCombatPlan(selection.file)
-            : await this.host.deleteUserTeamPlan(selection.file);
-          if (!result.success) {
-            failures.push(
-              `${selection.file}：${result.error || '未知错误'}`,
-            );
-            continue;
-          }
-          deletedCount += 1;
-          this.selections.delete(this.selectionKey(selection));
-        } catch (error) {
-          failures.push(
-            `${selection.file}：${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
-        }
-      }
-      await this.load();
-      if (failures.length > 0) {
-        await showAlert(
-          '批量删除未全部完成',
-          `成功删除 ${deletedCount} 个，失败 ${failures.length} 个。\n`
-            + failures.join('\n'),
-        );
-      } else {
-        showSaveSuccess(`已删除 ${deletedCount} 个用户配置`);
-      }
+      await this.onDeletePlans?.(selections);
     } finally {
       this.deleting = false;
       this.updateSelectionControls();
@@ -880,6 +659,7 @@ export class PlanManagementView {
     danger = false,
     source?: PlanPresetSource,
     name?: string,
+    warning?: string,
   ): HTMLButtonElement {
     const button = document.createElement('button');
     button.type = 'button';
@@ -895,6 +675,7 @@ export class PlanManagementView {
     button.dataset['planFile'] = file;
     if (source) button.dataset['planSource'] = source;
     if (name) button.dataset['planName'] = name;
+    if (warning) button.dataset['planWarning'] = warning;
     button.textContent = label;
     return button;
   }
@@ -905,87 +686,22 @@ export class PlanManagementView {
     source: PlanPresetSource,
     ignored: boolean,
   ): Promise<void> {
-    try {
-      const values = await this.host.setPlanUnlinkedIgnored(
-        kind,
-        source,
-        file,
-        ignored,
-      );
-      this.ignoredUnlinkedPlans = new Set(values);
-      this.render();
-    } catch (error) {
-      await showAlert(
-        '操作失败',
-        error instanceof Error ? error.message : String(error),
-      );
-    }
+    await this.onToggleUnlinked?.(kind, source, file, ignored);
   }
 
   private async renameCombatPlan(file: string): Promise<void> {
-    const currentName = file
-      .replace(/\.ya?ml$/i, '')
-      .replace(/^bettle-/i, '');
-    const newName = await showPrompt(
-      '重命名出征计划',
-      '只修改用户计划文件名，不修改 YAML 的后端字段。',
-      currentName,
-    );
-    if (newName === null || !newName.trim() || newName.trim() === currentName) {
-      return;
-    }
-    const result = await this.host.renameUserCombatPlan(file, newName.trim());
-    if (!result.success) {
-      await showAlert('重命名失败', result.error || '未知错误');
-      return;
-    }
-    await this.load();
+    await this.onRenameCombatPlan?.(file);
   }
 
   private async deleteCombatPlan(file: string): Promise<void> {
-    const confirmed = await showConfirm(
-      '删除出征计划',
-      `确定删除用户计划 ${file} 吗？此操作无法撤销。`,
-    );
-    if (!confirmed) return;
-    const result = await this.host.deleteUserCombatPlan(file);
-    if (!result.success) {
-      await showAlert('删除失败', result.error || '未知错误');
-      return;
-    }
-    await this.load();
+    await this.onDeleteCombatPlan?.(file);
   }
 
-  private async deleteTeamPlan(file: string, name: string): Promise<void> {
-    const normalizedName = name.trim().toLocaleLowerCase('zh-CN');
-    const references = new Set(
-      this.bindings
-        .filter(binding => (
-          binding.teamName?.trim().toLocaleLowerCase('zh-CN')
-            === normalizedName
-        ))
-        .map(binding => binding.planName),
-    );
-    const hasOtherTeamWithSameName = this.teamPlans.some(plan => (
-      plan.file !== file
-      && plan.name.trim().toLocaleLowerCase('zh-CN') === normalizedName
-    ));
-    let referenceNotice = '';
-    if (references.size > 0) {
-      referenceNotice = hasOtherTeamWithSameName
-        ? `\n当前有 ${references.size} 个出征计划引用该名称，删除后仍会匹配另一份同名舰队方案。`
-        : `\n当前有 ${references.size} 个出征计划引用该舰队；删除后这些计划会显示舰队文件缺失。`;
-    }
-    const confirmed = await showConfirm(
-      '删除舰队方案',
-      `确定删除舰队方案 ${name || file} 吗？${referenceNotice}\n此操作无法撤销。`,
-    );
-    if (!confirmed) return;
-    const result = await this.host.deleteUserTeamPlan(file);
-    if (!result.success) {
-      await showAlert('删除失败', result.error || '未知错误');
-      return;
-    }
-    await this.load();
+  private async deleteTeamPlan(
+    file: string,
+    name: string,
+    warning: string,
+  ): Promise<void> {
+    await this.onDeleteTeamPlan?.(file, name, warning);
   }
 }

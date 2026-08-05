@@ -44,11 +44,17 @@ export function showSaveSuccess(message = '保存成功'): void {
 }
 
 /** 弹出输入框，返回用户输入的字符串，取消返回 null */
-export function showPrompt(title: string, message = '', defaultValue = ''): Promise<string | null> {
+export function showPrompt(
+  title: string,
+  message = '',
+  defaultValue = '',
+): Promise<string | null> {
   const overlay = document.getElementById('generic-prompt')!;
   const titleEl = document.getElementById('generic-prompt-title')!;
   const msgEl = document.getElementById('generic-prompt-message')!;
-  const inputEl = document.getElementById('generic-prompt-input') as HTMLInputElement;
+  const inputEl = document.getElementById(
+    'generic-prompt-input',
+  ) as HTMLInputElement;
   const okBtn = document.getElementById('generic-prompt-ok')!;
   const cancelBtn = document.getElementById('generic-prompt-cancel')!;
 
@@ -69,11 +75,17 @@ export function showPrompt(title: string, message = '', defaultValue = ''): Prom
       cancelBtn.removeEventListener('click', onCancel);
       inputEl.removeEventListener('keydown', onKey);
     };
-    const onOk = () => { cleanup(); resolve(inputEl.value); };
-    const onCancel = () => { cleanup(); resolve(null); };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Enter') onOk();
-      if (e.key === 'Escape') onCancel();
+    const onOk = () => {
+      cleanup();
+      resolve(inputEl.value);
+    };
+    const onCancel = () => {
+      cleanup();
+      resolve(null);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Enter') onOk();
+      if (event.key === 'Escape') onCancel();
     };
     okBtn.addEventListener('click', onOk);
     cancelBtn.addEventListener('click', onCancel);
@@ -86,7 +98,9 @@ export function showConfirm(title: string, message = ''): Promise<boolean> {
   const overlay = document.getElementById('generic-prompt')!;
   const titleEl = document.getElementById('generic-prompt-title')!;
   const msgEl = document.getElementById('generic-prompt-message')!;
-  const inputEl = document.getElementById('generic-prompt-input') as HTMLInputElement;
+  const inputEl = document.getElementById(
+    'generic-prompt-input',
+  ) as HTMLInputElement;
   const okBtn = document.getElementById('generic-prompt-ok')!;
   const cancelBtn = document.getElementById('generic-prompt-cancel')!;
 
@@ -104,8 +118,14 @@ export function showConfirm(title: string, message = ''): Promise<boolean> {
       okBtn.removeEventListener('click', onOk);
       cancelBtn.removeEventListener('click', onCancel);
     };
-    const onOk = () => { cleanup(); resolve(true); };
-    const onCancel = () => { cleanup(); resolve(false); };
+    const onOk = () => {
+      cleanup();
+      resolve(true);
+    };
+    const onCancel = () => {
+      cleanup();
+      resolve(false);
+    };
     okBtn.addEventListener('click', onOk);
     cancelBtn.addEventListener('click', onCancel);
   });
@@ -116,7 +136,9 @@ export function showAlert(title: string, message = ''): Promise<void> {
   const overlay = document.getElementById('generic-prompt')!;
   const titleEl = document.getElementById('generic-prompt-title')!;
   const msgEl = document.getElementById('generic-prompt-message')!;
-  const inputEl = document.getElementById('generic-prompt-input') as HTMLInputElement;
+  const inputEl = document.getElementById(
+    'generic-prompt-input',
+  ) as HTMLInputElement;
   const okBtn = document.getElementById('generic-prompt-ok')!;
   const cancelBtn = document.getElementById('generic-prompt-cancel')!;
 
@@ -133,7 +155,10 @@ export function showAlert(title: string, message = ''): Promise<void> {
       overlay.style.display = 'none';
       okBtn.removeEventListener('click', onOk);
     };
-    const onOk = () => { cleanup(); resolve(); };
+    const onOk = () => {
+      cleanup();
+      resolve();
+    };
     okBtn.addEventListener('click', onOk);
   });
 }

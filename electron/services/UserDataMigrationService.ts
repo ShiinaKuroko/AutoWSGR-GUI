@@ -28,6 +28,15 @@ export interface UserDataMigrationState {
   completed: string[];
 }
 
+/** 持久化保存的最近一次迁移结果。 */
+export interface UserDataMigrationReport {
+  timestamp: string;
+  total: number;
+  succeeded: number;
+  failed: number;
+  failedFiles: string[];
+}
+
 /** 旧任务组中的计划路径迁移后所指向的受管配置。 */
 export type LegacyPlanReferenceTarget =
   | {
@@ -42,6 +51,11 @@ export type LegacyPlanReferenceTarget =
 
 /** 当前旧用户数据迁移版本。 */
 export const USER_DATA_MIGRATION_VERSION = 6;
+
+/** v6 库存迁移使用独立完成键，不能只依赖共享版本号。 */
+export const PRESET_INVENTORY_MIGRATION_STAGE = (
+  'migration:v6:preset-inventory:complete'
+);
 
 const OBSOLETE_SYSTEM_PLAN_FILES = new Set([
   'bettle-E1炸鱼.yaml',
@@ -71,6 +85,8 @@ const OBSOLETE_SYSTEM_PLAN_ALIASES: Readonly<Record<string, string>> = {
 
 /** 管理迁移状态、旧配置复制和任务组路径更新。 */
 export class UserDataMigrationService {
+  private legacyMigrationAllowed: boolean | null = null;
+
   constructor(
     private readonly appPaths: AppPaths,
     private readonly atomicFiles: AtomicFileStore,
@@ -95,10 +111,27 @@ export class UserDataMigrationService {
 
   /** 原子写入当前迁移状态。 */
   writeState(state: UserDataMigrationState): void {
+    fs.mkdirSync(this.appPaths.userDataRoot(), { recursive: true });
     this.atomicFiles.write(
       this.statePath(),
       JSON.stringify(state, null, 2),
     );
+  }
+
+  /** 判断一个独立迁移阶段是否已经完整成功。 */
+  isStageComplete(stage: string): boolean {
+    return this.readState().completed.includes(stage);
+  }
+
+  /** 原子合并阶段完成键，并保留旧迁移记录。 */
+  completeStage(stage: string, version: number): void {
+    const state = this.readState();
+    const completed = new Set(state.completed);
+    completed.add(stage);
+    this.writeState({
+      version: Math.max(state.version, version),
+      completed: [...completed].sort(),
+    });
   }
 
   /** 判断 EXE 目录是否包含旧版用户数据。 */
@@ -117,11 +150,85 @@ export class UserDataMigrationService {
     ));
   }
 
+  /**
+   * 冻结本次启动是否允许迁移当前 EXE 目录。
+   *
+   * 已初始化 userData 不会因切换安装目录而被旧文件覆盖；同一来源已经开始
+   * 但未完成时仍允许重试。
+   */
+  shouldMigrateLegacyInstallation(): boolean {
+    if (this.legacyMigrationAllowed !== null) {
+      return this.legacyMigrationAllowed;
+    }
+    if (!this.hasLegacyInstallation()) {
+      this.legacyMigrationAllowed = false;
+      return false;
+    }
+
+    const state = this.readState();
+    const started = state.completed.includes(
+      this.legacySourceStage('started'),
+    );
+    const completed = state.completed.includes(
+      this.legacySourceStage('complete'),
+    );
+    this.legacyMigrationAllowed = (
+      !completed
+      && (started || !this.userDataInitialized())
+    );
+    return this.legacyMigrationAllowed;
+  }
+
+  /** 旧设置、任务组和模板阶段是否已经完整成功。 */
+  isLegacyConfigurationMigrationComplete(): boolean {
+    return this.isStageComplete(
+      this.legacySourceStage('configuration-complete'),
+    );
+  }
+
+  /** 在全部迁移阶段和报告均完成后封存当前旧安装来源。 */
+  completeLegacySourceMigration(): void {
+    if (
+      !this.shouldMigrateLegacyInstallation()
+      || !this.isLegacyConfigurationMigrationComplete()
+    ) {
+      return;
+    }
+    const state = this.readState();
+    const completed = new Set(state.completed);
+    completed.add(this.legacySourceStage('complete'));
+    this.writeState({
+      version: state.version,
+      completed: [...completed].sort(),
+    });
+  }
+
+  /** 原子写入最近一次实际迁移报告。 */
+  writeMigrationReport(
+    summary: LegacyMigrationSummary,
+  ): UserDataMigrationReport | null {
+    if (!summary.detected || summary.total === 0) return null;
+    const report: UserDataMigrationReport = {
+      timestamp: new Date().toISOString(),
+      total: summary.total,
+      succeeded: summary.succeeded,
+      failed: summary.failed,
+      failedFiles: [...summary.failedFiles],
+    };
+    this.atomicFiles.write(
+      this.reportPath(),
+      JSON.stringify(report, null, 2),
+    );
+    return report;
+  }
+
   /** 合并旧设置、任务组和模板，并保留旧目录中的源文件。 */
   migrateLegacyUserDataFiles(): LegacyMigrationSummary {
-    const detected = this.hasLegacyInstallation();
-    const summary = emptyLegacyMigrationSummary(detected);
-    if (!detected) return summary;
+    const allowed = this.shouldMigrateLegacyInstallation();
+    const summary = emptyLegacyMigrationSummary(allowed);
+    if (!allowed) return summary;
+
+    this.completeStage(this.legacySourceStage('started'), 0);
 
     const legacyRoot = this.appPaths.appRoot();
     const targetRoot = this.appPaths.userDataRoot();
@@ -171,6 +278,12 @@ export class UserDataMigrationService {
         );
       }
     }
+    if (summary.failed === 0) {
+      this.completeStage(
+        this.legacySourceStage('configuration-complete'),
+        0,
+      );
+    }
     return summary;
   }
 
@@ -181,8 +294,7 @@ export class UserDataMigrationService {
    * 映射到当前主库计划。迁移只修改 userData，安装资源始终只读。
    */
   migratePresetInventory(): LegacyMigrationSummary {
-    const state = this.readState();
-    if (state.version >= USER_DATA_MIGRATION_VERSION) {
+    if (this.isStageComplete(PRESET_INVENTORY_MIGRATION_STAGE)) {
       return emptyLegacyMigrationSummary();
     }
 
@@ -228,10 +340,10 @@ export class UserDataMigrationService {
     }
     summary.detected = summary.total > 0;
     if (summary.failed === 0) {
-      this.writeState({
-        version: USER_DATA_MIGRATION_VERSION,
-        completed: state.completed,
-      });
+      this.completeStage(
+        PRESET_INVENTORY_MIGRATION_STAGE,
+        USER_DATA_MIGRATION_VERSION,
+      );
     }
     return summary;
   }
@@ -459,6 +571,40 @@ export class UserDataMigrationService {
       this.appPaths.userDataRoot(),
       '.migration-state.json',
     );
+  }
+
+  private reportPath(): string {
+    return path.join(
+      this.appPaths.userDataRoot(),
+      '.migration-report.json',
+    );
+  }
+
+  private legacySourceStage(
+    stage: 'started' | 'configuration-complete' | 'complete',
+  ): string {
+    const source = this.pathKey(this.appPaths.appRoot());
+    const hash = crypto
+      .createHash('sha256')
+      .update(source)
+      .digest('hex');
+    return `legacy-source-v5:${hash}:${stage}`;
+  }
+
+  /** 只检查 GUI 自有标记，不把 Electron 缓存目录当成用户配置。 */
+  private userDataInitialized(): boolean {
+    const root = this.appPaths.userDataRoot();
+    return [
+      this.statePath(),
+      path.join(root, 'usersettings.yaml'),
+      path.join(root, 'gui_settings.json'),
+      path.join(root, 'task_groups.json'),
+      path.join(root, 'templates.json'),
+      path.join(root, 'templates'),
+      this.appPaths.userBattlePlansDir(),
+      this.appPaths.userDailyPlansDir(),
+      this.appPaths.userTeamPlansDir(),
+    ].some(candidate => fs.existsSync(candidate));
   }
 
   private migrateStoredLootPlanId(

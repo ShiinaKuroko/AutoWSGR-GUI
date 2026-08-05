@@ -4,6 +4,9 @@
 
 GUI 负责配置、编辑和管理 YAML，并通过 HTTP 与 WebSocket 连接 AutoWSGR 后端。后端模型和 YAML 契约是功能的事实来源，GUI 不额外定义后端不支持的字段或规则。
 
+> 当前发布目标为 **GUI 2.0.0-alpha**。Alpha 使用独立更新频道，不会写入稳定版
+> `latest.yml`。建议升级前备份应用用户数据目录。
+
 ## 功能总览
 
 当前主导航分为 **作战**、**计划** 和 **设置**。
@@ -31,7 +34,8 @@ GUI 负责配置、编辑和管理 YAML，并通过 HTTP 与 WebSocket 连接 Au
 - 支持主选、备选和舰船图鉴之间拖拽，空位自动整理到右侧。
 - 支持纯备选位置、位置级等级限制及复制备选队列。
 - 支持新建、保存和加载；未保存修改与同名覆盖均会二次确认。
-- 用户舰队保存为 `resource/user_team_plans/team-{预设名称}.yaml`。
+- 用户舰队保存到应用用户数据目录下的
+  `user_team_plans/team-{预设名称}.yaml`。
 
 舰队 YAML 支持主选舰船和位置级 `candidates`。一个位置也可以没有主选 `name`，只保留非空的结构化 `candidates`。
 
@@ -42,7 +46,8 @@ GUI 负责配置、编辑和管理 YAML，并通过 HTTP 与 WebSocket 连接 Au
 - 选择并预览一个或多个舰队方案。
 - 通过地图编辑节点启用状态、终点、迂回、阵型、战斗动作、最低战果和索敌规则。
 - 支持新建、保存和加载；保存时校验文件名、地图信息及 YAML 内容。
-- 用户计划保存为 `resource/user_battle_plans/bettle-{预设名称}.yaml`。
+- 用户计划保存到应用用户数据目录下的
+  `user_battle_plans/bettle-{预设名称}.yaml`。
 
 出征规划当前没有直接执行入口。保存后的计划应在作战页加载并加入队列。
 
@@ -101,7 +106,23 @@ GUI 负责配置、编辑和管理 YAML，并通过 HTTP 与 WebSocket 连接 Au
 
 默认的 `managed` 模式由 GUI 管理 Python 和 AutoWSGR 依赖。依赖安装到程序自己的 `python/site-packages/`，不会写入系统 Python 的全局包目录。
 
+安装包不预装 `python/site-packages`。首次使用 `managed` 模式时需要联网安装 GUI
+锁定提交的 AutoWSGR 及其依赖，准备时间受网络影响。离线使用或联调后端源码时，
+应在设置页选择 `external` 模式并指定已有 AutoWSGR 仓库和 Python 环境。
+
 遇到环境问题时，可以运行 `debug_deps.bat` 生成诊断信息。
+
+### 发布包内容
+
+GUI 2.0.0-alpha 安装包预留并验收以下运行内容：
+
+- AutoWSGR-GUI、便携版 Python 3.12、pip、ADB 和 VC++ 运行库。
+- 地图、系统出征计划、系统舰队方案、系统日常计划和舰船资料库。
+- 安装与环境诊断脚本、舰船资料更新工具。
+- AutoWSGR 固定来源信息；主库本体在首次环境准备时安装。
+
+用户 YAML、`usersettings.yaml`、`gui_settings.json` 和 `task_groups.json` 不进入
+安装包，也不会因更新系统资源而被覆盖。
 
 ### 源码运行
 
@@ -156,21 +177,26 @@ npm run dev
 
 ## YAML 与数据目录
 
-开发模式下的主要目录如下：
+系统资源和用户数据分开存放：
 
 | 路径 | 内容 |
 | --- | --- |
 | `resource/system_battle_plans/` | 系统出征计划，界面中只读 |
-| `resource/user_battle_plans/` | 用户出征计划，标准文件名为 `bettle-{名称}.yaml` |
 | `resource/system_team_plans/` | 系统舰队方案，界面中只读 |
-| `resource/user_team_plans/` | 用户舰队方案，标准文件名为 `team-{名称}.yaml` |
+| `resource/system_daily_plans/` | 系统日常计划，界面中只读 |
 | `resource/ship-library/` | 舰船资料库 manifest、中文标签和本地资源 |
 | `resource/maps/` | 出征规划使用的地图数据 |
-| `usersettings.yaml` | 传递给 AutoWSGR 后端的用户配置 |
-| `gui_settings.json` | GUI 环境、窗口、调度及界面状态 |
-| `task_groups.json` | 作战页任务列表数据 |
+| `userData/user_battle_plans/` | 用户出征计划，标准文件名为 `bettle-{名称}.yaml` |
+| `userData/user_team_plans/` | 用户舰队方案，标准文件名为 `team-{名称}.yaml` |
+| `userData/user_daily_plans/` | 用户日常计划 |
+| `userData/usersettings.yaml` | 传递给 AutoWSGR 后端的用户配置 |
+| `userData/gui_settings.json` | GUI 环境、窗口、调度及界面状态 |
+| `userData/task_groups.json` | 作战页任务列表数据 |
 
-打包运行时，系统资源从安装包资源目录读取，用户数据由主进程写入应用可写目录。不要直接修改系统方案；需要调整时应另存到用户目录。
+`userData` 表示 Electron 为当前用户分配的应用数据目录。打包运行时，系统资源从
+安装包资源目录读取，用户数据由主进程写入该可写目录。不要直接修改系统方案；
+需要调整时应另存为个人副本。旧版安装目录中的配置会在满足迁移条件时复制到
+`userData`，原文件保留不变。
 
 GUI 保存的 YAML 必须通过当前前端校验，并最终符合 AutoWSGR 后端模型。战斗方案字段说明见 [docs/plan-guide.md](docs/plan-guide.md)。
 
@@ -186,14 +212,16 @@ GUI 保存的 YAML 必须通过当前前端校验，并最终符合 AutoWSGR 后
 | `npm run prepare-adb` | 准备 ADB 工具 |
 | `npm run pack` | 生成未安装的应用目录 |
 | `npm run dist` | 准备 Python 和 ADB，并生成 NSIS 安装包 |
+| `npm run test:release-package` | 验证安装包版本、频道、运行时和内置资源 |
 
 ## 项目结构
 
 ```text
 ├── electron/                   # Electron 主进程、IPC、后端和环境管理
-│   ├── main.ts                 # 窗口生命周期、文件管理及 IPC
+│   ├── main.ts                 # 主进程组合根和生命周期
 │   ├── preload.ts              # 安全桥接
-│   ├── backend.ts              # AutoWSGR 后端进程管理
+│   ├── ipc/                    # 最小 IPC 通道注册
+│   ├── services/               # 文件、计划、迁移、更新和后端服务
 │   ├── emulatorDetect.ts       # 模拟器检测
 │   └── pythonEnv/              # Python 与依赖环境管理
 ├── src/
@@ -201,14 +229,14 @@ GUI 保存的 YAML 必须通过当前前端校验，并最终符合 AutoWSGR 后
 │   ├── model/                  # 配置、计划、API、任务和调度模型
 │   ├── view/                   # 作战、计划、设置页面及 SCSS
 │   ├── types/                  # TypeScript 类型与 bridge 契约
+│   ├── shared/                 # 跨层纯契约和无状态规则
 │   └── utils/                  # 日志及通用工具
 ├── resource/
 │   ├── maps/                   # 地图数据
 │   ├── ship-library/           # 舰船资料库
 │   ├── system_battle_plans/    # 系统出征计划
-│   ├── system_team_plans/      # 系统舰队方案
-│   ├── user_battle_plans/      # 用户出征计划
-│   └── user_team_plans/        # 用户舰队方案
+│   ├── system_daily_plans/     # 系统日常计划
+│   └── system_team_plans/      # 系统舰队方案
 ├── tools/ship_library/         # 舰船资料库更新工具
 ├── scripts/                    # 构建、Python 和 ADB 准备脚本
 ├── docs/                       # 使用与架构文档

@@ -4,11 +4,15 @@ import type {
   FleetRuleDraftViewObject,
   FleetSlotDraftViewObject,
 } from '../../types/view.js';
+import type {
+  FleetRuleUpdate,
+} from '../../types/fleetEditor.js';
 
 export interface FleetRuleViewHost {
   primaryRule(): FleetSlotDraftViewObject;
   backupRule(): FleetCandidateDraftViewObject;
-  clearRule(rule: FleetRuleDraftViewObject): void;
+  updatePrimaryRule(update: FleetRuleUpdate): void;
+  updateBackupRule(update: FleetRuleUpdate): void;
 }
 
 export class FleetRuleView {
@@ -59,7 +63,6 @@ export class FleetRuleView {
 
     const backup = this.host.backupRule();
     const hasBackup = backup.ship !== null;
-    if (!hasBackup) this.host.clearRule(backup);
     this.backupLevelEnabled.checked = hasBackup && backup.levelEnabled;
     this.backupLevelEnabled.disabled = !hasBackup;
     this.backupLevelFields.hidden = !hasBackup || !backup.levelEnabled;
@@ -80,41 +83,55 @@ export class FleetRuleView {
 
   private bindActions(): void {
     this.levelEnabled.addEventListener('change', () => {
-      const rule = this.host.primaryRule();
-      rule.levelEnabled = this.levelEnabled.checked;
+      this.host.updatePrimaryRule({
+        levelEnabled: this.levelEnabled.checked,
+      });
       this.levelFields.hidden = !this.levelEnabled.checked;
     });
     this.minLevel.addEventListener('input', () => {
-      const rule = this.host.primaryRule();
-      rule.minLevel = this.readLevel(this.minLevel);
-      this.updateLevelValidity(rule, this.minLevel, this.maxLevel);
+      this.host.updatePrimaryRule({
+        minLevel: this.readLevel(this.minLevel),
+      });
+      this.updateLevelValidity(
+        this.host.primaryRule(),
+        this.minLevel,
+        this.maxLevel,
+      );
     });
     this.maxLevel.addEventListener('input', () => {
-      const rule = this.host.primaryRule();
-      rule.maxLevel = this.readLevel(this.maxLevel);
-      this.updateLevelValidity(rule, this.minLevel, this.maxLevel);
+      this.host.updatePrimaryRule({
+        maxLevel: this.readLevel(this.maxLevel),
+      });
+      this.updateLevelValidity(
+        this.host.primaryRule(),
+        this.minLevel,
+        this.maxLevel,
+      );
     });
     this.backupLevelEnabled.addEventListener('change', () => {
       const rule = this.host.backupRule();
-      rule.levelEnabled = rule.ship !== null
+      const levelEnabled = rule.ship !== null
         && this.backupLevelEnabled.checked;
-      this.backupLevelEnabled.checked = rule.levelEnabled;
-      this.backupLevelFields.hidden = !rule.levelEnabled;
+      this.host.updateBackupRule({ levelEnabled });
+      this.backupLevelEnabled.checked = levelEnabled;
+      this.backupLevelFields.hidden = !levelEnabled;
     });
     this.backupMinLevel.addEventListener('input', () => {
-      const rule = this.host.backupRule();
-      rule.minLevel = this.readLevel(this.backupMinLevel);
+      this.host.updateBackupRule({
+        minLevel: this.readLevel(this.backupMinLevel),
+      });
       this.updateLevelValidity(
-        rule,
+        this.host.backupRule(),
         this.backupMinLevel,
         this.backupMaxLevel,
       );
     });
     this.backupMaxLevel.addEventListener('input', () => {
-      const rule = this.host.backupRule();
-      rule.maxLevel = this.readLevel(this.backupMaxLevel);
+      this.host.updateBackupRule({
+        maxLevel: this.readLevel(this.backupMaxLevel),
+      });
       this.updateLevelValidity(
-        rule,
+        this.host.backupRule(),
         this.backupMinLevel,
         this.backupMaxLevel,
       );

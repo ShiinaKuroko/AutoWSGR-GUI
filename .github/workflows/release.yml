@@ -30,6 +30,10 @@ jobs:
             $channel = 'latest'
             $stage = 'stable'
             $prerelease = 'false'
+          } elseif ($ver -match '^\d+\.\d+\.\d+-alpha(?:\.\d+)?$') {
+            $channel = 'alpha'
+            $stage = 'prerelease'
+            $prerelease = 'true'
           } elseif ($ver -match '^\d+\.\d+\.\d+-beta\.\d+$') {
             $channel = 'beta'
             $stage = 'prerelease'
@@ -39,7 +43,7 @@ jobs:
             $stage = 'development'
             $prerelease = 'true'
           } else {
-            throw "版本 $ver 不符合 X.Y.Z、X.Y.Z-beta.N、X.Y.Z-dev 或 X.Y.Z-dev.N"
+            throw "版本 $ver 不符合 X.Y.Z、X.Y.Z-alpha、X.Y.Z-alpha.N、X.Y.Z-beta.N、X.Y.Z-dev 或 X.Y.Z-dev.N"
           }
           echo "VERSION=$ver" >> $env:GITHUB_OUTPUT
           echo "CHANNEL=$channel" >> $env:GITHUB_OUTPUT
@@ -76,6 +80,9 @@ jobs:
         shell: pwsh
         run: Get-ChildItem -Path release -Recurse -File | Select-Object FullName, Length
 
+      - name: Verify packaged runtime and resources
+        run: npm run test:release-package
+
       - name: Verify update channel metadata
         shell: pwsh
         run: |
@@ -84,7 +91,7 @@ jobs:
           if (-not (Test-Path $expected)) {
             throw "缺少 $channel 频道更新清单: $expected"
           }
-          @('latest', 'beta', 'dev') |
+          @('latest', 'alpha', 'beta', 'dev') |
             Where-Object { $_ -ne $channel } |
             ForEach-Object {
               $unexpected = Join-Path release "$_.yml"

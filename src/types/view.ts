@@ -80,8 +80,9 @@ export type AppStatus =
   | 'not_connected';
 
 export interface CurrentFleetShipVO {
-  name: string;
-  searchName?: string;
+  readonly name: string;
+  readonly ship?: ShipLibraryShip;
+  readonly shipTypeLabel?: string;
 }
 
 export interface MainViewObject {
@@ -132,26 +133,26 @@ export interface LogEntryVO {
 }
 
 export interface FleetRuleDraftViewObject {
-  shipTypes: string[];
-  levelEnabled: boolean;
-  minLevel: number | null;
-  maxLevel: number | null;
+  readonly shipTypes: readonly string[];
+  readonly levelEnabled: boolean;
+  readonly minLevel: number | null;
+  readonly maxLevel: number | null;
 }
 
 export interface FleetCandidateDraftViewObject
   extends FleetRuleDraftViewObject {
-  ship: ShipLibraryShip | null;
+  readonly ship: ShipLibraryShip | null;
 }
 
 export interface FleetSlotDraftViewObject
   extends FleetRuleDraftViewObject {
-  primary: ShipLibraryShip | null;
-  candidates: FleetCandidateDraftViewObject[];
+  readonly primary: ShipLibraryShip | null;
+  readonly candidates: readonly FleetCandidateDraftViewObject[];
 }
 
 export interface FleetDraftViewObject {
-  name: string;
-  slots: FleetSlotDraftViewObject[];
+  readonly name: string;
+  readonly slots: readonly FleetSlotDraftViewObject[];
 }
 
 export interface FleetShipLibraryViewObject {
@@ -185,6 +186,34 @@ export interface TeamPlanViewObject {
 export interface TeamPlanListViewObject {
   plans: TeamPlanViewObject[];
   errorCount: number;
+}
+
+export interface PlanManagementErrorViewObject {
+  readonly source: PlanPresetSource;
+  readonly file: string;
+  readonly message: string;
+}
+
+export interface PlanManagementRowViewObject {
+  readonly kind: 'battle' | 'team';
+  readonly source: PlanPresetSource;
+  readonly name: string;
+  readonly file: string;
+  readonly relations: readonly string[];
+  readonly taskGroups: readonly string[];
+  readonly missingRelations: readonly string[];
+  readonly status: string;
+  readonly statusClass: 'ok' | 'warning' | 'muted';
+  readonly attention: boolean;
+  readonly ignoredUnlinked?: boolean;
+  readonly invalid?: boolean;
+  readonly errorMessage?: string;
+  readonly deleteWarning?: string;
+}
+
+export interface PlanManagementViewObject {
+  readonly rows: readonly PlanManagementRowViewObject[];
+  readonly errors: readonly PlanManagementErrorViewObject[];
 }
 
 export type MapNodeType =
@@ -232,7 +261,7 @@ export interface PlanPreviewViewObject {
   allNodes?: NodeViewObject[];
   edges?: MapEdgeVO[];
   mapAspectRatio?: number;
-  fleetPresets?: FleetPresetVO[];
+  fleetPresetSelector: PlanFleetPresetSelectorViewObject;
   times?: number;
   gap?: number;
   lootCountGe?: number;
@@ -242,6 +271,26 @@ export interface PlanPreviewViewObject {
 export interface FleetPresetVO {
   name: string;
   ships: ShipSlot[];
+}
+
+export type FleetPresetCatalogStatus = 'loading' | 'ready' | 'error';
+
+export interface PlanFleetPresetBindingViewObject {
+  readonly index: number;
+  readonly catalogPlanId?: string;
+  readonly name: string;
+  readonly source: PlanPresetSource | 'deleted';
+  readonly modifiedAt?: number;
+  readonly ships: readonly TeamPlanSlotViewObject[];
+}
+
+export interface PlanFleetPresetSelectorViewObject {
+  readonly status: FleetPresetCatalogStatus;
+  readonly message: string;
+  readonly errorCount: number;
+  readonly plans: readonly TeamPlanViewObject[];
+  readonly bindings: readonly PlanFleetPresetBindingViewObject[];
+  readonly shipLibrary: FleetShipLibraryViewObject | null;
 }
 
 export interface SetupWizardVO {

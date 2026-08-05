@@ -4,7 +4,13 @@
  * 持有 MapView / NodeEditorView / FleetPresetView 三个子视图，
  * 对外 API 保持不变，Controller 无需感知内部拆分。
  */
-import type { PlanPreviewViewObject, MapNodeType, FleetPresetVO, PresetDetailVO, PresetFormValues } from '../../types/view.js';
+import type {
+  MapNodeType,
+  PlanFleetPresetSelectorViewObject,
+  PlanPreviewViewObject,
+  PresetDetailVO,
+  PresetFormValues,
+} from '../../types/view.js';
 import type {
   BathRepairConfig,
   EventChapter,
@@ -16,10 +22,7 @@ import {
   type NodeEditorArgs,
   type NodeEditorValues,
 } from './NodeEditorView';
-import {
-  FleetPresetView,
-  type FleetPresetViewHost,
-} from './FleetPresetView';
+import { FleetPresetView } from './FleetPresetView';
 
 const MAP_COUNT_BY_CHAPTER: Record<string, number> = {
   '1': 5,
@@ -61,20 +64,19 @@ export class PlanPreviewView {
   onPresetNameChange?: (name: string) => void;
   onPlanFieldChange?: (field: 'repair_mode' | 'fight_condition' | 'fleet_id' | 'times' | 'gap' | 'loot_count_ge' | 'ship_count_ge', value: number | undefined) => void;
 
-  set onUserTeamChange(
-    fn: ((plans: FleetPresetVO[]) => void) | undefined,
+  set onAddFleetPreset(
+    fn: ((planId: string) => void) | undefined,
   ) {
-    this.fleetPresetView.onUserTeamChange = fn;
+    this.fleetPresetView.onAddFleetPreset = fn;
   }
 
-  get selectedFleetPresetIndices(): Set<number> {
-    return this.fleetPresetView.selectedFleetPresetIndices;
-  }
-  set selectedFleetPresetIndices(val: Set<number>) {
-    this.fleetPresetView.selectedFleetPresetIndices = val;
+  set onRemoveFleetPreset(
+    fn: ((index: number) => void) | undefined,
+  ) {
+    this.fleetPresetView.onRemoveFleetPreset = fn;
   }
 
-  constructor(host: FleetPresetViewHost) {
+  constructor() {
     this.detailEl = document.getElementById('plan-detail')!;
     this.chapterSelect = document.getElementById('plan-edit-chapter') as HTMLSelectElement;
     this.mapSelect = document.getElementById('plan-edit-map') as HTMLSelectElement;
@@ -93,7 +95,7 @@ export class PlanPreviewView {
 
     this.mapView = new MapView();
     this.nodeEditor = new NodeEditorView();
-    this.fleetPresetView = new FleetPresetView(host);
+    this.fleetPresetView = new FleetPresetView();
 
     this.mapView.onNodeClick = (nodeId) => this.onNodeClick?.(nodeId);
 
@@ -176,7 +178,7 @@ export class PlanPreviewView {
       500,
     );
 
-    this.fleetPresetView.render(vo.fleetPresets, vo.fleetId);
+    this.fleetPresetView.render(vo.fleetPresetSelector);
     this.mapView.renderNodes(
       vo.allNodes,
       vo.selectedNodes,
@@ -422,8 +424,10 @@ export class PlanPreviewView {
 
   /* ── 编队预设 / 泡澡修理 ── */
 
-  getSelectedPresets(): FleetPresetVO[] {
-    return this.fleetPresetView.getSelectedPresets();
+  renderFleetPresetSelector(
+    viewObject: PlanFleetPresetSelectorViewObject,
+  ): void {
+    this.fleetPresetView.render(viewObject);
   }
 
   getBathRepairConfig(): BathRepairConfig | undefined {

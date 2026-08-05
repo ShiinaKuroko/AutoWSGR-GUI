@@ -22,7 +22,7 @@ import {
   jsonCodec,
   type StorageStore,
 } from '../../adapter/index.js';
-import { toBackendName } from '../fleet/index.js';
+import { toBackendName } from '../../shared/shipNameNormalizer.js';
 
 /** 正在泡澡的舰船记录 */
 export interface BathingShip {
@@ -201,43 +201,6 @@ export class RepairManager {
           entry.requestSent = false;
         }
       }
-    }
-  }
-
-  /**
-   * 刷新泡澡状态: 通过 gameContext 检查舰船血量，移除已修好的记录
-   */
-  async refreshBathingStatus(fleetId: number, config: BathRepairConfig): Promise<void> {
-    if (this.bathingShips.size === 0) return;
-
-    try {
-      const resp = await this.api.gameContext();
-      if (!resp.success || !resp.data?.fleets) return;
-
-      // 收集所有编队中的舰船数据
-      const allShips = new Map<string, ShipData>();
-      for (const fleet of resp.data.fleets) {
-        for (const ship of fleet.ships) {
-          if (ship?.name) allShips.set(ship.name, ship);
-        }
-      }
-
-      // 检查泡澡中的舰船是否已修理完成
-      for (const [name] of this.bathingShips) {
-        const ship = allShips.get(name);
-        if (!ship) {
-          // 舰船不在任何编队（可能被卸下），保留记录等下次检查
-          continue;
-        }
-        const threshold = this.getThreshold(name, config);
-        if (!this.needsRepair(ship, threshold)) {
-          Logger.info(`舰船「${name}」泡澡修理完成`, 'repair');
-          this.bathingShips.delete(name);
-          this.saveToStorage();
-        }
-      }
-    } catch (e) {
-      Logger.debug(`刷新泡澡状态失败: ${e}`, 'repair');
     }
   }
 

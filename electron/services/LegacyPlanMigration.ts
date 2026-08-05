@@ -12,12 +12,18 @@ import {
   type LegacyMigrationSummary,
 } from './LegacyMigrationSummary';
 import {
+  PRESET_INVENTORY_MIGRATION_STAGE,
   UserDataMigrationService,
   type LegacyPlanReferenceTarget,
 } from './UserDataMigrationService';
 
 /** v7 将演习、战役和决战从普通出征计划迁移到独立日常目录。 */
 const LEGACY_PLAN_MIGRATION_VERSION = 7;
+
+/** v7 使用独立完成键，避免共享版本号越过失败的前置迁移。 */
+export const LEGACY_PLAN_MIGRATION_STAGE = (
+  'migration:v7:legacy-plans:complete'
+);
 
 type DailyPlanType = 'exercise' | 'campaign' | 'decisive';
 
@@ -72,11 +78,39 @@ export class LegacyPlanMigration<TTeam> {
 
   /** 扫描旧安装中的有效 YAML，并返回本次实际迁移结果。 */
   migrate(): LegacyMigrationSummary {
-    const legacyDetected = this.userDataMigration.hasLegacyInstallation();
+    const legacyDetected = (
+      this.userDataMigration.shouldMigrateLegacyInstallation()
+    );
     const misplacedDailyPlans = this.misplacedDailyPlanFiles();
     const detected = legacyDetected || misplacedDailyPlans.length > 0;
     const summary = emptyLegacyMigrationSummary(detected);
-    if (!detected) return summary;
+    if (
+      !this.userDataMigration.isStageComplete(
+        PRESET_INVENTORY_MIGRATION_STAGE,
+      )
+    ) {
+      return summary;
+    }
+    if (
+      legacyDetected
+      && !this.userDataMigration.isLegacyConfigurationMigrationComplete()
+    ) {
+      return summary;
+    }
+    if (
+      this.userDataMigration.isStageComplete(
+        LEGACY_PLAN_MIGRATION_STAGE,
+      )
+    ) {
+      return summary;
+    }
+    if (!detected) {
+      this.userDataMigration.completeStage(
+        LEGACY_PLAN_MIGRATION_STAGE,
+        LEGACY_PLAN_MIGRATION_VERSION,
+      );
+      return summary;
+    }
 
     const state = this.userDataMigration.readState();
     const completed = new Set(state.completed);
@@ -108,20 +142,20 @@ export class LegacyPlanMigration<TTeam> {
       || misplacedFailed
       || additionalFailed
     );
-    const nextState = {
-      version: failed
-        ? state.version
-        : Math.max(state.version, LEGACY_PLAN_MIGRATION_VERSION),
-      completed: [...completed].sort(),
-    };
-    const currentCompleted = [...state.completed].sort();
-    if (
-      state.version !== nextState.version
-      || JSON.stringify(currentCompleted) !== JSON.stringify(
-        nextState.completed,
-      )
-    ) {
-      this.userDataMigration.writeState(nextState);
+    const latestState = this.userDataMigration.readState();
+    const mergedCompleted = new Set([
+      ...latestState.completed,
+      ...completed,
+    ]);
+    this.userDataMigration.writeState({
+      version: latestState.version,
+      completed: [...mergedCompleted].sort(),
+    });
+    if (!failed) {
+      this.userDataMigration.completeStage(
+        LEGACY_PLAN_MIGRATION_STAGE,
+        LEGACY_PLAN_MIGRATION_VERSION,
+      );
     }
     return summary;
   }
@@ -139,10 +173,7 @@ export class LegacyPlanMigration<TTeam> {
         targetDirectory,
       )
     ) {
-      for (
-        const file of this.dependencies.yamlFiles(legacyDirectory)
-      ) {
-        const source = path.join(legacyDirectory, file);
+      for (const source of this.legacyYamlFiles(legacyDirectory)) {
         const content = fs.readFileSync(source, 'utf-8');
         const key = this.migrationKey('team', source, content);
         if (completed.has(key)) continue;
@@ -191,10 +222,8 @@ export class LegacyPlanMigration<TTeam> {
         ),
       ]
     ) {
-      for (
-        const file of this.dependencies.yamlFiles(legacyDirectory)
-      ) {
-        const source = path.join(legacyDirectory, file);
+      for (const source of this.legacyYamlFiles(legacyDirectory)) {
+        const file = path.basename(source);
         const content = fs.readFileSync(source, 'utf-8');
         const key = this.migrationKey('plan', source, content);
         if (completed.has(key)) {
@@ -797,6 +826,12 @@ export class LegacyPlanMigration<TTeam> {
   private recursiveLegacyYamlFiles(): string[] {
     const files: string[] = [];
     this.collectYamlFiles(this.appPaths.appRoot(), files);
+    return files.sort((left, right) => left.localeCompare(right));
+  }
+
+  private legacyYamlFiles(directory: string): string[] {
+    const files: string[] = [];
+    this.collectYamlFiles(directory, files);
     return files.sort((left, right) => left.localeCompare(right));
   }
 

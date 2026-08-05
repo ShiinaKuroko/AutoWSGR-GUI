@@ -79,57 +79,42 @@ export class SafePathService {
     return candidate;
   }
 
-  /** 展开现有链接后验证目标仍位于允许根目录。 */
+  /** 先验证词法边界，再拒绝允许根目录内的任何链接节点。 */
   private isContained(candidate: string, root: string): boolean {
-    const canonicalCandidate = this.canonicalizePotentialPath(candidate);
-    const canonicalRoot = this.canonicalizePotentialPath(root);
+    const resolvedCandidate = path.resolve(candidate);
+    const resolvedRoot = path.resolve(root);
     const normalizedCandidate = this.normalizeForComparison(
-      canonicalCandidate,
+      resolvedCandidate,
     );
-    const normalizedRoot = this.normalizeForComparison(canonicalRoot);
+    const normalizedRoot = this.normalizeForComparison(resolvedRoot);
     const relative = path.relative(normalizedRoot, normalizedCandidate);
-    return relative === ''
+    const contained = relative === ''
       || (
         relative !== '..'
         && !relative.startsWith(`..${path.sep}`)
         && !path.isAbsolute(relative)
       );
+    if (!contained) return false;
+    this.assertNoLinks(resolvedCandidate, resolvedRoot);
+    return true;
   }
 
-  /** 展开最近存在的祖先，阻止新路径通过目录链接逃逸。 */
-  private canonicalizePotentialPath(value: string): string {
-    let current = path.resolve(value);
-    const missingSegments: string[] = [];
-    while (!this.pathEntryExists(current)) {
-      const parent = path.dirname(current);
-      if (parent === current) {
-        return path.resolve(current, ...missingSegments);
+  /** lstat 不跟随链接，因此目录联接和悬空链接也会被拒绝。 */
+  private assertNoLinks(candidate: string, root: string): void {
+    const relative = path.relative(root, candidate);
+    const segments = relative ? relative.split(path.sep) : [];
+    let current = root;
+    for (const segment of ['', ...segments]) {
+      if (segment) current = path.join(current, segment);
+      try {
+        if (fs.lstatSync(current).isSymbolicLink()) {
+          throw new Error('文件路径不允许包含符号链接或联接点');
+        }
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === 'ENOENT' || code === 'ENOTDIR') return;
+        throw error;
       }
-      missingSegments.unshift(path.basename(current));
-      current = parent;
-    }
-    let canonicalExisting: string;
-    try {
-      canonicalExisting = fs.realpathSync.native(current);
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === 'ENOENT' || code === 'ENOTDIR') {
-        throw new Error('文件路径包含无法解析的符号链接');
-      }
-      throw error;
-    }
-    return path.resolve(canonicalExisting, ...missingSegments);
-  }
-
-  /** lstat 不跟随链接，因此悬空链接也会被视为现有路径节点。 */
-  private pathEntryExists(value: string): boolean {
-    try {
-      fs.lstatSync(value);
-      return true;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === 'ENOENT' || code === 'ENOTDIR') return false;
-      throw error;
     }
   }
 

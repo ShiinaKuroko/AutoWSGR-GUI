@@ -10,7 +10,6 @@ import {
   type PlanFileReadError,
   type PlanPresetSource,
   TEAM_FILE_PATTERN,
-  type UserTeamPlan,
 } from './TeamPlanCodec';
 import { TeamPlanRepository } from './TeamPlanRepository';
 import {

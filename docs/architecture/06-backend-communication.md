@@ -163,7 +163,8 @@ type GuiUpdateCheckResult =
 ```
 
 `GuiUpdatePolicy` 根据当前应用版本选择并校验频道：稳定版 `X.Y.Z` 使用
-`latest`，预发布版 `X.Y.Z-beta.N` 使用 `beta`，开发版 `X.Y.Z-dev` 或
+`latest`，Alpha 版 `X.Y.Z-alpha` 或 `X.Y.Z-alpha.N` 使用 `alpha`，
+Beta 版 `X.Y.Z-beta.N` 使用 `beta`，开发版 `X.Y.Z-dev` 或
 `X.Y.Z-dev.N` 使用 `dev`。候选版本不属于当前频道时检查失败，不允许回退
 读取其他频道清单。
 

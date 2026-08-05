@@ -4,7 +4,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { PlanModel } = require('../dist/src/model/PlanModel.js');
 const { TaskQueue } = require('../dist/src/model/scheduler/TaskQueue.js');
-const { ALL_SHIPS } = require('../dist/src/model/fleet/ShipCatalog.js');
+const { ALL_SHIPS } = require('../dist/src/shared/shipCatalog.js');
 const {
   FLEET_SHIP_TYPE_CODES,
   NATIVE_FLEET_SHIP_TYPE_CODES,

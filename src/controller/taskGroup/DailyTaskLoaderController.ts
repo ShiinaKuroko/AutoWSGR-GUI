@@ -5,7 +5,7 @@ import type {
   ManagedDailyPlan,
 } from '../../types/ipc.js';
 import { DailyTaskLoaderView } from '../../view/taskGroup/DailyTaskLoaderView';
-import { showAlert } from '../shared/DialogHelper';
+import { showAlert } from '../../view/shared/DialogHelper';
 
 export interface DailyTaskLoaderActions {
   addToList(selection: DailyPlanSelection): void;

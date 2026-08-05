@@ -1,17 +1,7 @@
 /** 渲染当前舰队舰船、等级和损伤状态预览。 */
-import type {
-  ElectronBridge,
-  ShipLibraryManifest,
-  ShipLibraryShip,
-} from '../../types/ipc.js';
 import type { DailySortieStatsSnapshot } from '../../types/statistics.js';
 import type { CurrentFleetShipVO } from '../../types/view.js';
 import { createShipArtwork } from '../plan/ShipArtwork';
-
-export type FleetPreviewViewHost = Pick<
-  ElectronBridge,
-  'getShipLibraryManifest'
->;
 
 function formatCount(count: number, limit?: number): string {
   if (count === 0) return '-';
@@ -22,9 +12,7 @@ function formatCount(count: number, limit?: number): string {
 export class FleetPreviewView {
   private readonly grid: HTMLElement;
   private readonly empty: HTMLElement;
-  private manifest: ShipLibraryManifest | null | undefined;
-  private manifestPromise: Promise<void> | null = null;
-  private currentShips: CurrentFleetShipVO[] = [];
+  private currentShips: readonly CurrentFleetShipVO[] = [];
   private renderedSignature = '';
   private currentStats: DailySortieStatsSnapshot | null = null;
   private shipDetailsPinned = false;
@@ -41,7 +29,7 @@ export class FleetPreviewView {
   private readonly dropNotice: HTMLElement;
   private readonly gradeCounts: Record<string, HTMLElement>;
 
-  constructor(private readonly host: FleetPreviewViewHost) {
+  constructor() {
     this.grid = document.getElementById('current-fleet-preview')!;
     this.empty = document.getElementById('current-fleet-empty')!;
     this.statsRoot = document.getElementById('daily-sortie-stats')!;
@@ -83,17 +71,13 @@ export class FleetPreviewView {
   }
 
   render(
-    ships: CurrentFleetShipVO[],
+    ships: readonly CurrentFleetShipVO[],
     hasRunningTask: boolean,
     stats: DailySortieStatsSnapshot,
   ): void {
     this.currentStats = stats;
     this.renderStats(stats);
     this.currentShips = ships
-      .map(ship => ({
-        name: ship.name.trim(),
-        searchName: ship.searchName?.trim(),
-      }))
       .filter(ship => Boolean(ship.name))
       .slice(0, 6);
     const hasFleet = this.currentShips.length > 0;
@@ -106,11 +90,7 @@ export class FleetPreviewView {
       return;
     }
 
-    if (this.manifest !== undefined) {
-      this.renderCards();
-      return;
-    }
-    this.loadManifest();
+    this.renderCards();
   }
 
   private renderStats(stats: DailySortieStatsSnapshot): void {
@@ -171,25 +151,14 @@ export class FleetPreviewView {
     this.shipDropList.replaceChildren(fragment);
   }
 
-  private loadManifest(): void {
-    if (this.manifestPromise) return;
-    this.grid.setAttribute('aria-busy', 'true');
-    this.manifestPromise = (async () => {
-      try {
-        this.manifest = await this.host.getShipLibraryManifest();
-      } catch {
-        this.manifest = null;
-      } finally {
-        this.grid.removeAttribute('aria-busy');
-        this.manifestPromise = null;
-        if (this.currentShips.length > 0) this.renderCards();
-      }
-    })();
-  }
-
   private renderCards(): void {
     const signature = this.currentShips
-      .map(ship => `${ship.name}\u0001${ship.searchName ?? ''}`)
+      .map(ship => [
+        ship.name,
+        ship.ship?.id ?? '',
+        ship.ship?.portraitUrl ?? '',
+        ship.shipTypeLabel ?? '',
+      ].join('\u0001'))
       .join('\u0000');
     if (signature === this.renderedSignature) return;
     const fragment = document.createDocumentFragment();
@@ -210,11 +179,12 @@ export class FleetPreviewView {
     card.setAttribute('role', 'listitem');
     card.setAttribute('aria-label', `位置 ${index + 1}：${preview.name}`);
 
-    const ship = this.findShip(preview);
+    const ship = preview.ship;
     if (ship) {
-      const typeLabel = this.manifest?.labels.ship_types[ship.ship_type]
-        ?? ship.ship_type;
-      card.append(createShipArtwork(ship, typeLabel));
+      card.append(createShipArtwork(
+        ship,
+        preview.shipTypeLabel ?? ship.ship_type,
+      ));
     } else {
       const unknown = document.createElement('span');
       unknown.className = 'current-fleet-card-unknown';
@@ -222,27 +192,5 @@ export class FleetPreviewView {
       card.append(unknown);
     }
     return card;
-  }
-
-  private findShip(preview: CurrentFleetShipVO): ShipLibraryShip | undefined {
-    const ships = this.manifest?.ships ?? [];
-    const exactNames = [preview.name, preview.searchName].filter(
-      (name): name is string => Boolean(name),
-    );
-    for (const name of exactNames) {
-      const match = ships.find(ship => ship.name === name)
-        ?? ships.find(ship => ship.search_name === name);
-      if (match) return match;
-    }
-
-    const baseNames = exactNames
-      .map(name => name.split('·')[0].trim())
-      .filter((name, index, names) => name && names.indexOf(name) === index);
-    for (const name of baseNames) {
-      const match = ships.find(ship => ship.name === name)
-        ?? ships.find(ship => ship.search_name === name);
-      if (match) return match;
-    }
-    return undefined;
   }
 }

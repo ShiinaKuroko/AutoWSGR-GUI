@@ -10,7 +10,7 @@ import type {
 import {
   showAlert,
   showConfirm,
-} from '../../controller/shared/DialogHelper';
+} from '../shared/DialogHelper';
 import {
   captureScrollPosition,
   restoreScrollPosition,

@@ -21,7 +21,7 @@ import {
   showAlert,
   showConfirm,
   showSaveSuccess,
-} from '../shared/DialogHelper';
+} from '../../view/shared/DialogHelper';
 
 export interface BattlePlanLoaderHost {
   getCurrentPlanIdentity(): {

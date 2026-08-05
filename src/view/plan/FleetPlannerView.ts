@@ -5,35 +5,20 @@
  * 国籍、大小和主力/护卫仅用于界面筛选，不会写入后端任务字段。
  */
 import type {
-  PlanFileOperationResult,
-  PlanManagementResult,
-  PlanPresetSource,
-  ShipLibraryShip,
-  UserPlanExportResult,
-  UserPlanExportSelection,
-} from '../../types/ipc.js';
-import type {
-  FleetCandidateDraftViewObject as FleetCandidateDraft,
-  FleetDraftViewObject as FleetDraft,
-  FleetRuleDraftViewObject as FleetRuleDraft,
+  FleetDraftViewObject,
   FleetShipLibraryViewObject,
-  FleetSlotDraftViewObject as FleetSlotDraft,
   TeamPlanListViewObject,
 } from '../../types/view.js';
 import type {
   BackupFollowMode,
-} from '../../model/fleet/FleetDraft';
+  FleetDraftEditIntent,
+  FleetDraftEditResult,
+} from '../../types/fleetEditor.js';
 import {
   showAlert,
   showConfirm,
   showSaveSuccess,
-} from '../../controller/shared/DialogHelper';
-import {
-  PlanManagementView,
-} from './PlanManagementView';
-import type {
-  PlanManagementTaskGroup,
-} from './PlanManagementView';
+} from '../shared/DialogHelper';
 import {
   TeamPlanLoaderView,
 } from './TeamPlanLoaderView';
@@ -50,51 +35,22 @@ export interface FleetPlannerViewHost {
     success: boolean;
     error?: string;
   }>;
-  loadPlanManagement(): Promise<PlanManagementResult>;
-  exportUserPlans(
-    selections: UserPlanExportSelection[],
-  ): Promise<UserPlanExportResult>;
-  setPlanUnlinkedIgnored(
-    kind: 'battle' | 'team',
-    source: PlanPresetSource,
-    file: string,
-    ignored: boolean,
-  ): Promise<string[]>;
-  renameUserCombatPlan(
-    file: string,
-    newName: string,
-  ): Promise<PlanFileOperationResult>;
-  deleteUserCombatPlan(file: string): Promise<PlanFileOperationResult>;
-  deleteUserTeamPlan(file: string): Promise<PlanFileOperationResult>;
-  openTeamPlan(file: string, source: PlanPresetSource): Promise<void>;
   getRefitFilter(): boolean;
   setRefitFilter(enabled: boolean): void;
   getBackupFollowMode(): BackupFollowMode;
   setBackupFollowMode(mode: BackupFollowMode): void;
-  currentDraft(): FleetDraft;
+  currentDraft(): FleetDraftViewObject;
+  editDraft(intent: FleetDraftEditIntent): FleetDraftEditResult;
   setDraftName(name: string): void;
   resetDraft(): void;
-  createRuleDraft(): FleetRuleDraft;
-  createCandidateDraft(ship?: ShipLibraryShip | null): FleetCandidateDraft;
-  createSlotDraft(): FleetSlotDraft;
-  cloneRule(source: FleetRuleDraft): FleetRuleDraft;
-  copyRule(target: FleetRuleDraft, source: FleetRuleDraft): void;
   hasUnsavedDraftChanges(name: string): boolean;
 }
 
 export class FleetPlannerView {
-  onOpenBattlePlan: (
-    (file: string, source: PlanPresetSource) => Promise<void>
-  ) | null = null;
-
-  private taskGroupsProvider: () => ReadonlyArray<PlanManagementTaskGroup>
-    = () => [];
-
   private readonly presetNameInput: HTMLInputElement;
   private readonly editorView: FleetEditorView;
   private readonly galleryView: FleetGalleryView;
   private readonly teamPlanLoaderView: TeamPlanLoaderView;
-  private readonly planManagementView: PlanManagementView;
 
   constructor(private readonly host: FleetPlannerViewHost) {
     this.presetNameInput = document.getElementById(
@@ -102,11 +58,7 @@ export class FleetPlannerView {
     ) as HTMLInputElement;
     this.editorView = new FleetEditorView({
       currentDraft: () => this.currentFleet(),
-      createRuleDraft: () => this.host.createRuleDraft(),
-      createCandidateDraft: ship => this.host.createCandidateDraft(ship),
-      createSlotDraft: () => this.host.createSlotDraft(),
-      cloneRule: source => this.host.cloneRule(source),
-      copyRule: (target, source) => this.host.copyRule(target, source),
+      editDraft: intent => this.host.editDraft(intent),
       shipById: id => this.galleryView.shipById(id),
       colorfulBackgroundUrl: () => (
         this.galleryView.colorfulBackgroundUrl()
@@ -145,33 +97,8 @@ export class FleetPlannerView {
       hasUnsavedChanges: () => this.hasUnsavedFleetChanges(),
       applyPlan: planId => this.host.applyTeamPlan(planId),
     });
-    this.planManagementView = new PlanManagementView({
-      loadPlanManagement: () => this.host.loadPlanManagement(),
-      exportUserPlans: selections => this.host.exportUserPlans(selections),
-      setPlanUnlinkedIgnored: (kind, source, file, ignored) => (
-        this.host.setPlanUnlinkedIgnored(kind, source, file, ignored)
-      ),
-      renameUserCombatPlan: (file, newName) => (
-        this.host.renameUserCombatPlan(file, newName)
-      ),
-      deleteUserCombatPlan: file => this.host.deleteUserCombatPlan(file),
-      deleteUserTeamPlan: file => this.host.deleteUserTeamPlan(file),
-      taskGroups: () => this.taskGroupsProvider(),
-      openBattlePlan: async (file, source) => {
-        await this.onOpenBattlePlan?.(file, source);
-      },
-      openTeamPlan: (file, source) => (
-        this.host.openTeamPlan(file, source)
-      ),
-    });
     this.bindActions();
     this.editorView.render();
-  }
-
-  setTaskGroupsProvider(
-    provider: () => ReadonlyArray<PlanManagementTaskGroup>,
-  ): void {
-    this.taskGroupsProvider = provider;
   }
 
   /** 首次进入页面时加载资料库；更新资料库后可强制刷新。 */
@@ -195,7 +122,7 @@ export class FleetPlannerView {
     });
   }
 
-  private currentFleet(): FleetDraft {
+  private currentFleet(): FleetDraftViewObject {
     return this.host.currentDraft();
   }
 
@@ -257,9 +184,4 @@ export class FleetPlannerView {
   openTeamPlan(planId: string): Promise<void> {
     return this.teamPlanLoaderView.open(planId);
   }
-
-  loadManagement(): Promise<void> {
-    return this.planManagementView.load();
-  }
-
 }

@@ -14,10 +14,10 @@ import type {
 import type { TaskPreset } from '../../types/model.js';
 import { resolveFleetPreset } from '../../model/fleet/ShipMatcher';
 import { resolveFleetPresetRules } from '../../model/fleet/FleetRuleMapper';
-import { toBackendName } from '../../model/fleet/ShipNameNormalizer';
+import { toBackendName } from '../../shared/shipNameNormalizer';
 import { Logger } from '../../utils/Logger';
 import { normalizeSelectedNodesForBackend } from '../plan/selectedNodes';
-import type { TaskGroupHost } from './TaskGroupController';
+import type { TaskGroupHost } from '../contracts.js';
 import { readTaskGroupItemFile } from './managedPlanReader';
 import { yamlCodec } from '../../adapter';
 

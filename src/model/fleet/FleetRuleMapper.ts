@@ -2,7 +2,7 @@
 import type { FleetRuleReq, FleetShipRuleReq } from '../../types/api.js';
 import type { ShipRule, ShipSlot } from '../../types/model.js';
 import { buildShipCandidates } from './ShipMatcher.js';
-import { toBackendName } from './ShipNameNormalizer.js';
+import { toBackendName } from '../../shared/shipNameNormalizer.js';
 
 function toFleetShipRule(rule: ShipRule): FleetShipRuleReq {
   const result: FleetShipRuleReq = { name: rule.name };

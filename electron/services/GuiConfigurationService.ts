@@ -8,7 +8,6 @@ import {
   INTERIM_LOOT_PLAN_IDS,
   findLootAutomationPlan,
   lootPlanIdFromIndex,
-  migrateLootPlanId,
   normalizeLootAutomationPlans,
   type LootAutomationPlan,
   type LootPlanSource,

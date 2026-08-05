@@ -4,36 +4,10 @@
  * 环境检查 → envAndUpdates.ts，后端连接 → connection.ts。
  */
 import type { ElectronBridge } from '../../types/ipc.js';
-import type { Scheduler, CronScheduler } from '../../model/scheduler';
-import type { ConfigModel } from '../../model/ConfigModel';
 import { Logger } from '../../utils/Logger';
 import { checkAndPrepareEnv, runSetupScript, checkForUpdates } from './envAndUpdates';
 import { waitForBackendAndConnect } from './connection';
-
-// ════════════════════════════════════════
-// Host 接口
-// ════════════════════════════════════════
-
-export interface StartupHost {
-  readonly scheduler: Scheduler;
-  readonly cronScheduler: CronScheduler;
-  readonly configModel: ConfigModel;
-  appRoot: string;
-  plansDir: string;
-  configDir: string;
-  pendingGuiVersion: string | null;
-
-  syncPaths(appRoot: string, plansDir: string, configDir: string): void;
-  initLogger(bridge: ElectronBridge): void;
-  loadConfigAndSync(): Promise<void>;
-  detectAndApplyEmulator(): Promise<void>;
-  showSetupWizard(): Promise<void>;
-  loadModelsAndRender(bridge: ElectronBridge): Promise<void>;
-  reviewMigrationConflicts(): Promise<void>;
-  bindBackendLog(bridge: ElectronBridge): void;
-  renderMain(): void;
-  startHeartbeat(): void;
-}
+import type { StartupHost } from '../contracts.js';
 
 // ════════════════════════════════════════
 // StartupController
@@ -85,7 +59,7 @@ export class StartupController {
     if (!envReady) return;
 
     // 3. 检查更新 (非阻塞)
-    checkForUpdates(bridge, this.host);
+    checkForUpdates(bridge);
 
     // 4. 启动后端 & 连接
     const backendStartupMode = bridge.getBackendStartupMode?.() ?? 'managed';

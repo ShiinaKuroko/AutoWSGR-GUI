@@ -9,16 +9,9 @@ import {
 } from '../../model/TaskGroupModel';
 import { TaskGroupView } from '../../view/taskGroup/TaskGroupView';
 import { TemplateModel } from '../../model/TemplateModel';
-import type { PlanModel } from '../../model/PlanModel';
-import type { Scheduler } from '../../model/scheduler';
-import type { TaskPreset } from '../../types/model.js';
 import type { TaskGroupItemViewObject } from '../../types/view.js';
-import type {
-  ManagedBattlePlanSelection,
-  PlanPresetSource,
-} from '../../types/ipc.js';
-import type { MapData } from '../../model/MapDataLoader';
-import { showAlert, showSaveSuccess } from '../shared/DialogHelper';
+import { showAlert, showSaveSuccess } from '../../view/shared/DialogHelper';
+import type { TaskGroupHost } from '../contracts.js';
 import {
   addCurrentPlanToGroup,
   addDailyPlanToGroup,
@@ -51,22 +44,6 @@ function toTaskGroupItemViewObject(
     times: item.times,
     label: item.label,
   };
-}
-
-export interface TaskGroupHost {
-  readonly scheduler: Scheduler;
-  plansDir: string;
-  renderMain(): void;
-  switchPage(page: string): void;
-  importTaskPreset(preset: TaskPreset, filePath: string): void;
-  getCurrentPlan(): PlanModel | null;
-  setCurrentPlan(plan: PlanModel, mapData: MapData | null): void;
-  renderPlanPreview(): void;
-  closePresetDetail(): void;
-  executePreset(): void;
-  getCurrentPresetInfo(): { preset: TaskPreset; filePath: string } | null;
-  pickManagedBattlePlan(): Promise<ManagedBattlePlanSelection | null>;
-  openManagedPlan(file: string, source: PlanPresetSource): Promise<boolean>;
 }
 
 export class TaskGroupController {

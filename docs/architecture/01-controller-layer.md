@@ -14,7 +14,7 @@ Renderer 组合根，创建子控制器时传入只包含所需能力的对象�
 ## 最小 Host 接口
 
 ```typescript
-// src/controller/plan/PlanController.ts
+// src/controller/contracts.ts
 interface PlanHost {
   readonly scheduler: Scheduler;
   plansDir: string;
@@ -23,19 +23,20 @@ interface PlanHost {
 }
 ```
 
-`StartupHost`、`PlanHost`、`TaskGroupHost` 等接口由各功能模块自行声明，不继承
-公共基接口。已删除无实际调用方的 `controller/shared/ControllerHost.ts` 和
-Controller 目录 barrel，内部代码使用明确模块路径。
+`StartupHost`、`PlanHost`、`TaskGroupHost` 集中定义在
+`src/controller/contracts.ts`，流程模块只依赖这些最小能力，不反向导入主
+Controller。接口彼此独立，不继承公共基接口；Controller 内部使用明确模块
+路径，不通过 barrel 获取依赖。
 
 ---
 
 ## 子目录结构
 
-### controller/shared/ — 共享基础设施
+### controller/contracts.ts — 编排契约
 
-| 文件 | 职责 |
-|------|------|
-| `DialogHelper.ts` | 通用对话框工具（`showPrompt` / `showConfirm` / `showAlert`） |
+集中定义 Controller 流程模块使用的最小 Host 接口，避免
+`queueLoader → TaskGroupController`、`presetFlow → PlanController` 等类型
+反向依赖。对话框属于 View 能力，位于 `src/view/shared/DialogHelper.ts`。
 
 ---
 
@@ -47,6 +48,7 @@ Controller 目录 barrel，内部代码使用明确模块路径。
 |------|------|
 | `AppController.ts` | 根控制器类：初始化子控制器、实现 Host 接口、协调全局状态 |
 | `AutomaticDecisiveTask.ts` | 分别从用户决战计划和系统预设构造自动决战请求 |
+| `CurrentFleetController.ts` | 读取舰船库并把当前任务舰队转换为主页面 ViewObject |
 | `ConfigController.ts` | 配置保存逻辑：从表单收集 → 更新 ConfigModel → 同步 CronScheduler/Scheduler → 写文件 |
 | `SettingsController.ts` | 设置页操作：环境与 ADB 检测、舰船库、更新检查和主题交互 |
 | `NavigationController.ts` | 页面和方案标签导航 |
@@ -141,6 +143,10 @@ flowchart TD
 | `BattlePlanLoaderController.ts` | 独立持有受管方案选择器状态，加载、筛选并返回最终选择 |
 | `DecisivePlanController.ts` | 持有决战舰队草稿，协调设置读取、编辑和保存 |
 | `FleetPlannerController.ts` | 持有普通舰队草稿，协调舰船库、计划持久化、覆盖冲突和文件 identity |
+| `PlanFleetPresetController.ts` | 维护出征方案引用的舰队预设清单和只读 ViewObject |
+| `PlanManagementController.ts` | 持有计划管理目录状态，编排导出、删除、重命名和打开操作 |
+| `fleetViewObjects.ts` | 把舰队持久化对象映射为只读展示对象 |
+| `planManagementViewObjects.ts` | 推导计划关联、缺失引用、任务组引用和删除影响 |
 | `presetFlow.ts` | 任务预设的导入/查看/关闭/执行流程 |
 | `nodeEditor.ts` | 节点编辑器：从 UI 收集节点阵型/夜战/索敌规则并写回 PlanData |
 | `rendering.ts` | 构建 `PlanPreviewViewObject`，协调地图数据和方案数据的合并 |

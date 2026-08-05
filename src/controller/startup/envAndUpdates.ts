@@ -3,7 +3,6 @@
  * envAndUpdates —— 环境检查、依赖安装、更新检查逻辑。
  */
 import type { ElectronBridge } from '../../types/ipc.js';
-import type { StartupHost } from './StartupController';
 import { Logger } from '../../utils/Logger';
 
 function getUpdateMode(bridge?: ElectronBridge): 'auto' | 'manual' {
@@ -86,30 +85,18 @@ export async function runSetupScript(bridge: ElectronBridge): Promise<boolean> {
 }
 
 /** 检查更新 (非阻塞, 仅日志提示) */
-export async function checkForUpdates(bridge: ElectronBridge, host: StartupHost): Promise<void> {
+export async function checkForUpdates(bridge: ElectronBridge): Promise<void> {
   const updateMode = getUpdateMode(bridge);
 
-  initGuiAutoUpdate(bridge, host);
+  initGuiAutoUpdate(bridge);
   if (updateMode === 'manual') {
     Logger.info('当前为手动更新模式，已跳过启动自动更新检查');
     return;
   }
-
-  /*
-   * 测试期接口（后端源码更新）已停用，逻辑保留便于回滚恢复。
-  try {
-    const updates = await bridge.checkUpdates();
-    if (updates.hasUpdates) {
-      Logger.warn(`发现 ${updates.behindCount} 个新提交可更新，可通过「配置 → 检查更新」拉取`);
-    }
-  } catch {
-    // 忽略
-  }
-  */
 }
 
 /** 初始化 GUI 自动更新监听 + 首次检查 */
-function initGuiAutoUpdate(bridge: ElectronBridge, host: StartupHost): void {
+function initGuiAutoUpdate(bridge: ElectronBridge): void {
   if (!bridge.onUpdateStatus) return;
 
   bridge.onUpdateStatus((status) => {
@@ -130,7 +117,6 @@ function initGuiAutoUpdate(bridge: ElectronBridge, host: StartupHost): void {
         break;
       case 'downloaded':
         Logger.info(`GUI v${status.version} 下载完成，将在退出时自动安装`);
-        host.pendingGuiVersion = status.version;
         break;
       case 'error':
         Logger.warn(`GUI 更新检查失败: ${status.message || '未知错误'}`);

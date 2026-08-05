@@ -189,13 +189,44 @@ function testSecureFileService() {
       path.join('outside-link', 'escaped.txt'),
       'rejected',
     ),
-    /文件路径超出应用允许目录/,
+    /文件路径不允许包含符号链接或联接点/,
   );
   assert.throws(
     () => service.read(path.join('outside-link', 'secret.txt')),
-    /文件路径超出应用允许目录/,
+    /文件路径不允许包含符号链接或联接点/,
   );
   assert.equal(fs.existsSync(path.join(outside, 'escaped.txt')), false);
+
+  const internalTarget = path.join(userData, 'internal-target');
+  const internalLink = path.join(userData, 'internal-link');
+  fs.mkdirSync(internalTarget, { recursive: true });
+  fs.writeFileSync(
+    path.join(internalTarget, 'settings.txt'),
+    'internal',
+    'utf8',
+  );
+  fs.symlinkSync(
+    internalTarget,
+    internalLink,
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
+  assert.throws(
+    () => service.read(path.join('internal-link', 'settings.txt')),
+    /文件路径不允许包含符号链接或联接点/,
+  );
+
+  const internalFile = path.join(userData, 'internal-file.txt');
+  const internalFileLink = path.join(userData, 'internal-file-link.txt');
+  fs.writeFileSync(internalFile, 'internal-file', 'utf8');
+  try {
+    fs.symlinkSync(internalFile, internalFileLink, 'file');
+    assert.throws(
+      () => service.read('internal-file-link.txt'),
+      /文件路径不允许包含符号链接或联接点/,
+    );
+  } catch (error) {
+    if (error.code !== 'EPERM') throw error;
+  }
 
   const danglingTarget = path.join(
     temporaryDirectory,
@@ -214,7 +245,7 @@ function testSecureFileService() {
       path.join('dangling-link', 'escaped.txt'),
       'rejected',
     ),
-    /文件路径包含无法解析的符号链接/,
+    /文件路径不允许包含符号链接或联接点/,
   );
 }
 

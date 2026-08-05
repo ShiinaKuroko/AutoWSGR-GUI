@@ -4,7 +4,7 @@ import type { ManagedBattlePlanSelection } from '../../types/ipc.js';
 import type { LootAutomationPlan } from '../../shared/lootPlans.js';
 import { ApiClient } from '../../model/ApiClient';
 import { Logger } from '../../utils/Logger';
-import { showAlert, showConfirm } from '../shared/DialogHelper';
+import { showAlert, showConfirm } from '../../view/shared/DialogHelper';
 import { applyTheme } from './theme';
 
 export interface SettingsControllerHost {

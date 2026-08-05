@@ -39,8 +39,10 @@ import {
   type SchedulerCallbacks,
   type SchedulerWaitingTask,
 } from '../../types/scheduler';
-import { toBackendName } from '../fleet/index.js';
-import { buildFollowUpTask, createSchedulerTask } from './SchedulerTaskPolicy.js';
+import { toBackendName } from '../../shared/shipNameNormalizer.js';
+import {
+  buildFollowUpTask as createFollowUpTask,
+} from './SchedulerTaskPolicy.js';
 
 const RESULT_GRADE_ORDER: BattleResultGrade[] = ['D', 'C', 'B', 'A', 'S', 'SS'];
 
@@ -698,29 +700,11 @@ export class Scheduler {
   }
 
   private buildFollowUpTask(finished: SchedulerTask, remainingTimes: number): SchedulerTask {
-    return {
-      id: generateTaskId(),
-      logicalId: finished.logicalId,
-      name: finished.name,
-      type: finished.type,
-      priority: finished.priority,
-      request: finished.request,
+    return createFollowUpTask(
+      finished,
       remainingTimes,
-      totalTimes: finished.totalTimes,
-      unlimited: finished.unlimited,
-      stopCondition: finished.stopCondition,
-      maxRetries: finished.maxRetries,
-      retryCount: 0,
-      forceRetry: finished.forceRetry,
-      allowPolling: finished.allowPolling,
-      bathRepairConfig: finished.bathRepairConfig,
-      fleetId: finished.fleetId,
-      fleetPresets: finished.fleetPresets,
-      currentPresetIndex: finished.currentPresetIndex,
-      endpointNodes: finished.endpointNodes,
-      endpointResult: finished.endpointResult,
-      sortKey: finished.sortKey,
-    };
+      generateTaskId(),
+    );
   }
 
   /** 按方案 gap 等待后再把下一轮放回队列。 */

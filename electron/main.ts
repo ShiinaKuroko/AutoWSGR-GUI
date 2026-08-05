@@ -23,7 +23,10 @@ import { SafePathService } from './services/SafePathService';
 import { SecureFileService } from './services/SecureFileService';
 import { WindowService } from './services/WindowService';
 import { UserDataMigrationService } from './services/UserDataMigrationService';
-import { LegacyPlanMigration } from './services/LegacyPlanMigration';
+import {
+  LEGACY_PLAN_MIGRATION_STAGE,
+  LegacyPlanMigration,
+} from './services/LegacyPlanMigration';
 import {
   MigrationConflictService,
 } from './services/MigrationConflictService';
@@ -343,6 +346,17 @@ app.whenReady().then(() => {
     legacyPlanResult,
     presetInventoryResult,
   );
+  userDataMigrationService.writeMigrationReport(
+    legacyMigrationResult,
+  );
+  if (
+    legacyMigrationResult.failed === 0
+    && userDataMigrationService.isStageComplete(
+      LEGACY_PLAN_MIGRATION_STAGE,
+    )
+  ) {
+    userDataMigrationService.completeLegacySourceMigration();
+  }
   migrationConflictService.prepareAfterMigration(
     legacyMigrationResult.total > 0,
   );

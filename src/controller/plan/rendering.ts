@@ -6,6 +6,7 @@ import type {
   PlanPreviewViewObject,
   NodeViewObject,
   MapEdgeVO,
+  PlanFleetPresetSelectorViewObject,
 } from '../../types/view.js';
 import type { PlanModel } from '../../model/PlanModel';
 import {
@@ -20,6 +21,7 @@ export function buildPlanPreviewVO(
   currentPlan: PlanModel,
   currentMapData: MapData | null,
   eventMaps: EventMapCatalogEntry[] = [],
+  fleetPresetSelector: PlanFleetPresetSelectorViewObject,
 ): PlanPreviewViewObject {
   const plan = currentPlan;
   const mapData = currentMapData;
@@ -121,7 +123,7 @@ export function buildPlanPreviewVO(
     allNodes,
     edges,
     mapAspectRatio,
-    fleetPresets: plan.data.fleet_presets?.map(p => ({ name: p.name, ships: p.ships })),
+    fleetPresetSelector,
     times: plan.data.times,
     gap: plan.data.gap,
     lootCountGe: plan.data.stop_condition?.loot_count_ge,

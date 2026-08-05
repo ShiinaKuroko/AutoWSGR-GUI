@@ -23,7 +23,7 @@ import {
 import { yamlCodec } from '../../adapter/YamlAdapter';
 import { Logger } from '../../utils/Logger';
 import { getThemeMode, getAccentColor, applyTheme } from './theme';
-import { showAlert, showSaveSuccess } from '../shared/DialogHelper';
+import { showAlert, showSaveSuccess } from '../../view/shared/DialogHelper';
 
 const GUI_AUTOMATION_FIELDS = [
   'expeditionInterval',

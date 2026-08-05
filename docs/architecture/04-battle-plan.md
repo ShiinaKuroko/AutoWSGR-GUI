@@ -161,8 +161,11 @@ interface MapNode {
 
 | 文件 | 职责 |
 |------|------|
-| `PlanController.ts` | 主控制器：持有当前方案状态，协调编辑、保存和执行 |
+| `PlanController.ts` | 主控制器：持有当前方案状态，协调编辑、加载和保存 |
 | `BattlePlanLoaderController.ts` | 持有受管方案选择器状态并协调读取、筛选和选择结果 |
+| `PlanFleetPresetController.ts` | 管理当前方案引用的舰队预设，并生成只读选择器 ViewObject |
+| `PlanManagementController.ts` | 持有计划目录状态并编排导出、删除、重命名和打开操作 |
+| `planManagementViewObjects.ts` | 推导计划关联、任务组引用、缺失文件和删除影响 |
 | `presetFlow.ts` | 任务预设的导入/查看/关闭/执行流程 |
 | `nodeEditor.ts` | 从 UI 收集节点阵型/夜战/索敌规则并写回 PlanData |
 | `rendering.ts` | 构建 `PlanPreviewViewObject`，协调地图数据和方案数据的合并 |
@@ -175,8 +178,7 @@ interface MapNode {
 |--------|------|------|
 | `MapView` | `view/plan/MapView.ts` | 地图节点/连线渲染、节点类型图标/名称常量 |
 | `NodeEditorView` | `view/plan/NodeEditorView.ts` | 节点详细编辑器（阵形、夜战、继续条件） |
-| `FleetPresetView` | `view/plan/FleetPresetView.ts` | 编队预设列表管理（添加、编辑、删除） |
-| `FleetEditDialog` | `view/plan/FleetEditDialog.ts` | 编队预设编辑弹窗（支持舰船自动补全） |
+| `FleetPresetView` | `view/plan/FleetPresetView.ts` | 渲染只读预设清单并上报添加、删除和选择意图 |
 | `BattlePlanLoaderView` | `view/plan/BattlePlanLoaderView.ts` | 受管方案列表、筛选、预览和舰队选择弹窗 |
 
 ### Fleet Planner — 舰队计划
@@ -189,7 +191,6 @@ interface MapNode {
 | `FleetEditorView` | 舰位、主选/备选和拖拽编辑 |
 | `FleetRuleView` | 舰种、国籍、等级等规则输入 |
 | `FleetGalleryView` | 图鉴筛选、排序和展示缓存 |
-| `PlanManagementView` | 展示管理清单并上报重命名、删除和批量导出意图 |
 | `TeamPlanLoaderView` | 系统/用户编队方案选择 |
 
 `FleetPlannerController` 通过 `FleetPlannerRepository` 读取舰船库和编队计划，
@@ -201,15 +202,22 @@ interface MapNode {
 DTO 的唯一双向转换边界。名称、舰种、等级和 candidate-only 规则在这里校验；
 View 不拼装 YAML/IPC DTO，也不更新文件 identity。
 
+`FleetDraftEditor.applyFleetDraftEdit()` 是普通舰队草稿的唯一编辑入口。
+`FleetEditorView` 和 `FleetRuleView` 只发送显式编辑意图，Controller 应用意图后
+重新发布快照。`PlanManagementController` 独立持有管理目录原始数据，
+`buildPlanManagementViewObject()` 统一推导关联状态；`PlanManagementView`
+只渲染清单并上报用户操作，不读取 Repository 或保存文件。
+
 决战舰队由 `DecisivePlanController` 的独立 `DecisiveFleetDraft` 管理，不与普通
 舰队共享草稿。`DecisivePlanController` 负责设置和舰船库 Repository 调用，
 `DecisivePlanView` 只通过显式 Host 上报编辑和保存意图。两类 View 都不直接
 访问 Model、IPC 或持久化。
 
-Fleet 规则集中在 `src/model/fleet/`：`ShipMatcher` 负责匹配和显示标签，
-`FleetRuleMapper` 负责 API rule 映射，`ShipNameNormalizer` 负责后端舰名，
-`FleetDraft` 负责编辑草稿和持久化编队 DTO 的转换。candidate-only 槽位不会
-生成顶层 `name`，槽位约束、候选顺序和各候选的舰种/等级规则均保持。
+Fleet 领域规则集中在 `src/model/fleet/`：`ShipMatcher` 负责匹配和显示标签，
+`FleetRuleMapper` 负责 API rule 映射，`FleetDraftEditor` 负责编辑意图，
+`FleetDraft` 负责草稿和持久化编队 DTO 的转换。跨层只读舰船目录和舰名规范化
+位于 `src/shared/`。candidate-only 槽位不会生成顶层 `name`，槽位约束、候选
+顺序和各候选的舰种/等级规则均保持。
 
 ---
 
@@ -293,13 +301,14 @@ flowchart TB
 
 ## 系统方案
 
-`resource/system_battle_plans/` 当前包含周常和活动预制方案。活动计划从
-AutoWSGR 主库经 `PlanManagementService` 的现有升级链路导入：
+`resource/system_battle_plans/` 当前包含 10 份周常预制方案：
 
 | 分类 | 数量 | 示例 |
 |------|------|------|
 | 周常 | 10 | `bettle-周常-1-1.yaml` ~ `bettle-周常-10-1.yaml` |
-| 20260730 活动 | 4 | `bettle-E1炸鱼.yaml`、`bettle-E5夜战.yaml`、`bettle-H1炸鱼.yaml`、`bettle-H5夜战.yaml` |
+
+活动地图资源由 `scripts/sync-map-resources.js` 同步；活动出征 YAML 只有在经过
+当前 Codec 校验并明确纳入发布资源后，才应写入系统计划清单。
 
 ---
 
@@ -308,4 +317,4 @@ AutoWSGR 主库经 `PlanManagementService` 的现有升级链路导入：
 - **任务调度**：方案通过 `controller/plan/presetFlow.ts` 的 `executePresetFlow()` 构建 `TaskRequest` 后交给 `Scheduler`
 - **模板与任务组**：模板的 `planPaths` 引用方案文件；任务组 item 可以是 `kind: "plan"` 类型
 - **配置系统**：方案中的 `fleet_id` 和 `repair_mode` 可被配置页覆盖
-- **共享组件**：`view/shared/ShipAutocomplete.ts` 提供舰船名自动补全，被 `FleetEditDialog` 使用
+- **共享组件**：`view/shared/ShipAutocomplete.ts` 为模板舰名输入提供自动补全

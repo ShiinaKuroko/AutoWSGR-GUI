@@ -1,17 +1,14 @@
 /** 组合主页面状态栏、舰队、队列和日志子视图。 */
 /**
  * MainView —— 主页面 Facade。
- * 持有 LogView / TaskQueueView / StatusBar 三个子视图，
+ * 持有日志、任务队列、状态栏和当前舰队四个子视图，
  * 对外 API 保持不变，Controller 无需感知内部拆分。
  */
 import type { MainViewObject, LogEntryVO } from '../../types/view.js';
 import { LogView } from './LogView';
 import { TaskQueueView } from './TaskQueueView';
 import { StatusBar } from './StatusBar';
-import {
-  FleetPreviewView,
-  type FleetPreviewViewHost,
-} from './FleetPreviewView';
+import { FleetPreviewView } from './FleetPreviewView';
 
 export class MainView {
   private logView: LogView;
@@ -19,11 +16,11 @@ export class MainView {
   private statusBar: StatusBar;
   private fleetPreviewView: FleetPreviewView;
 
-  constructor(host: FleetPreviewViewHost) {
+  constructor() {
     this.logView = new LogView();
     this.taskQueueView = new TaskQueueView();
     this.statusBar = new StatusBar();
-    this.fleetPreviewView = new FleetPreviewView(host);
+    this.fleetPreviewView = new FleetPreviewView();
   }
 
   /* ── 回调转发（Controller 直接赋值） ── */

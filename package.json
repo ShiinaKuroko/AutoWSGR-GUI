@@ -1,6 +1,6 @@
 {
   "name": "wsgrgui",
-  "version": "2.0.4-dev",
+  "version": "2.0.0-alpha",
   "description": "AutoWSGR YAML 管理与自动化桌面界面",
   "main": "dist/electron/main.js",
   "scripts": {
@@ -16,15 +16,16 @@
     "test:legacy-plan": "npm run build && node scripts/test-legacy-plan-migration.js",
     "test:task-group-migration": "npm run build && node scripts/test-task-group-migration.js",
     "test:api-contract": "npm run check:fleet-types && npm run build && node scripts/test-api-contract.js",
-    "test:fleet-domain": "npm run build && node scripts/test-fleet-domain.js",
-    "test:scheduler-domain": "npm run build && node scripts/test-scheduler-domain.js",
-    "test:daily-sortie-stats": "node scripts/test-daily-sortie-stats.js",
+    "test:fleet-domain": "npm run build && node scripts/test-fleet-domain.mjs",
+    "test:scheduler-domain": "npm run build && node scripts/test-scheduler-domain.mjs",
+    "test:daily-sortie-stats": "node scripts/test-daily-sortie-stats.mjs",
     "test:ship-library-updater": "node scripts/test-ship-library-updater.js",
     "test:event-resources": "node scripts/test-event-20260730-resources.js && node scripts/test-event-map-loader.js",
     "test:settings": "npm run build && electron scripts/test-settings-persistence.js",
     "test:main-services": "npm run build && node scripts/test-main-services.js",
     "test:main-ipc": "npm run build && node scripts/test-main-ipc.js",
     "test:python-environment": "npm run build && node scripts/test-python-environment.js",
+    "test:release-package": "node scripts/test-release-package.js",
     "start": "chcp 65001 >nul && npm run build && electron .",
     "dev": "chcp 65001 >nul && npm run clean && npm run build:css && tsc && node scripts/bundle.js && electron .",
     "prepare-python": "node scripts/prepare-python.js",
@@ -136,7 +137,7 @@
       "provider": "github",
       "owner": "yltx",
       "repo": "AutoWSGR-GUI",
-      "channel": "dev"
+      "channel": "alpha"
     }
   }
 }

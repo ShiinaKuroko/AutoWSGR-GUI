@@ -41,6 +41,63 @@ const {
   temporaryDirectory,
 } = context;
 
+function createLegacyPlanMigration(
+  appPaths,
+  atomicFiles,
+  userDataMigration,
+) {
+  const teamCodec = new TeamPlanCodec();
+  const teamRepository = new TeamPlanRepository(
+    appPaths,
+    atomicFiles,
+    teamCodec,
+  );
+  const combatRepository = new CombatPlanRepository(
+    appPaths,
+    atomicFiles,
+  );
+  const combatCodec = new CombatPlanCodec(
+    teamCodec,
+    teamRepository,
+  );
+  const taskPresetCodec = new TaskPresetCodec();
+  return new LegacyPlanMigration(
+    appPaths,
+    atomicFiles,
+    userDataMigration,
+    {
+      yamlFiles: directory => combatRepository.yamlFiles(directory),
+      safePlanBaseName: value => combatCodec.safeBaseName(value),
+      normalizeUserTeamPlan: raw => teamCodec.normalize(raw),
+      teamPlanMatches: (filePath, team) => (
+        teamRepository.matches(filePath, team)
+      ),
+      teamName: team => team.name,
+      renameTeam: (team, name) => ({
+        ...structuredClone(team),
+        name,
+      }),
+      normalizeCombatPlanFleetPresets: (
+        root,
+        source,
+        requireEmbeddedShips,
+      ) => combatCodec.normalizeFleetPresets(
+        root,
+        source,
+        requireEmbeddedShips,
+      ),
+      buildTeamPlanWrites: (teams, directory) => (
+        teamRepository.buildWrites(teams, directory)
+      ),
+      serializeCombatPlan: (root, originalContent) => (
+        combatCodec.serialize(root, originalContent)
+      ),
+      isStandaloneTaskPreset: root => taskPresetCodec.isStandalone(root),
+      normalizeTaskPreset: root => taskPresetCodec.normalize(root),
+    },
+  );
+}
+
 /** 验证旧配置、旧计划和任务组引用迁移保持幂等。 */
 function testUserDataMigration() {
   const migrationRoot = path.join(temporaryDirectory, 'migration');
@@ -61,6 +118,16 @@ function testUserDataMigration() {
     atomicFiles,
   );
 
+  fs.mkdirSync(projectRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(projectRoot, 'usersettings.yaml'),
+    'legacy: true\n',
+    'utf8',
+  );
+  assert.equal(
+    userDataMigration.shouldMigrateLegacyInstallation(),
+    true,
+  );
   fs.mkdirSync(path.join(projectRoot, 'templates'), { recursive: true });
   fs.mkdirSync(path.join(projectRoot, 'plans'), { recursive: true });
   fs.mkdirSync(
@@ -289,9 +356,11 @@ function testUserDataMigration() {
     0,
   );
 
+  const migratedState = userDataMigration.readState();
   userDataMigration.writeState({
     version: 2,
     completed: [
+      ...migratedState.completed,
       `plan:${path.join(projectRoot, 'plans')}:legacy.yaml`,
     ],
   });
@@ -506,9 +575,10 @@ function testUserDataMigration() {
   );
   testLegacyMigrationNotice();
   testLegacyPlanConflictRetry();
-  testExistingUserDataCompatibility();
+  testInitializedUserDataBlocksLegacyInstall();
   testLegacyLootPlanIndexMigration();
   testPresetInventoryMigration();
+  testMigrationStageOrderingAndRecursivePlans();
   testMigrationConflictResolution();
 }
 
@@ -659,6 +729,11 @@ function testLegacyLootPlanIndexMigration() {
     id: 'builtin_farm_loot',
     planPaths: legacyFivePlanPaths,
   }]), 'utf8');
+  const migration = new UserDataMigrationService(
+    appPaths,
+    new AtomicFileStore(),
+  );
+  assert.equal(migration.shouldMigrateLegacyInstallation(), true);
   fs.writeFileSync(guiSettingsFile, JSON.stringify({
     automation: {
       autoLoot: true,
@@ -666,10 +741,6 @@ function testLegacyLootPlanIndexMigration() {
     },
   }), 'utf8');
 
-  const migration = new UserDataMigrationService(
-    appPaths,
-    new AtomicFileStore(),
-  );
   assert.equal(migration.migrateLegacyUserDataFiles().failed, 0);
   const migratedGui = JSON.parse(fs.readFileSync(guiSettingsFile, 'utf8'));
   assert.equal(
@@ -724,9 +795,6 @@ function testLegacyLootPlanIndexMigration() {
     id: 'builtin_farm_loot',
     planPaths: legacyFivePlanPaths,
   }]), 'utf8');
-  fs.writeFileSync(retryGuiSettings, JSON.stringify({
-    automation: { autoLoot: true, lootPlanIndex: 2 },
-  }), 'utf8');
 
   const realAtomicFiles = new AtomicFileStore();
   let failReconcileWrite = true;
@@ -746,6 +814,13 @@ function testLegacyLootPlanIndexMigration() {
       },
     },
   );
+  assert.equal(
+    retryMigration.shouldMigrateLegacyInstallation(),
+    true,
+  );
+  fs.writeFileSync(retryGuiSettings, JSON.stringify({
+    automation: { autoLoot: true, lootPlanIndex: 2 },
+  }), 'utf8');
   const originalConsoleError = console.error;
   let migrationFailureLogged = false;
   let failed;
@@ -766,7 +841,16 @@ function testLegacyLootPlanIndexMigration() {
     2,
   );
 
-  const retried = retryMigration.migrateLegacyUserDataFiles();
+  const resumedMigration = new UserDataMigrationService(
+    retryAppPaths,
+    realAtomicFiles,
+  );
+  assert.equal(
+    resumedMigration.shouldMigrateLegacyInstallation(),
+    true,
+    '同一来源迁移失败后必须允许下一次启动重试',
+  );
+  const retried = resumedMigration.migrateLegacyUserDataFiles();
   assert.equal(retried.failed, 0);
   assert.equal(
     JSON.parse(fs.readFileSync(retryGuiSettings, 'utf8'))
@@ -970,6 +1054,218 @@ function testPresetInventoryMigration() {
   );
 }
 
+/** 验证阶段顺序、跨启动重试、递归计划扫描和持久报告。 */
+function testMigrationStageOrderingAndRecursivePlans() {
+  const root = path.join(temporaryDirectory, 'migration-stage-order');
+  const legacyRoot = path.join(root, 'old-install');
+  const userData = path.join(root, 'user-data');
+  const resources = path.join(root, 'resources');
+  const appPaths = new AppPaths({
+    moduleDirectory: path.join(root, 'unused', 'dist', 'electron'),
+    isPackaged: () => true,
+    getPath: name => name === 'exe'
+      ? path.join(legacyRoot, 'AutoWSGR.exe')
+      : userData,
+    getResourcesPath: () => resources,
+  });
+  const migrationResources = path.join(
+    resources,
+    'resource',
+    'migrations',
+    'v6',
+    'system_battle_plans',
+  );
+  fs.mkdirSync(path.dirname(migrationResources), { recursive: true });
+  fs.cpSync(
+    path.join(
+      __dirname,
+      '..',
+      '..',
+      'resource',
+      'migrations',
+      'v6',
+      'system_battle_plans',
+    ),
+    migrationResources,
+    { recursive: true },
+  );
+
+  const nestedSource = path.join(
+    legacyRoot,
+    'plans',
+    'nested',
+    'deep',
+    'nested.yaml',
+  );
+  fs.mkdirSync(path.dirname(nestedSource), { recursive: true });
+  fs.writeFileSync(nestedSource, 'chapter: 1\nmap: 1\n', 'utf8');
+
+  const taskGroups = path.join(userData, 'task_groups.json');
+  const realAtomicFiles = new AtomicFileStore();
+  let failV6Write = true;
+  const firstMigration = new UserDataMigrationService(appPaths, {
+    write(file, content) {
+      if (failV6Write && file === taskGroups) {
+        failV6Write = false;
+        throw new Error('模拟 v6 阶段失败');
+      }
+      realAtomicFiles.write(file, content);
+    },
+  });
+  assert.equal(
+    firstMigration.shouldMigrateLegacyInstallation(),
+    true,
+  );
+  assert.equal(
+    firstMigration.migrateLegacyUserDataFiles().failed,
+    0,
+  );
+  fs.writeFileSync(taskGroups, JSON.stringify({
+    version: 3,
+    groups: [{
+      name: '旧任务',
+      items: [{
+        path: 'resource/system_battle_plans/bettle-E1炸鱼.yaml',
+        managedSource: 'system',
+        managedFile: 'bettle-E1炸鱼.yaml',
+      }, {
+        path: 'plans/nested/deep/nested.yaml',
+      }],
+    }],
+  }), 'utf8');
+
+  const blockedPlanMigration = createLegacyPlanMigration(
+    appPaths,
+    realAtomicFiles,
+    firstMigration,
+  );
+  const originalConsoleError = console.error;
+  let failedV6;
+  console.error = () => {};
+  try {
+    failedV6 = firstMigration.migratePresetInventory();
+  } finally {
+    console.error = originalConsoleError;
+  }
+  assert.equal(failedV6.failed, 1);
+  assert.equal(blockedPlanMigration.migrate().total, 0);
+  assert.equal(
+    fs.existsSync(path.join(
+      appPaths.userBattlePlansDir(),
+      'bettle-nested.yaml',
+    )),
+    false,
+    'v6 失败时 v7 不得提前迁移旧计划',
+  );
+
+  const resumedMigration = new UserDataMigrationService(
+    appPaths,
+    realAtomicFiles,
+  );
+  assert.equal(
+    resumedMigration.shouldMigrateLegacyInstallation(),
+    true,
+  );
+  const retriedV6 = resumedMigration.migratePresetInventory();
+  assert.equal(retriedV6.failed, 0);
+  const resumedPlanMigration = createLegacyPlanMigration(
+    appPaths,
+    realAtomicFiles,
+    resumedMigration,
+  );
+  const planResult = resumedPlanMigration.migrate();
+  assert.deepEqual(
+    {
+      total: planResult.total,
+      succeeded: planResult.succeeded,
+      failed: planResult.failed,
+    },
+    { total: 1, succeeded: 1, failed: 0 },
+  );
+  assert.equal(
+    fs.existsSync(path.join(
+      appPaths.userBattlePlansDir(),
+      'bettle-nested.yaml',
+    )),
+    true,
+  );
+  const migratedGroups = JSON.parse(
+    fs.readFileSync(taskGroups, 'utf8'),
+  );
+  assert.equal(
+    migratedGroups.groups[0].items[1].managedFile,
+    'bettle-nested.yaml',
+  );
+
+  const report = resumedMigration.writeMigrationReport({
+    detected: true,
+    total: retriedV6.total + planResult.total,
+    succeeded: retriedV6.succeeded + planResult.succeeded,
+    failed: 0,
+    failedFiles: [],
+  });
+  assert.ok(report);
+  assert.match(report.timestamp, /^\d{4}-\d{2}-\d{2}T/);
+  assert.deepEqual(
+    JSON.parse(fs.readFileSync(
+      path.join(userData, '.migration-report.json'),
+      'utf8',
+    )),
+    report,
+  );
+  resumedMigration.completeLegacySourceMigration();
+  assert.equal(
+    new UserDataMigrationService(
+      appPaths,
+      realAtomicFiles,
+    ).shouldMigrateLegacyInstallation(),
+    false,
+    '完整成功并写入报告后不应再次迁移同一来源',
+  );
+
+  const oldStateRoot = path.join(
+    temporaryDirectory,
+    'migration-old-version-seven',
+  );
+  const oldStateUserData = path.join(oldStateRoot, 'user-data');
+  const oldStatePaths = new AppPaths({
+    moduleDirectory: path.join(oldStateRoot, 'dist', 'electron'),
+    isPackaged: () => false,
+    getPath: name => name === 'exe'
+      ? path.join(oldStateRoot, 'AutoWSGR.exe')
+      : oldStateUserData,
+    getResourcesPath: () => path.join(oldStateRoot, 'resources'),
+  });
+  fs.mkdirSync(oldStateUserData, { recursive: true });
+  const oldStateSettings = path.join(
+    oldStateUserData,
+    'gui_settings.json',
+  );
+  fs.writeFileSync(oldStateSettings, JSON.stringify({
+    automation: {
+      lootPlanId: 'bettle-捞胖次-8-5.yaml',
+    },
+  }), 'utf8');
+  const oldStateMigration = new UserDataMigrationService(
+    oldStatePaths,
+    realAtomicFiles,
+  );
+  oldStateMigration.writeState({ version: 7, completed: [] });
+  assert.equal(oldStateMigration.migratePresetInventory().failed, 0);
+  assert.equal(
+    JSON.parse(fs.readFileSync(oldStateSettings, 'utf8'))
+      .automation.lootPlanId,
+    'bettle-old-8-5AI六潜胖次.yaml',
+    '旧 version=7 状态缺少 v6 完成键时仍必须执行 v6',
+  );
+  assert.equal(
+    oldStateMigration.isStageComplete(
+      'migration:v6:preset-inventory:complete',
+    ),
+    true,
+  );
+}
+
 /** 验证迁移提示展示真实计数、失败文件和源文件保留说明。 */
 function testLegacyMigrationNotice() {
   assert.equal(
@@ -1090,8 +1386,17 @@ function testLegacyPlanConflictRetry() {
     'bettle-conflict.yaml',
   );
   fs.mkdirSync(path.dirname(source), { recursive: true });
-  fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(source, 'chapter: 1\nmap: 1\n', 'utf8');
+  assert.equal(
+    userDataMigration.shouldMigrateLegacyInstallation(),
+    true,
+  );
+  assert.equal(
+    userDataMigration.migrateLegacyUserDataFiles().failed,
+    0,
+  );
+  assert.equal(userDataMigration.migratePresetInventory().failed, 0);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, 'chapter: 9\nmap: 9\n', 'utf8');
   fs.writeFileSync(
     path.join(userData, 'task_groups.json'),
@@ -1145,8 +1450,8 @@ function testLegacyPlanConflictRetry() {
   );
 }
 
-/** 验证已有 userData 时仍会合并另一安装目录的旧队列和计划。 */
-function testExistingUserDataCompatibility() {
+/** 验证已有 userData 时切换安装目录不会重新导入旧文件。 */
+function testInitializedUserDataBlocksLegacyInstall() {
   const root = path.join(temporaryDirectory, 'migration-existing-data');
   const projectRoot = path.join(root, 'old-install');
   const userData = path.join(root, 'user-data');
@@ -1260,13 +1565,20 @@ function testExistingUserDataCompatibility() {
     completed: ['existing-install-complete'],
   });
 
-  userDataMigration.migrateLegacyUserDataFiles();
+  assert.equal(
+    userDataMigration.shouldMigrateLegacyInstallation(),
+    false,
+  );
+  assert.equal(
+    userDataMigration.migrateLegacyUserDataFiles().total,
+    0,
+  );
   let taskGroups = JSON.parse(
     fs.readFileSync(targetTaskGroups, 'utf8'),
   );
   assert.deepEqual(
     taskGroups.groups.map(group => group.name),
-    ['默认', '默认（旧版）', '决战'],
+    ['默认'],
   );
   assert.equal(taskGroups.activeGroup, '默认');
 
@@ -1308,16 +1620,10 @@ function testExistingUserDataCompatibility() {
   migration.migrate();
 
   taskGroups = JSON.parse(fs.readFileSync(targetTaskGroups, 'utf8'));
-  const legacyGroup = taskGroups.groups.find(
-    group => group.name === '默认（旧版）',
-  );
   assert.equal(fs.existsSync(migratedPlan), true);
   assert.equal(fs.existsSync(sourcePlan), true);
-  assert.equal(
-    legacyGroup.items[0].managedFile,
-    'bettle-old.yaml',
-  );
-  assert.equal(legacyGroup.items[0].managedSource, 'user');
+  assert.equal(taskGroups.groups.length, 1);
+  assert.equal(taskGroups.groups[0].items[0].managedFile, 'weekly.yaml');
   assert.equal(
     fs.readFileSync(existingTeam.path, 'utf8'),
     existingTeam.content,
@@ -1327,7 +1633,7 @@ function testExistingUserDataCompatibility() {
   userDataMigration.migrateLegacyUserDataFiles();
   migration.migrate();
   taskGroups = JSON.parse(fs.readFileSync(targetTaskGroups, 'utf8'));
-  assert.equal(taskGroups.groups.length, 3);
+  assert.equal(taskGroups.groups.length, 1);
 }
 
 /** 验证迁移冲突识别、保留、删除和任务列表引用重写。 */

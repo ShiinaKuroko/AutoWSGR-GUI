@@ -7,7 +7,7 @@ import type { TemplateModel } from '../../model/TemplateModel';
 import type { TaskTemplate } from '../../types/model.js';
 import type { WizardPrefillData } from '../../types/view.js';
 import { Logger } from '../../utils/Logger';
-import { showAlert, showSaveSuccess } from '../shared/DialogHelper';
+import { showAlert, showSaveSuccess } from '../../view/shared/DialogHelper';
 
 /** 打开创建模板向导 */
 export function showWizard(

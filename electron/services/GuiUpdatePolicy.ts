@@ -2,6 +2,7 @@
  * GUI 版本和更新频道规则。
  *
  * 稳定版使用 X.Y.Z 和 latest 频道。
+ * Alpha 版使用 X.Y.Z-alpha 或 X.Y.Z-alpha.N 和 alpha 频道。
  * 预发布版使用 X.Y.Z-beta.N 和 beta 频道。
  * 开发版使用 X.Y.Z-dev 或 X.Y.Z-dev.N 和 dev 频道。
  *
@@ -9,7 +10,7 @@
  * 版本，防止 electron-updater 在频道清单缺失时回退到其他频道。
  */
 
-export type GuiReleaseChannel = 'latest' | 'beta' | 'dev';
+export type GuiReleaseChannel = 'latest' | 'alpha' | 'beta' | 'dev';
 export type GuiReleaseStage = 'stable' | 'prerelease' | 'development';
 
 export interface GuiReleasePolicy {
@@ -31,6 +32,7 @@ export interface UpdaterCheckResultLike {
 }
 
 const STABLE_VERSION = /^\d+\.\d+\.\d+$/;
+const ALPHA_VERSION = /^\d+\.\d+\.\d+-alpha(?:\.\d+)?$/;
 const BETA_VERSION = /^\d+\.\d+\.\d+-beta\.\d+$/;
 const DEVELOPMENT_VERSION = /^\d+\.\d+\.\d+-dev(?:\.\d+)?$/;
 
@@ -42,6 +44,13 @@ export function resolveGuiReleasePolicy(version: string): GuiReleasePolicy {
       channel: 'latest',
       stage: 'stable',
       allowPrerelease: false,
+    };
+  }
+  if (ALPHA_VERSION.test(normalized)) {
+    return {
+      channel: 'alpha',
+      stage: 'prerelease',
+      allowPrerelease: true,
     };
   }
   if (BETA_VERSION.test(normalized)) {
@@ -60,7 +69,8 @@ export function resolveGuiReleasePolicy(version: string): GuiReleasePolicy {
   }
   throw new Error(
     `GUI 版本 ${version} 不符合规范；只允许 X.Y.Z、`
-    + 'X.Y.Z-beta.N、X.Y.Z-dev 或 X.Y.Z-dev.N',
+    + 'X.Y.Z-alpha、X.Y.Z-alpha.N、X.Y.Z-beta.N、'
+    + 'X.Y.Z-dev 或 X.Y.Z-dev.N',
   );
 }
 

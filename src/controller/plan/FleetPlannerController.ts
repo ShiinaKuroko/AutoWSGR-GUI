@@ -12,40 +12,48 @@ import type {
   StorageStore,
 } from '../../adapter/StorageAdapter';
 import {
-  cloneFleetRule,
-  copyFleetRule,
-  createFleetCandidateDraft,
   createFleetDraft,
-  createFleetRuleDraft,
-  createFleetSlotDraft,
   fleetDraftFromTeamPlan,
   fleetDraftSnapshot,
   fleetDraftToTeamPlan,
   hasFleetDraftChanges,
 } from '../../model/fleet/FleetDraft';
 import type {
-  BackupFollowMode,
+  FleetRuleDraft,
 } from '../../model/fleet/FleetDraft';
+import {
+  applyFleetDraftEdit,
+} from '../../model/fleet/FleetDraftEditor';
+import type {
+  BackupFollowMode,
+  FleetDraftEditIntent,
+  FleetDraftEditResult,
+} from '../../types/fleetEditor.js';
 import type {
   PlanPresetSource,
-  ShipLibraryManifest,
   UserTeamPlan,
-  UserTeamPlanSlot,
-  UserTeamShipRule,
 } from '../../types/ipc.js';
 import type {
+  FleetDraftViewObject,
+  FleetRuleDraftViewObject,
   FleetShipLibraryViewObject,
+  FleetSlotDraftViewObject,
   TeamPlanListViewObject,
-  TeamPlanShipRuleViewObject,
-  TeamPlanSlotViewObject,
-  TeamPlanViewObject,
 } from '../../types/view.js';
 import {
   FleetPlannerView,
 } from '../../view/plan/FleetPlannerView';
 import type {
   PlanManagementTaskGroup,
-} from '../../view/plan/PlanManagementView';
+} from './planManagementViewObjects.js';
+import {
+  toFleetShipLibraryViewObject,
+  toTeamPlanViewObject,
+  userTeamPlanToFleetPreset,
+} from './fleetViewObjects.js';
+import {
+  PlanManagementController,
+} from './PlanManagementController.js';
 
 const REFIT_FILTER_STORAGE_KEY = 'fleetPlannerRefitFilter';
 const BACKUP_FOLLOW_MODE_STORAGE_KEY = 'fleetPlannerBackupFollowMode';
@@ -54,6 +62,7 @@ export class FleetPlannerController {
   private draft = createFleetDraft();
   private savedDraftSnapshot = fleetDraftSnapshot(this.draft);
   private readonly view: FleetPlannerView;
+  private readonly planManagementCtrl: PlanManagementController;
   private readonly teamPlans = new Map<string, UserTeamPlan>();
   private readonly teamPlanIds = new Map<string, string>();
   private shipLibrary: FleetShipLibraryViewObject | null = null;
@@ -70,50 +79,26 @@ export class FleetPlannerController {
       loadTeamPlans: () => this.loadTeamPlans(),
       saveTeamPlan: name => this.saveTeamPlan(name),
       applyTeamPlan: planId => this.applyTeamPlan(planId),
-      loadPlanManagement: () => repository.getPlanManagement(),
-      exportUserPlans: selections => (
-        repository.exportUserPlans(selections)
-      ),
-      setPlanUnlinkedIgnored: (kind, source, file, ignored) => (
-        repository.setPlanUnlinkedIgnored(
-          kind,
-          source,
-          file,
-          ignored,
-        )
-      ),
-      renameUserCombatPlan: (file, newName) => (
-        repository.renameUserCombatPlan(file, newName)
-      ),
-      deleteUserCombatPlan: file => (
-        repository.deleteUserCombatPlan(file)
-      ),
-      deleteUserTeamPlan: file => repository.deleteUserTeamPlan(file),
-      openTeamPlan: (file, source) => this.openTeamPlan(file, source),
       getRefitFilter: () => (
-        storage.get(REFIT_FILTER_STORAGE_KEY) === 'true'
+        this.storage.get(REFIT_FILTER_STORAGE_KEY) === 'true'
       ),
       setRefitFilter: enabled => (
-        storage.set(REFIT_FILTER_STORAGE_KEY, String(enabled))
+        this.storage.set(REFIT_FILTER_STORAGE_KEY, String(enabled))
       ),
       getBackupFollowMode: (): BackupFollowMode => (
-        storage.get(BACKUP_FOLLOW_MODE_STORAGE_KEY) === 'position'
+        this.storage.get(BACKUP_FOLLOW_MODE_STORAGE_KEY) === 'position'
           ? 'position'
           : 'ship'
       ),
       setBackupFollowMode: mode => (
-        storage.set(BACKUP_FOLLOW_MODE_STORAGE_KEY, mode)
+        this.storage.set(BACKUP_FOLLOW_MODE_STORAGE_KEY, mode)
       ),
-      currentDraft: () => this.draft,
+      currentDraft: () => this.toFleetDraftViewObject(),
+      editDraft: intent => this.editDraft(intent),
       setDraftName: name => {
         this.draft.name = name;
       },
       resetDraft: () => this.resetDraft(),
-      createRuleDraft: () => createFleetRuleDraft(),
-      createCandidateDraft: ship => createFleetCandidateDraft(ship),
-      createSlotDraft: () => createFleetSlotDraft(),
-      cloneRule: source => cloneFleetRule(source),
-      copyRule: (target, source) => copyFleetRule(target, source),
       hasUnsavedDraftChanges: name => hasFleetDraftChanges(
         {
           ...this.draft,
@@ -122,6 +107,11 @@ export class FleetPlannerController {
         this.savedDraftSnapshot,
       ),
     });
+    this.planManagementCtrl = new PlanManagementController(repository);
+    this.planManagementCtrl.onOpenTeamPlan = (
+      file,
+      source,
+    ) => this.openTeamPlan(file, source);
   }
 
   set onOpenBattlePlan(
@@ -129,13 +119,13 @@ export class FleetPlannerController {
       (file: string, source: PlanPresetSource) => Promise<void>
     ) | null,
   ) {
-    this.view.onOpenBattlePlan = handler;
+    this.planManagementCtrl.onOpenBattlePlan = handler;
   }
 
   setTaskGroupsProvider(
     provider: () => ReadonlyArray<PlanManagementTaskGroup>,
   ): void {
-    this.view.setTaskGroupsProvider(provider);
+    this.planManagementCtrl.setTaskGroupsProvider(provider);
   }
 
   load(force = false): Promise<void> {
@@ -143,7 +133,7 @@ export class FleetPlannerController {
   }
 
   loadManagement(): Promise<void> {
-    return this.view.loadManagement();
+    return this.planManagementCtrl.load();
   }
 
   private loadShipLibrary(force: boolean): Promise<void> {
@@ -156,7 +146,7 @@ export class FleetPlannerController {
     this.view.showShipLibraryLoading();
     this.shipLibraryLoading = this.repository.getShipLibraryManifest()
       .then(manifest => {
-        this.shipLibrary = this.toShipLibraryViewObject(manifest);
+        this.shipLibrary = toFleetShipLibraryViewObject(manifest);
         this.view.showShipLibrary(this.shipLibrary);
       })
       .catch(error => {
@@ -170,21 +160,33 @@ export class FleetPlannerController {
     return this.shipLibraryLoading;
   }
 
-  private toShipLibraryViewObject(
-    manifest: ShipLibraryManifest,
-  ): FleetShipLibraryViewObject {
-    const ships = manifest.ships.filter(ship => (
-      Number.isFinite(ship.id)
-      && Boolean(ship.name)
-      && Boolean(ship.portraitUrl)
-    ));
+  private toFleetRuleViewObject(
+    rule: FleetRuleDraft,
+  ): FleetRuleDraftViewObject {
     return {
-      labels: manifest.labels,
-      ships,
-      colorfulBackgroundUrl: ships.find(
-        ship => ship.rarity === 6 && Boolean(ship.backgroundUrl),
-      )?.backgroundUrl ?? '',
+      shipTypes: [...rule.shipTypes],
+      levelEnabled: rule.levelEnabled,
+      minLevel: rule.minLevel,
+      maxLevel: rule.maxLevel,
     };
+  }
+
+  private toFleetDraftViewObject(): FleetDraftViewObject {
+    return {
+      name: this.draft.name,
+      slots: this.draft.slots.map((slot): FleetSlotDraftViewObject => ({
+        primary: slot.primary,
+        candidates: slot.candidates.map(candidate => ({
+          ship: candidate.ship,
+          ...this.toFleetRuleViewObject(candidate),
+        })),
+        ...this.toFleetRuleViewObject(slot),
+      })),
+    };
+  }
+
+  private editDraft(intent: FleetDraftEditIntent): FleetDraftEditResult {
+    return applyFleetDraftEdit(this.draft, intent);
   }
 
   private async loadTeamPlans(): Promise<TeamPlanListViewObject> {
@@ -203,64 +205,24 @@ export class FleetPlannerController {
         this.teamPlanIds.set(identity, id);
       }
       this.teamPlans.set(id, plan);
-      return this.toTeamPlanViewObject(id, plan, source);
-    });
-    return {
-      plans,
-      errorCount: result.errors.length,
-    };
-  }
-
-  private toTeamPlanViewObject(
-    id: string,
-    plan: UserTeamPlan,
-    source: PlanPresetSource,
-  ): TeamPlanViewObject {
-    return {
-      id,
-      name: plan.name,
-      source,
-      modifiedAt: plan.modifiedAt,
-      selected: Boolean(
+      const selected = Boolean(
         plan.file
         && this.draft.file
         && source === this.draft.source
         && this.teamPlanIdentity(source, plan.file)
           === this.teamPlanIdentity(this.draft.source, this.draft.file),
-      ),
-      ships: plan.ships.map(slot => this.toTeamPlanSlotViewObject(slot)),
-    };
-  }
-
-  private toTeamPlanSlotViewObject(
-    slot: UserTeamPlanSlot,
-  ): TeamPlanSlotViewObject {
-    const primary = slot.name
-      ? this.toTeamPlanRuleViewObject({
-          name: slot.name,
-          search_name: slot.search_name,
-          ship_type: slot.ship_type,
-          min_level: slot.min_level,
-          max_level: slot.max_level,
-        })
-      : undefined;
+      );
+      return toTeamPlanViewObject(
+        id,
+        userTeamPlanToFleetPreset(plan),
+        source,
+        plan.modifiedAt,
+        selected,
+      );
+    });
     return {
-      primary,
-      candidates: (slot.candidates ?? []).map(
-        candidate => this.toTeamPlanRuleViewObject(candidate),
-      ),
-    };
-  }
-
-  private toTeamPlanRuleViewObject(
-    rule: UserTeamShipRule,
-  ): TeamPlanShipRuleViewObject {
-    return {
-      name: rule.name,
-      searchName: rule.search_name,
-      shipTypes: [...(rule.ship_type ?? [])],
-      minLevel: rule.min_level,
-      maxLevel: rule.max_level,
+      plans,
+      errorCount: result.errors.length,
     };
   }
 

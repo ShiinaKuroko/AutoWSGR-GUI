@@ -1,8 +1,8 @@
 /** 解析舰队预设、匹配舰船规则并生成槽位显示文本。 */
 import type { ShipFilter, ShipSlot } from '../../types/model.js';
 import { shipTypeLabel } from '../../shared/fleetShipTypes.js';
-import { ALL_SHIPS, type ShipInfo } from './ShipCatalog.js';
-import { toBackendName } from './ShipNameNormalizer.js';
+import { ALL_SHIPS, type ShipInfo } from '../../shared/shipCatalog.js';
+import { toBackendName } from '../../shared/shipNameNormalizer.js';
 
 function dedupeNames(names: string[]): string[] {
   const seen = new Set<string>();

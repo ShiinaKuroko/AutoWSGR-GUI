@@ -41,7 +41,7 @@ export function normalizeTeamPlanSearch(value: string): string {
 
 /** 保留原数组索引，避免筛选后点击到错误的编队。 */
 export function filterAndSortTeamPlans<T extends TeamPlanListItem>(
-  plans: T[],
+  plans: readonly T[],
   options: TeamPlanListOptions,
 ): Array<{ plan: T; index: number }> {
   const search = normalizeTeamPlanSearch(options.search);

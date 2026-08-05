@@ -12,7 +12,11 @@ import type {
 } from '../../types/model.js';
 import type { BathingShip } from './RepairManager';
 import { TaskPriority, type SchedulerTaskType, type SchedulerTask } from '../../types/scheduler';
-import { resolveFleetPreset, resolveFleetPresetRules, toBackendName } from '../fleet/index.js';
+import { toBackendName } from '../../shared/shipNameNormalizer.js';
+import {
+  resolveFleetPreset,
+  resolveFleetPresetRules,
+} from '../fleet/index.js';
 import { calculateRepairWaitMs } from './SchedulerRepairPolicy.js';
 import { createSchedulerTask, findPriorityInsertionIndex } from './SchedulerTaskPolicy.js';
 
@@ -194,7 +198,7 @@ export class TaskQueue {
   ): void {
     if (this.deferredRetryTimer) return;
 
-    const waitMs = this.calculateDynamicWait(bathingShips);
+    const waitMs = calculateRepairWaitMs(bathingShips);
 
     if (waitMs <= 0) {
       emitLog('info', '维修时间未知，30 秒后重试...');
@@ -230,36 +234,6 @@ export class TaskQueue {
       clearTimeout(this.deferredRetryTimer);
       this.deferredRetryTimer = null;
     }
-  }
-
-  /**
-   * 根据泡澡中舰船的 repairEndTime 计算动态等待时间。
-   * @returns 等待毫秒数，或 -1（全部不可信，应使用默认 30 秒）
-   */
-  private calculateDynamicWait(bathingShips?: ReadonlyMap<string, BathingShip>): number {
-    if (!bathingShips || bathingShips.size === 0) {
-      return -1;
-    }
-
-    let minEndTime = Infinity;
-    let hasValidTime = false;
-
-    for (const ship of bathingShips.values()) {
-      if (ship.repairEndTime && ship.repairEndTime > 0) {
-        minEndTime = Math.min(minEndTime, ship.repairEndTime);
-        hasValidTime = true;
-      }
-    }
-
-    if (!hasValidTime) return -1;
-
-    const now = Date.now();
-    if (minEndTime <= now) {
-      return 5_000;
-    }
-
-    const rawWait = minEndTime - now + 5_000;
-    return Math.min(rawWait, 30_000);
   }
 
   // ── 编队预设切换 ──

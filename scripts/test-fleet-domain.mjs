@@ -4,7 +4,19 @@ import esbuild from 'esbuild';
 
 const require = createRequire(import.meta.url);
 const result = esbuild.buildSync({
-  entryPoints: ['src/model/fleet/index.ts'],
+  stdin: {
+    contents: [
+      "export * from './src/model/fleet/index.ts';",
+      "export { toBackendName } from './src/shared/shipNameNormalizer.ts';",
+      "export { CurrentFleetController } from './src/controller/app/CurrentFleetController.ts';",
+      "export { PlanFleetPresetController } from './src/controller/plan/PlanFleetPresetController.ts';",
+      "export { PlanManagementController } from './src/controller/plan/PlanManagementController.ts';",
+      "export { buildPlanManagementViewObject } from './src/controller/plan/planManagementViewObjects.ts';",
+    ].join('\n'),
+    loader: 'ts',
+    resolveDir: process.cwd(),
+    sourcefile: 'fleet-domain-test-entry.ts',
+  },
   bundle: true,
   platform: 'node',
   format: 'cjs',
@@ -14,7 +26,12 @@ const result = esbuild.buildSync({
 const module = { exports: {} };
 new Function('require', 'module', 'exports', result.outputFiles[0].text)(require, module, module.exports);
 const {
+  applyFleetDraftEdit,
+  CurrentFleetController,
   DecisiveFleetDraft,
+  PlanFleetPresetController,
+  PlanManagementController,
+  buildPlanManagementViewObject,
   compactFleetDraftSlots,
   createFleetCandidateDraft,
   createFleetDraft,
@@ -42,6 +59,7 @@ const testShip = (id, name) => ({
   id,
   name,
   search_name: name,
+  ship_type: 'dd',
 });
 const createFollowModeDraft = () => {
   const draft = createFleetDraft();
@@ -407,6 +425,179 @@ assert.equal(
   candidateOnlyMoveSlots[0],
 );
 
+const editorAssignmentDraft = createFleetDraft();
+const editorPrimary = testShip(120, '编辑器主选');
+const primaryAssignment = applyFleetDraftEdit(editorAssignmentDraft, {
+  type: 'assign-ship',
+  selection: {
+    group: 'formation',
+    position: 0,
+    candidateIndex: 0,
+  },
+  ship: editorPrimary,
+});
+assert.equal(editorAssignmentDraft.slots[0].primary, editorPrimary);
+assert.deepEqual(editorAssignmentDraft.slots[0].shipTypes, ['dd']);
+assert.deepEqual(primaryAssignment.selection, {
+  group: 'formation',
+  position: 1,
+  candidateIndex: 0,
+});
+
+const editorBackup = testShip(121, '编辑器备选');
+const backupAssignment = applyFleetDraftEdit(editorAssignmentDraft, {
+  type: 'assign-ship',
+  selection: {
+    group: 'backup',
+    position: 0,
+    candidateIndex: 0,
+  },
+  ship: editorBackup,
+});
+assert.equal(
+  editorAssignmentDraft.slots[0].candidates[0].ship,
+  editorBackup,
+);
+assert.deepEqual(
+  editorAssignmentDraft.slots[0].candidates[0].shipTypes,
+  ['dd'],
+);
+assert.deepEqual(backupAssignment.selection, {
+  group: 'backup',
+  position: 0,
+  candidateIndex: 1,
+});
+
+assert.equal(applyFleetDraftEdit(editorAssignmentDraft, {
+  type: 'update-rule',
+  position: 0,
+  update: {
+    levelEnabled: true,
+    minLevel: 30,
+    maxLevel: 90,
+  },
+}).changed, true);
+assert.equal(editorAssignmentDraft.slots[0].levelEnabled, true);
+assert.equal(editorAssignmentDraft.slots[0].minLevel, 30);
+assert.equal(editorAssignmentDraft.slots[0].maxLevel, 90);
+assert.equal(applyFleetDraftEdit(editorAssignmentDraft, {
+  type: 'update-rule',
+  position: 0,
+  candidateIndex: 0,
+  update: { minLevel: 50 },
+}).changed, true);
+assert.equal(editorAssignmentDraft.slots[0].candidates[0].minLevel, 50);
+
+const editorShipFollowDraft = createFollowModeDraft();
+const shipFollowResult = applyFleetDraftEdit(editorShipFollowDraft, {
+  type: 'drop-formation',
+  source: { group: 'formation', position: 0 },
+  targetPosition: 1,
+  selection: {
+    group: 'formation',
+    position: 0,
+    candidateIndex: 0,
+  },
+  backupFollowMode: 'ship',
+});
+assert.equal(editorShipFollowDraft.slots[0].primary.name, '主选B');
+assert.equal(
+  editorShipFollowDraft.slots[0].candidates[0].ship.name,
+  '备选B',
+);
+assert.equal(shipFollowResult.selection.position, 1);
+
+const editorPositionFollowDraft = createFollowModeDraft();
+const positionFollowResult = applyFleetDraftEdit(editorPositionFollowDraft, {
+  type: 'drop-formation',
+  source: { group: 'formation', position: 0 },
+  targetPosition: 1,
+  selection: {
+    group: 'formation',
+    position: 0,
+    candidateIndex: 0,
+  },
+  backupFollowMode: 'position',
+});
+assert.equal(editorPositionFollowDraft.slots[0].primary.name, '主选B');
+assert.equal(
+  editorPositionFollowDraft.slots[0].candidates[0].ship.name,
+  '备选A',
+);
+assert.equal(positionFollowResult.selection.position, 1);
+
+const editorCrossGroupDraft = createFollowModeDraft();
+const movedToBackup = applyFleetDraftEdit(editorCrossGroupDraft, {
+  type: 'drop-backup',
+  source: { group: 'formation', position: 0 },
+  targetPosition: 1,
+  targetCandidateIndex: 1,
+});
+assert.equal(movedToBackup.changed, true);
+assert.equal(editorCrossGroupDraft.slots[0].primary, null);
+assert.equal(
+  editorCrossGroupDraft.slots[0].candidates[0].ship.name,
+  '备选A',
+);
+assert.equal(editorCrossGroupDraft.slots[1].primary.name, '主选B');
+assert.deepEqual(
+  editorCrossGroupDraft.slots[1].candidates
+    .filter(candidate => candidate.ship)
+    .map(candidate => candidate.ship.name),
+  ['备选B', '主选A'],
+);
+
+const duplicateCandidate = createFleetCandidateDraft(
+  editorCrossGroupDraft.slots[1].primary,
+);
+editorCrossGroupDraft.slots[0].candidates[1] = duplicateCandidate;
+const rejectedDuplicate = applyFleetDraftEdit(editorCrossGroupDraft, {
+  type: 'drop-formation',
+  source: {
+    group: 'backup',
+    position: 0,
+    candidateIndex: 1,
+  },
+  targetPosition: 0,
+  selection: {
+    group: 'formation',
+    position: 1,
+    candidateIndex: 0,
+  },
+  backupFollowMode: 'ship',
+});
+assert.equal(rejectedDuplicate.changed, false);
+assert.match(rejectedDuplicate.error.message, /不能添加同名舰船/);
+
+const editorCopyDraft = createFleetDraft();
+editorCopyDraft.slots[0].candidates[0] = createFleetCandidateDraft(
+  testShip(122, '复制备选'),
+);
+editorCopyDraft.slots[0].candidates[0].levelEnabled = true;
+editorCopyDraft.slots[0].candidates[0].minLevel = 40;
+assert.equal(applyFleetDraftEdit(editorCopyDraft, {
+  type: 'copy-backups',
+  sourcePosition: 0,
+  targetPosition: 1,
+}).changed, true);
+assert.equal(
+  editorCopyDraft.slots[1].candidates[0].ship.name,
+  '复制备选',
+);
+assert.equal(editorCopyDraft.slots[1].candidates[0].minLevel, 40);
+assert.notEqual(
+  editorCopyDraft.slots[1].candidates[0],
+  editorCopyDraft.slots[0].candidates[0],
+);
+
+assert.equal(applyFleetDraftEdit(editorCopyDraft, {
+  type: 'clear',
+}).changed, true);
+assert.equal(
+  editorCopyDraft.slots.every(slot => isFleetSlotEmpty(slot)),
+  true,
+);
+
 const persistedDraft = createFleetDraft();
 persistedDraft.slots[0].primary = testShip(201, '主选持久化');
 persistedDraft.slots[0].shipTypes = ['cl'];
@@ -606,6 +797,492 @@ assert.notEqual(
     ],
   }),
 );
+
+const manifest = {
+  schemaVersion: 1,
+  generatedAt: '2026-08-05T00:00:00.000Z',
+  labels: {
+    ship_types: { cl: '轻巡洋舰' },
+    size_classes: {},
+    role_classes: {},
+    countries: {},
+    variants: {},
+  },
+  typeGroups: {
+    size_classes: {},
+    role_classes: {},
+  },
+  ships: [
+    {
+      id: 1,
+      name: '海伦娜',
+      search_name: '海伦娜',
+      variant: 'normal',
+      rarity: 5,
+      ship_type: 'cl',
+      size_class: 'medium',
+      role_class: 'gun',
+      country: 'US',
+      portraitUrl: 'ship://1/portrait',
+      backgroundUrl: 'ship://5/background',
+      frameUrl: 'ship://5/frame',
+      typeIconUrl: 'ship://cl/icon',
+    },
+    {
+      id: 2,
+      name: '无立绘数据',
+      search_name: '无立绘数据',
+      variant: 'normal',
+      rarity: 1,
+      ship_type: 'cl',
+      size_class: 'medium',
+      role_class: 'gun',
+      country: 'US',
+      portraitUrl: '',
+      backgroundUrl: '',
+      frameUrl: '',
+      typeIconUrl: '',
+    },
+  ],
+};
+const catalogPlans = [
+  {
+    file: '已有编队.yaml',
+    modifiedAt: 100,
+    source: 'user',
+    name: '已有编队',
+    ships: [
+      { name: '海伦娜' },
+      {
+        candidates: [
+          { name: '昆西', ship_type: ['cl'] },
+          { name: '克利夫兰' },
+        ],
+        ship_type: ['cl', 'ca'],
+        min_level: 10,
+      },
+    ],
+  },
+  {
+    file: '纯候选编队.yaml',
+    modifiedAt: 200,
+    source: 'system',
+    name: '纯候选编队',
+    ships: [{
+      candidates: [{ name: '海伦娜', min_level: 100 }],
+    }],
+  },
+];
+const presetController = new PlanFleetPresetController({
+  async getShipLibraryManifest() {
+    return manifest;
+  },
+  async listTeamPlans() {
+    return {
+      plans: catalogPlans,
+      errors: [{
+        file: '损坏编队.yaml',
+        source: 'user',
+        kind: 'team',
+        message: 'YAML 无法解析',
+      }],
+    };
+  },
+});
+assert.equal(
+  presetController.toViewObject(existingFleetPresets).status,
+  'loading',
+);
+await presetController.load();
+const presetCatalog = presetController.toViewObject(existingFleetPresets);
+assert.equal(presetCatalog.status, 'ready');
+assert.equal(presetCatalog.errorCount, 1);
+assert.equal(presetCatalog.plans.length, 2);
+assert.equal(presetCatalog.plans[0].selected, true);
+assert.equal(presetCatalog.bindings[0].source, 'user');
+assert.equal(
+  presetCatalog.bindings[0].catalogPlanId,
+  presetCatalog.plans[0].id,
+);
+assert.equal(presetCatalog.plans[1].ships[0].primary, undefined);
+assert.deepEqual(
+  presetCatalog.plans[1].ships[0].candidates.map(rule => rule.name),
+  ['海伦娜'],
+);
+assert.equal(presetCatalog.shipLibrary.ships.length, 1);
+assert.equal(presetCatalog.shipLibrary.ships[0].name, '海伦娜');
+assert.equal(
+  presetController.appendPreset(
+    existingFleetPresets,
+    presetCatalog.plans[0].id,
+  ),
+  null,
+);
+
+const firstAppend = presetController.appendPreset(
+  [],
+  presetCatalog.plans[1].id,
+);
+const secondAppend = presetController.appendPreset(
+  [],
+  presetCatalog.plans[1].id,
+);
+assert.ok(firstAppend);
+assert.ok(secondAppend);
+firstAppend[0].ships[0].candidates[0].name = '修改副本';
+assert.equal(
+  secondAppend[0].ships[0].candidates[0].name,
+  '海伦娜',
+);
+assert.deepEqual(
+  presetController.removePreset(
+    [existingFleetPresets[0], secondAppend[0]],
+    0,
+  ),
+  secondAppend,
+);
+assert.equal(presetController.removePreset(secondAppend, -1), null);
+assert.equal(presetController.removePreset(secondAppend, 1), null);
+
+const failedPresetController = new PlanFleetPresetController({
+  async getShipLibraryManifest() {
+    return manifest;
+  },
+  async listTeamPlans() {
+    throw new Error('目录读取失败');
+  },
+});
+await failedPresetController.load();
+const failedCatalog = failedPresetController.toViewObject([]);
+assert.equal(failedCatalog.status, 'error');
+assert.equal(failedCatalog.message, '目录读取失败');
+
+let currentFleetManifestLoads = 0;
+const currentFleetController = new CurrentFleetController({
+  async getShipLibraryManifest() {
+    currentFleetManifestLoads += 1;
+    return manifest;
+  },
+});
+const currentFleetRequest = {
+  type: 'normal_fight',
+  plan: {
+    fleet_rules: [
+      { name: '海伦娜·改' },
+      { candidates: [{ name: '海伦娜' }] },
+    ],
+    fleet: ['', '', '未知舰船'],
+  },
+};
+const unloadedFleet = currentFleetController.resolve(currentFleetRequest);
+assert.equal(unloadedFleet[0].name, '海伦娜·改');
+assert.equal(unloadedFleet[0].ship, undefined);
+await currentFleetController.load();
+const loadedFleet = currentFleetController.resolve(currentFleetRequest);
+assert.equal(loadedFleet.length, 3);
+assert.equal(loadedFleet[0].ship.id, 1);
+assert.equal(loadedFleet[0].shipTypeLabel, '轻巡洋舰');
+assert.equal(loadedFleet[1].ship.id, 1);
+assert.equal(loadedFleet[2].name, '未知舰船');
+assert.equal(loadedFleet[2].ship, undefined);
+assert.deepEqual(
+  currentFleetController.resolve({ type: 'exercise' }),
+  [],
+);
+await currentFleetController.load();
+assert.equal(currentFleetManifestLoads, 1);
+await currentFleetController.load(true);
+assert.equal(currentFleetManifestLoads, 2);
+
+const failedCurrentFleetController = new CurrentFleetController({
+  async getShipLibraryManifest() {
+    throw new Error('资料库读取失败');
+  },
+});
+await failedCurrentFleetController.load();
+assert.equal(
+  failedCurrentFleetController.resolve(currentFleetRequest)[0].ship,
+  undefined,
+);
+
+const managementResult = {
+  bindings: [
+    {
+      planFile: 'bettle-system.yaml',
+      planName: '系统计划',
+      source: 'system',
+      teamName: '共享舰队',
+    },
+    {
+      planFile: 'bettle-missing.yaml',
+      planName: '缺失舰队计划',
+      source: 'user',
+      teamName: '不存在舰队',
+    },
+    {
+      planFile: 'bettle-empty.yaml',
+      planName: '无需舰队计划',
+      source: 'user',
+      teamName: null,
+    },
+  ],
+  battlePlans: [],
+  teamPlans: [
+    {
+      file: 'team-shared-system.yaml',
+      name: '共享舰队',
+      source: 'system',
+    },
+    {
+      file: 'team-shared-user.yaml',
+      name: '共享舰队',
+      source: 'user',
+    },
+    {
+      file: 'team-orphan.yaml',
+      name: '孤立舰队',
+      source: 'user',
+    },
+  ],
+  errors: [{
+    file: 'bettle-broken.yaml',
+    source: 'user',
+    kind: 'battle',
+    message: 'YAML 无法解析',
+  }],
+  ignoredUnlinkedPlans: [
+    'battle/user/bettle-empty.yaml',
+    'team/user/team-orphan.yaml',
+  ],
+};
+const managementTaskGroups = [
+  {
+    name: '旧路径任务组',
+    items: [{
+      kind: 'plan',
+      path: 'C:\\old\\system_battle_plans\\bettle-system.yaml',
+    }],
+  },
+  {
+    name: '受管任务组',
+    items: [{
+      kind: 'plan',
+      managedSource: 'user',
+      managedFile: 'bettle-missing.yaml',
+    }],
+  },
+];
+const managementViewObject = buildPlanManagementViewObject(
+  managementResult,
+  managementTaskGroups,
+);
+const managementRow = (kind, source, file) => (
+  managementViewObject.rows.find(row => (
+    row.kind === kind
+    && row.source === source
+    && row.file === file
+  ))
+);
+assert.deepEqual(
+  managementRow('battle', 'system', 'bettle-system.yaml').taskGroups,
+  ['旧路径任务组'],
+);
+assert.deepEqual(
+  managementRow('battle', 'user', 'bettle-missing.yaml').taskGroups,
+  ['受管任务组'],
+);
+assert.deepEqual(
+  managementRow(
+    'battle',
+    'user',
+    'bettle-missing.yaml',
+  ).missingRelations,
+  ['不存在舰队'],
+);
+assert.equal(
+  managementRow('battle', 'user', 'bettle-missing.yaml').attention,
+  true,
+);
+assert.equal(
+  managementRow('battle', 'user', 'bettle-empty.yaml').attention,
+  false,
+);
+assert.equal(
+  managementRow('team', 'user', 'team-orphan.yaml').attention,
+  false,
+);
+assert.match(
+  managementRow(
+    'team',
+    'user',
+    'team-shared-user.yaml',
+  ).deleteWarning,
+  /仍会匹配另一份同名舰队方案/,
+);
+assert.equal(
+  managementRow('battle', 'user', 'bettle-broken.yaml').invalid,
+  true,
+);
+assert.equal(managementViewObject.errors.length, 1);
+
+const managementRenders = [];
+const managementViewErrors = [];
+let managementLoadingCount = 0;
+const managementView = {
+  showLoading() {
+    managementLoadingCount += 1;
+  },
+  showError(message) {
+    managementViewErrors.push(message);
+  },
+  render(viewObject) {
+    managementRenders.push(viewObject);
+  },
+};
+const managementCalls = {
+  exports: [],
+  ignored: [],
+  renames: [],
+  battleDeletes: [],
+  teamDeletes: [],
+};
+let managementLoads = 0;
+const managementRepository = {
+  async getPlanManagement() {
+    managementLoads += 1;
+    return managementResult;
+  },
+  async exportUserPlans(selections) {
+    managementCalls.exports.push(selections);
+    return { success: true, count: selections.length };
+  },
+  async setPlanUnlinkedIgnored(kind, source, file, ignored) {
+    managementCalls.ignored.push({ kind, source, file, ignored });
+    return ignored
+      ? [`${kind}/${source}/${file}`]
+      : [];
+  },
+  async renameUserCombatPlan(file, name) {
+    managementCalls.renames.push({ file, name });
+    return { success: true };
+  },
+  async deleteUserCombatPlan(file) {
+    managementCalls.battleDeletes.push(file);
+    return { success: true };
+  },
+  async deleteUserTeamPlan(file) {
+    managementCalls.teamDeletes.push(file);
+    return file === 'batch-fail.yaml'
+      ? { success: false, error: '删除被拒绝' }
+      : { success: true };
+  },
+};
+const dialogCalls = {
+  alerts: [],
+  confirms: [],
+  prompts: [],
+  successes: [],
+};
+const managementDialogs = {
+  async alert(title, message = '') {
+    dialogCalls.alerts.push({ title, message });
+  },
+  async confirm(title, message = '') {
+    dialogCalls.confirms.push({ title, message });
+    return true;
+  },
+  async prompt(title, message = '', defaultValue = '') {
+    dialogCalls.prompts.push({ title, message, defaultValue });
+    return '重命名后';
+  },
+  success(message = '') {
+    dialogCalls.successes.push(message);
+  },
+};
+const managementController = new PlanManagementController(
+  managementRepository,
+  managementView,
+  managementDialogs,
+);
+managementController.setTaskGroupsProvider(() => managementTaskGroups);
+await managementController.load();
+assert.equal(managementLoadingCount, 1);
+assert.equal(managementRenders.length, 1);
+assert.deepEqual(managementViewErrors, []);
+assert.deepEqual(
+  managementRenders[0].rows.find(row => (
+    row.file === 'bettle-system.yaml'
+  )).taskGroups,
+  ['旧路径任务组'],
+);
+
+let openedManagementPlan = '';
+managementController.onOpenBattlePlan = async (file, source) => {
+  openedManagementPlan = `${source}:${file}`;
+};
+await managementView.onOpenBattlePlan('bettle-system.yaml', 'system');
+assert.equal(openedManagementPlan, 'system:bettle-system.yaml');
+
+await managementView.onExportPlans([
+  { kind: 'battle', file: 'bettle-empty.yaml' },
+]);
+assert.equal(managementCalls.exports.length, 1);
+assert.equal(
+  dialogCalls.successes.at(-1),
+  '已导出 1 个用户配置',
+);
+
+await managementView.onToggleUnlinked(
+  'battle',
+  'user',
+  'bettle-empty.yaml',
+  false,
+);
+assert.deepEqual(managementCalls.ignored.at(-1), {
+  kind: 'battle',
+  source: 'user',
+  file: 'bettle-empty.yaml',
+  ignored: false,
+});
+assert.equal(
+  managementRenders.at(-1).rows.find(row => (
+    row.file === 'bettle-empty.yaml'
+  )).attention,
+  true,
+);
+
+await managementView.onRenameCombatPlan('bettle-empty.yaml');
+assert.deepEqual(managementCalls.renames.at(-1), {
+  file: 'bettle-empty.yaml',
+  name: '重命名后',
+});
+
+await managementView.onDeletePlans([
+  { kind: 'battle', file: 'batch-ok.yaml' },
+  { kind: 'team', file: 'batch-fail.yaml' },
+]);
+assert.equal(managementCalls.battleDeletes.at(-1), 'batch-ok.yaml');
+assert.equal(managementCalls.teamDeletes.at(-1), 'batch-fail.yaml');
+assert.equal(dialogCalls.alerts.at(-1).title, '批量删除未全部完成');
+assert.match(dialogCalls.alerts.at(-1).message, /成功删除 1 个，失败 1 个/);
+
+const sharedTeamRow = managementRenders.at(-1).rows.find(row => (
+  row.file === 'team-shared-user.yaml'
+));
+await managementView.onDeleteTeamPlan(
+  sharedTeamRow.file,
+  sharedTeamRow.name,
+  sharedTeamRow.deleteWarning,
+);
+assert.equal(
+  managementCalls.teamDeletes.at(-1),
+  'team-shared-user.yaml',
+);
+assert.match(
+  dialogCalls.confirms.at(-1).message,
+  /仍会匹配另一份同名舰队方案/,
+);
+assert.equal(managementLoads >= 4, true);
 
 const decisive = new DecisiveFleetDraft({
   chapter: 6,

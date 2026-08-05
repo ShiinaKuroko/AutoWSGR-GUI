@@ -10,16 +10,20 @@
 ```
 src/view/
 ├── main/                    # 主页面
-│   ├── MainView.ts          (65 行，Facade)
+│   ├── MainView.ts          (Facade)
 │   ├── LogView.ts           (日志面板)
 │   ├── TaskQueueView.ts     (任务队列)
-│   └── StatusBar.ts         (状态栏)
+│   ├── StatusBar.ts         (状态栏)
+│   └── FleetPreviewView.ts  (当前舰队)
 ├── plan/                    # 方案预览
 │   ├── PlanPreviewView.ts   (Facade)
 │   ├── MapView.ts           (地图可视化)
 │   ├── NodeEditorView.ts    (节点编辑器)
 │   ├── FleetPresetView.ts   (编队预设)
-│   └── FleetEditDialog.ts   (编队编辑对话框)
+│   ├── FleetPlannerView.ts  (舰队规划 Facade)
+│   └── PlanManagementView.ts(计划管理)
+├── migration/
+│   └── MigrationConflictView.ts (迁移冲突)
 ├── template/                # 模板库
 │   ├── TemplateWizardView.ts(向导)
 │   ├── TemplateLibraryView.ts(库列表)
@@ -31,7 +35,10 @@ src/view/
 ├── taskGroup/
 │   └── TaskGroupView.ts     (任务组面板)
 └── shared/
-    └── ShipAutocomplete.ts  (跨视图复用的舰船自动补全)
+    ├── AnimatedSelect.ts    (统一下拉框)
+    ├── DialogHelper.ts      (通用对话框)
+    ├── scrollPosition.ts    (滚动位置)
+    └── ShipAutocomplete.ts  (舰船自动补全)
 ```
 
 ---
@@ -47,17 +54,24 @@ export class MainView {
   private logView: LogView;
   private taskQueueView: TaskQueueView;
   private statusBar: StatusBar;
+  private fleetPreviewView: FleetPreviewView;
 
   constructor() {
     this.logView = new LogView();
     this.taskQueueView = new TaskQueueView();
     this.statusBar = new StatusBar();
+    this.fleetPreviewView = new FleetPreviewView();
   }
 
   // ── 渲染：Controller 只调这一个方法 ──
   render(vo: MainViewObject): void {
     this.statusBar.render(vo);
     this.taskQueueView.render(vo);
+    this.fleetPreviewView.render(
+      vo.currentFleet,
+      vo.currentTask !== null,
+      vo.dailySortieStats,
+    );
   }
 
   appendLog(entry: LogEntryVO): void {
@@ -100,6 +114,10 @@ export class PlanPreviewView {
   render(vo: PlanPreviewViewObject | null): void {
     // 统一渲染，内部协调三个子视图
   }
+
+  renderFleetPresets(vo: PlanFleetPresetSelectorViewObject): void {
+    // 只接收 Controller 生成的只读目录和绑定快照
+  }
 }
 ```
 
@@ -121,23 +139,35 @@ export class PlanPreviewView {
 
 ```
 src/view/shared/
+├── AnimatedSelect.ts      (统一动画下拉框)
+├── DialogHelper.ts        (确认、提示、输入和保存成功提示)
+├── scrollPosition.ts      (动态列表滚动位置)
 └── ShipAutocomplete.ts    (舰船名自动补全输入框)
 ```
 
-`FleetEditDialog` 和 `TemplateWizardView` 都使用它，但不重复实现。
+舰队规划、模板向导和受管计划选择器复用这些组件，不各自实现对话框、
+滚动恢复或舰船检索。
 
 ---
 
-## 零 Model 依赖规则
+View 可以导入：
 
-View 文件的 import **只允许**：
-- `../../types/view` — ViewObject 接口
+- `../../types/view` 和其他 `types/*` 中的只读类型。
+- `../../shared/*` 中不访问持久化状态的纯契约或纯函数。
+- `../shared/*` 中的共享 UI 组件。
+- 同目录的子视图。
 - `../shared/*` — 共享 UI 组件
-- 同目录的子视图
+View **禁止**：
 
-**禁止** import：
-- `../../model/*`
+
+- `../../adapter/*`
+- `../../controller/*`
+- Repository 或 Electron bridge
+- 文件读写、业务关系推导和可写领域状态
+
+View 只接收 Controller 生成的 ViewObject，并通过回调发送明确用户意图。例如
+`FleetEditorView` 发送 `FleetDraftEditIntent`，`PlanManagementView` 发送导出、
+重命名和删除意图；实际修改由 Controller 和 Repository 完成。
 - `../../types/model`
-- `../../types/api`
-
-这通过类型系统的分层来保障，详见 [07-type-system](07-type-system.md)。
+这通过依赖扫描和类型系统共同保障，详见
+[03-viewobject-flow](03-viewobject-flow.md) 与 [07-type-system](07-type-system.md)。

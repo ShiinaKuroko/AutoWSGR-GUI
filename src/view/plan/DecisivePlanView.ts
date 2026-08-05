@@ -28,7 +28,7 @@ import {
   showAlert,
   showConfirm,
   showSaveSuccess,
-} from '../../controller/shared/DialogHelper';
+} from '../shared/DialogHelper';
 import {
   captureScrollPosition,
   restoreScrollPosition,

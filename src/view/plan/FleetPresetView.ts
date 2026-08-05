@@ -1,17 +1,12 @@
 /** 渲染方案内舰队预设并提供应用、编辑和任务创建入口。 */
-import type { FleetPresetVO } from '../../types/view.js';
 import type {
-  BathRepairConfig,
-  ShipFilter,
-  ShipSlot,
-} from '../../types/model.js';
-import type {
-  ElectronBridge,
-  ShipLibraryManifest,
-  ShipLibraryShip,
-  UserTeamPlan,
-  UserTeamPlanSlot,
-} from '../../types/ipc.js';
+  FleetShipLibraryViewObject,
+  PlanFleetPresetBindingViewObject,
+  PlanFleetPresetSelectorViewObject,
+  TeamPlanSlotViewObject,
+  TeamPlanViewObject,
+} from '../../types/view.js';
+import type { BathRepairConfig } from '../../types/model.js';
 import {
   appendTeamPlanCardContent,
   filterAndSortTeamPlans,
@@ -27,22 +22,12 @@ import {
   restoreScrollPosition,
 } from '../shared/scrollPosition';
 import { createShipArtwork } from './ShipArtwork';
-import { shipFilterLabel } from '../../model/fleet/ShipMatcher';
-import {
-  fleetPresetIdentityKey,
-  fleetPresetRuleKey,
-} from '../../model/fleet/FleetPresetIdentity';
 
 interface ShipPreviewRule {
   name: string;
   minLevel?: number;
   maxLevel?: number;
 }
-
-export type FleetPresetViewHost = Pick<
-  ElectronBridge,
-  'listTeamPlans' | 'getShipLibraryManifest'
->;
 
 export class FleetPresetView {
   private readonly fleetPresetSection: HTMLElement;
@@ -61,20 +46,19 @@ export class FleetPresetView {
   private readonly selectorSortAscending: HTMLInputElement;
   private readonly selectorStatus: HTMLElement;
 
-  selectedFleetPresetIndices: Set<number> = new Set();
-  private currentPresets: FleetPresetVO[] = [];
-  private userTeams: UserTeamPlan[] = [];
-  private manifest: ShipLibraryManifest | null = null;
-  private renderVersion = 0;
-  private activePreviewTeamIndex = -1;
+  private userTeams: readonly TeamPlanViewObject[] = [];
+  private bindings: readonly PlanFleetPresetBindingViewObject[] = [];
+  private shipLibrary: FleetShipLibraryViewObject | null = null;
+  private activePreviewTeamId: string | null = null;
   private activePreviewPosition = 0;
   private selectorSortField: TeamPlanSortField = 'modifiedAt';
-  private draggedTeamIndex: number | null = null;
+  private draggedTeamId: string | null = null;
   private teamListDragScrollTop = 0;
 
-  onUserTeamChange?: (plans: FleetPresetVO[]) => void;
+  onAddFleetPreset?: (planId: string) => void;
+  onRemoveFleetPreset?: (index: number) => void;
 
-  constructor(private readonly host: FleetPresetViewHost) {
+  constructor() {
     this.fleetPresetSection = document.getElementById('fleet-preset-section')!;
     this.fleetPresetListEl = document.getElementById('fleet-preset-list')!;
     this.fleetBindingListEl = document.getElementById('fleet-binding-list')!;
@@ -134,7 +118,7 @@ export class FleetPresetView {
       });
     });
     this.fleetBindingListEl.addEventListener('dragover', event => {
-      if (this.draggedTeamIndex === null) return;
+      if (this.draggedTeamId === null) return;
       event.preventDefault();
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
       this.fleetBindingListEl.classList.add('drag-active');
@@ -150,9 +134,9 @@ export class FleetPresetView {
       this.fleetBindingListEl.classList.remove('drag-active');
     });
     this.fleetBindingListEl.addEventListener('drop', event => {
-      if (this.draggedTeamIndex === null) return;
+      if (this.draggedTeamId === null) return;
       event.preventDefault();
-      this.applyTeamPreset(this.draggedTeamIndex);
+      this.applyTeamPreset(this.draggedTeamId);
       this.fleetBindingListEl.classList.remove('drag-active');
     });
   }
@@ -168,65 +152,45 @@ export class FleetPresetView {
     this.nodeRoutePanel.hidden = false;
   }
 
-  render(presets?: FleetPresetVO[], _fleetId = 1): void {
+  render(viewObject: PlanFleetPresetSelectorViewObject): void {
     this.fleetPresetSection.style.display = '';
-    this.hideSelector();
-    this.currentPresets = presets ?? [];
-    this.selectedFleetPresetIndices.clear();
-    this.activePreviewTeamIndex = -1;
-    this.fleetPresetListEl.innerHTML =
-      '<div class="fleet-team-empty">正在读取编队预设…</div>';
-    this.selectorCount.textContent = '正在读取编队预设…';
-    this.selectorStatus.textContent = '';
-    this.renderBindings();
-    this.renderPreview(this.currentPresets[0]?.ships);
-    const version = ++this.renderVersion;
-    void this.loadUserTeams(version);
-  }
-
-  private async loadUserTeams(version: number): Promise<void> {
-    try {
-      const [result, manifest] = await Promise.all([
-        this.host.listTeamPlans(),
-        this.manifest
-          ? Promise.resolve(this.manifest)
-          : this.host.getShipLibraryManifest(),
-      ]);
-      if (version !== this.renderVersion) return;
-      this.userTeams = result.plans;
-      this.manifest = manifest;
-      this.selectorCount.textContent =
-        `共读取 ${result.plans.length} 个舰队预设`;
-      this.selectorStatus.textContent = result.errors.length > 0
-        ? `有 ${result.errors.length} 个配置格式不合法，已跳过`
-        : '';
-
-      this.selectedFleetPresetIndices = this.findBoundTeamIndices();
-      const selectedIndex = this.selectedFleetPresetIndices.values().next().value;
-      this.activePreviewTeamIndex = typeof selectedIndex === 'number'
-        ? selectedIndex
-        : this.currentPresets.length === 0 && this.userTeams.length > 0
-          ? 0
-          : -1;
-      this.renderTeamList();
-      this.renderBindings();
-      this.renderPreview(
-        this.activePreviewTeamIndex >= 0
-          ? this.toFleetPreset(
-              this.userTeams[this.activePreviewTeamIndex],
-            ).ships
-          : this.currentPresets[0]?.ships,
+    this.userTeams = viewObject.plans;
+    this.bindings = viewObject.bindings;
+    this.shipLibrary = viewObject.shipLibrary;
+    const activePlan = this.userTeams.find(
+      plan => plan.id === this.activePreviewTeamId,
+    );
+    if (!activePlan) {
+      this.activePreviewTeamId = this.userTeams.find(
+        plan => plan.selected,
+      )?.id ?? (
+        this.bindings.length === 0
+          ? this.userTeams[0]?.id ?? null
+          : null
       );
-    } catch (error) {
-      if (version !== this.renderVersion) return;
-      this.fleetPresetListEl.innerHTML =
-        '<div class="fleet-team-empty">编队预设读取失败</div>';
-      this.selectorCount.textContent = '读取失败';
-      this.selectorStatus.textContent = error instanceof Error
-        ? error.message
-        : String(error);
-      console.error('读取编队预设失败', error);
     }
+
+    if (viewObject.status === 'loading') {
+      this.selectorCount.textContent = '正在读取编队预设…';
+      this.selectorStatus.textContent = '';
+    } else if (viewObject.status === 'error') {
+      this.selectorCount.textContent = '读取失败';
+      this.selectorStatus.textContent = viewObject.message;
+    } else {
+      this.selectorCount.textContent =
+        `共读取 ${this.userTeams.length} 个舰队预设`;
+      this.selectorStatus.textContent = viewObject.errorCount > 0
+        ? `有 ${viewObject.errorCount} 个配置格式不合法，已跳过`
+        : '';
+    }
+
+    this.renderTeamList();
+    this.renderBindings();
+    this.renderPreview(
+      this.userTeams.find(
+        plan => plan.id === this.activePreviewTeamId,
+      )?.ships ?? this.bindings[0]?.ships,
+    );
   }
 
   private renderTeamList(): void {
@@ -237,22 +201,22 @@ export class FleetPresetView {
       sortField: this.selectorSortField,
       ascending: this.selectorSortAscending.checked,
     });
-    const previousPreviewIndex = this.activePreviewTeamIndex;
-    const firstVisibleIndex = visibleTeams[0]?.index;
+    const previousPreviewId = this.activePreviewTeamId;
+    const firstVisibleId = visibleTeams[0]?.plan.id;
     const activePreviewVisible = visibleTeams.some(
-      ({ index }) => index === this.activePreviewTeamIndex,
+      ({ plan }) => plan.id === this.activePreviewTeamId,
     );
     if (
-      this.activePreviewTeamIndex < 0
-      && this.currentPresets.length === 0
-      && firstVisibleIndex !== undefined
+      this.activePreviewTeamId === null
+      && this.bindings.length === 0
+      && firstVisibleId !== undefined
     ) {
-      this.activePreviewTeamIndex = firstVisibleIndex;
+      this.activePreviewTeamId = firstVisibleId;
     } else if (
-      this.activePreviewTeamIndex >= 0
+      this.activePreviewTeamId !== null
       && !activePreviewVisible
     ) {
-      this.activePreviewTeamIndex = firstVisibleIndex ?? -1;
+      this.activePreviewTeamId = firstVisibleId ?? null;
     }
 
     this.fleetPresetListEl.replaceChildren();
@@ -272,19 +236,19 @@ export class FleetPresetView {
       this.fleetPresetListEl.append(empty);
     }
 
-    visibleTeams.forEach(({ plan, index }) => {
+    visibleTeams.forEach(({ plan }) => {
       const item = document.createElement('div');
       item.className = 'fleet-team-loader-item fleet-preset-item';
-      item.dataset['teamPlanIndex'] = String(index);
+      item.dataset['teamPlanId'] = plan.id;
       item.draggable = true;
       item.title = `拖拽“${plan.name}”到编队配置`;
       item.classList.toggle(
         'selected',
-        this.selectedFleetPresetIndices.has(index),
+        plan.selected,
       );
       item.classList.toggle(
         'previewing',
-        this.activePreviewTeamIndex === index,
+        this.activePreviewTeamId === plan.id,
       );
 
       const previewButton = document.createElement('button');
@@ -293,51 +257,45 @@ export class FleetPresetView {
       appendTeamPlanCardContent(previewButton, teamPlanCardData(plan));
 
       previewButton.addEventListener('click', () => {
-        this.activePreviewTeamIndex = index;
+        this.activePreviewTeamId = plan.id;
         this.fleetPresetListEl
-          .querySelectorAll<HTMLElement>('[data-team-plan-index]')
+          .querySelectorAll<HTMLElement>('[data-team-plan-id]')
           .forEach(option => {
             option.classList.toggle(
               'previewing',
-              Number(option.dataset['teamPlanIndex']) === index,
+              option.dataset['teamPlanId'] === plan.id,
             );
           });
-        this.renderPreview(this.toFleetPreset(plan).ships);
+        this.renderPreview(plan.ships);
       });
       item.append(previewButton);
 
       item.addEventListener('dragstart', event => {
-        this.draggedTeamIndex = index;
+        this.draggedTeamId = plan.id;
         this.teamListDragScrollTop = this.fleetPresetListEl.scrollTop;
         item.classList.add('dragging');
         if (event.dataTransfer) {
           event.dataTransfer.effectAllowed = 'copy';
-          event.dataTransfer.setData('text/plain', String(index));
+          event.dataTransfer.setData('text/plain', plan.id);
         }
       });
       item.addEventListener('dragend', () => {
         item.classList.remove('dragging');
-        this.draggedTeamIndex = null;
+        this.draggedTeamId = null;
         this.fleetBindingListEl.classList.remove('drag-active');
         this.restoreTeamListScroll();
       });
       this.fleetPresetListEl.append(item);
     });
 
-    if (this.activePreviewTeamIndex !== previousPreviewIndex) {
+    if (this.activePreviewTeamId !== previousPreviewId) {
       this.renderPreview(
-        this.activePreviewTeamIndex >= 0
-          ? this.toFleetPreset(
-              this.userTeams[this.activePreviewTeamIndex],
-            ).ships
-          : undefined,
+        this.userTeams.find(
+          plan => plan.id === this.activePreviewTeamId,
+        )?.ships,
       );
     }
     restoreScrollPosition(this.fleetPresetListEl, scrollPosition);
-  }
-
-  getSelectedPresets(): FleetPresetVO[] {
-    return [...this.currentPresets];
   }
 
   getBathRepairConfig(): BathRepairConfig | undefined {
@@ -352,53 +310,10 @@ export class FleetPresetView {
     };
   }
 
-  private findBoundTeamIndices(): Set<number> {
-    const indices = new Set<number>();
-    const boundIdentities = new Set(
-      this.currentPresets.map(fleetPresetIdentityKey),
-    );
-    this.userTeams.forEach((plan, index) => {
-      if (boundIdentities.has(fleetPresetIdentityKey(this.toFleetPreset(plan)))) {
-        indices.add(index);
-      }
-    });
-    return indices;
-  }
-
-  private presetRuleKey(preset: FleetPresetVO): string {
-    return fleetPresetRuleKey(preset);
-  }
-
-  private toFleetPreset(plan: UserTeamPlan): FleetPresetVO {
-    return {
-      name: plan.name,
-      ships: plan.ships.map(slot => this.toShipSlot(slot)),
-    };
-  }
-
-  private toShipSlot(slot: UserTeamPlanSlot | null): ShipSlot {
-    if (slot === null) return null;
-    const filter: ShipFilter = {
-      name: slot.name,
-    };
-    if (slot.candidates) {
-      filter.candidates = slot.candidates.map(candidate => ({
-        ...candidate,
-        ship_type: candidate.ship_type
-          ? [...candidate.ship_type]
-          : undefined,
-      }));
-    }
-    if (slot.search_name) filter.search_name = slot.search_name;
-    if (slot.ship_type) filter.ship_type = [...slot.ship_type];
-    if (slot.min_level !== undefined) filter.min_level = slot.min_level;
-    if (slot.max_level !== undefined) filter.max_level = slot.max_level;
-    return filter;
-  }
 
   private renderBindings(): void {
     this.fleetBindingListEl.replaceChildren();
-    if (this.currentPresets.length === 0) {
+    if (this.bindings.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'fleet-team-empty fleet-binding-empty';
       empty.textContent = '拖拽预设卡片到这里';
@@ -406,15 +321,7 @@ export class FleetPresetView {
       return;
     }
 
-    this.currentPresets.forEach((preset, presetIndex) => {
-      const teamIndex = this.userTeams.findIndex(plan => (
-        plan.name === preset.name
-        && this.presetRuleKey(this.toFleetPreset(plan))
-          === this.presetRuleKey(preset)
-      ));
-      const sourcePlan = teamIndex >= 0
-        ? this.userTeams[teamIndex]
-        : this.userTeams.find(plan => plan.name === preset.name);
+    this.bindings.forEach((binding) => {
       const record = document.createElement('div');
       record.className = 'fleet-team-loader-item fleet-binding-record';
 
@@ -424,33 +331,36 @@ export class FleetPresetView {
       appendTeamPlanCardContent(
         previewButton,
         this.boundTeamCardData(
-          preset,
-          sourcePlan?.source ?? 'deleted',
-          sourcePlan?.modifiedAt,
+          binding,
+          binding.source,
+          binding.modifiedAt,
         ),
       );
 
       previewButton.addEventListener('click', () => {
         this.showSelector();
+        const sourcePlan = this.userTeams.find(
+          plan => plan.id === binding.catalogPlanId,
+        );
         if (sourcePlan) {
           this.selectorSearch.value = '';
           if (sourcePlan.source === 'system') {
             this.selectorFilterSystem.checked = false;
           }
         }
-        this.activePreviewTeamIndex = teamIndex;
+        this.activePreviewTeamId = sourcePlan?.id ?? null;
         this.renderTeamList();
-        this.renderPreview(preset.ships);
+        this.renderPreview(binding.ships);
       });
 
       const removeButton = document.createElement('button');
       removeButton.type = 'button';
       removeButton.className = 'fleet-binding-remove';
-      removeButton.setAttribute('aria-label', `移除${preset.name}`);
-      removeButton.title = `从编队配置中移除“${preset.name}”`;
+      removeButton.setAttribute('aria-label', `移除${binding.name}`);
+      removeButton.title = `从编队配置中移除“${binding.name}”`;
       removeButton.textContent = '×';
       removeButton.addEventListener('click', () => {
-        this.removeTeamPreset(presetIndex);
+        this.onRemoveFleetPreset?.(binding.index);
       });
 
       record.append(previewButton, removeButton);
@@ -459,65 +369,32 @@ export class FleetPresetView {
   }
 
   private boundTeamCardData(
-    preset: FleetPresetVO,
+    binding: PlanFleetPresetBindingViewObject,
     source: TeamPlanCardSource,
     modifiedAt?: number,
   ): TeamPlanCardData {
     return {
-      name: preset.name,
+      name: binding.name,
       source,
-      primaryCount: preset.ships.filter(
-        slot => typeof slot === 'string' || Boolean(slot?.name),
+      primaryCount: binding.ships.filter(
+        slot => Boolean(slot.primary),
       ).length,
-      backupCount: preset.ships.reduce(
-        (count, slot) => count + (
-          typeof slot === 'object' && slot !== null
-            ? slot.candidates?.length ?? 0
-            : 0
-        ),
+      backupCount: binding.ships.reduce(
+        (count, slot) => count + slot.candidates.length,
         0,
       ),
       modifiedAt,
     };
   }
 
-  private applyTeamPreset(index: number): void {
-    const plan = this.userTeams[index];
-    if (!plan || this.selectedFleetPresetIndices.has(index)) {
+  private applyTeamPreset(planId: string): void {
+    const plan = this.userTeams.find(item => item.id === planId);
+    if (!plan || plan.selected) {
       this.restoreTeamListScroll();
       return;
     }
-    const preset = this.toFleetPreset(plan);
-    this.currentPresets = [
-      ...this.currentPresets,
-      preset,
-    ];
-    this.commitTeamPresetChange();
+    this.onAddFleetPreset?.(planId);
     this.restoreTeamListScroll();
-  }
-
-  private removeTeamPreset(index: number): void {
-    if (index < 0 || index >= this.currentPresets.length) return;
-    this.currentPresets = this.currentPresets.filter(
-      (_, presetIndex) => presetIndex !== index,
-    );
-    this.commitTeamPresetChange();
-    this.renderPreview(this.currentPresets[0]?.ships);
-  }
-
-  private commitTeamPresetChange(): void {
-    this.selectedFleetPresetIndices = this.findBoundTeamIndices();
-    this.renderBindings();
-    this.fleetPresetListEl
-      .querySelectorAll<HTMLElement>('[data-team-plan-index]')
-      .forEach(card => {
-        const index = Number(card.dataset['teamPlanIndex']);
-        card.classList.toggle(
-          'selected',
-          this.selectedFleetPresetIndices.has(index),
-        );
-      });
-    this.onUserTeamChange?.([...this.currentPresets]);
   }
 
   private restoreTeamListScroll(): void {
@@ -528,9 +405,11 @@ export class FleetPresetView {
     });
   }
 
-  private renderPreview(ships?: ShipSlot[]): void {
+  private renderPreview(
+    ships?: readonly TeamPlanSlotViewObject[],
+  ): void {
     const slots = Array.from({ length: 6 }, (_, index) => (
-      this.previewSlot(ships?.[index] ?? null)
+      this.previewSlot(ships?.[index])
     ));
     this.activePreviewPosition = 0;
     this.previewTitle.textContent = '编队预览';
@@ -589,45 +468,22 @@ export class FleetPresetView {
     this.backupPreview.replaceChildren(backupFragment);
   }
 
-  private previewSlot(slot: ShipSlot): {
+  private previewSlot(slot?: TeamPlanSlotViewObject): {
     primary: ShipPreviewRule | null;
     backups: ShipPreviewRule[];
   } {
-    if (slot === null) return { primary: null, backups: [] };
-    if (typeof slot === 'string') {
-      return { primary: { name: slot }, backups: [] };
-    }
-    const hasAnonymousFilter = (
-      (slot.candidates?.length ?? 0) === 0
-      && (
-        Boolean(slot.nation)
-        || (slot.ship_type?.length ?? 0) > 0
-        || slot.min_level !== undefined
-        || slot.max_level !== undefined
-      )
-    );
     return {
-      primary: slot.name || slot.search_name
+      primary: slot?.primary
         ? {
-            name: slot.name ?? slot.search_name ?? '',
-            minLevel: slot.min_level,
-            maxLevel: slot.max_level,
+            name: slot.primary.name,
+            minLevel: slot.primary.minLevel,
+            maxLevel: slot.primary.maxLevel,
           }
-        : hasAnonymousFilter
-          ? {
-              name: shipFilterLabel({
-                ...slot,
-                min_level: undefined,
-                max_level: undefined,
-              }),
-              minLevel: slot.min_level,
-              maxLevel: slot.max_level,
-            }
-          : null,
-      backups: (slot.candidates ?? []).map(candidate => ({
+        : null,
+      backups: (slot?.candidates ?? []).map(candidate => ({
         name: candidate.name,
-        minLevel: candidate.min_level,
-        maxLevel: candidate.max_level,
+        minLevel: candidate.minLevel,
+        maxLevel: candidate.maxLevel,
       })),
     };
   }
@@ -649,9 +505,7 @@ export class FleetPresetView {
     if (!name) {
       if (candidateOnly) {
         card.classList.add('candidate-only');
-        const backgroundUrl = this.manifest?.ships.find(
-          ship => ship.rarity === 6 && Boolean(ship.backgroundUrl),
-        )?.backgroundUrl;
+        const backgroundUrl = this.shipLibrary?.colorfulBackgroundUrl;
         if (backgroundUrl) {
           const background = document.createElement('img');
           background.className = 'fleet-team-placeholder-background';
@@ -674,7 +528,7 @@ export class FleetPresetView {
     if (ship) {
       card.append(createShipArtwork(
         ship,
-        this.manifest?.labels.ship_types[ship.ship_type] ?? ship.ship_type,
+        this.shipLibrary?.labels.ship_types[ship.ship_type] ?? ship.ship_type,
       ));
     } else {
       const unknown = document.createElement('span');
@@ -709,9 +563,11 @@ export class FleetPresetView {
     return summary;
   }
 
-  private findShip(name: string): ShipLibraryShip | undefined {
-    return this.manifest?.ships.find(ship => ship.name === name)
-      ?? this.manifest?.ships.find(ship => ship.search_name === name);
+  private findShip(
+    name: string,
+  ): FleetShipLibraryViewObject['ships'][number] | undefined {
+    return this.shipLibrary?.ships.find(ship => ship.name === name)
+      ?? this.shipLibrary?.ships.find(ship => ship.search_name === name);
   }
 
 }

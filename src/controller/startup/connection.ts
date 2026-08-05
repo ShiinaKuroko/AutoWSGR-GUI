@@ -2,7 +2,7 @@
 /**
  * connection —— 后端连接与系统启动逻辑。
  */
-import type { StartupHost } from './StartupController';
+import type { StartupHost } from '../contracts.js';
 import { Logger } from '../../utils/Logger';
 
 /** 等待后端 HTTP 服务就绪, 然后启动系统 */

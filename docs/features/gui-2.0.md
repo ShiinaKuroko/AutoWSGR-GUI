@@ -1,8 +1,8 @@
 # GUI 2.0 功能说明
 
-> 文档状态：GUI 2.0 开发版
-> 对应版本：`2.0.2-dev`
-> 基线分支：`upstream/main`
+> 文档状态：GUI 2.0 Alpha 发布审查
+> 对应版本：`2.0.0-alpha`
+> 更新频道：`alpha`
 > 目标平台：Windows 10/11 x64
 > 前端技术：Electron 33、TypeScript 5.6、SCSS
 > 后端接口：AutoWSGR FastAPI、WebSocket 和 YAML 模型
@@ -936,12 +936,18 @@ GUI 2.0 对持久化作出以下约束：
 | 模块 | 职责 |
 | --- | --- |
 | `FleetPlannerView.ts` | 舰队规划、图鉴筛选、拖拽和计划管理 |
+| `FleetDraftEditor.ts` | 在唯一舰队草稿上执行显式编辑意图 |
+| `PlanFleetPresetController.ts` | 管理出征计划关联的舰队目录和选择 |
+| `PlanManagementController.ts` | 编排计划管理操作和 Repository 调用 |
+| `planManagementViewObjects.ts` | 生成计划、舰队和任务组关系的只读行 |
+| `CurrentFleetController.ts` | 解析当前任务舰队并读取舰船资料 |
 | `ShipArtwork.ts` | 舰船资料与卡片资源解析 |
 | `TeamPlanListUi.ts` | 舰队加载列表共用逻辑 |
 | `FleetPreviewView.ts` | 作战页当前舰队预览 |
 | `DecisivePlanView.ts` | 旧决战配置兼容页面 |
 | `TaskListLoaderController.ts` | 作战页受管计划选择 |
 | `managedPlanReader.ts` | 任务分组中的计划元信息读取 |
+| `contracts.ts` | 集中定义跨流程最小 Host 契约 |
 | `scrollPosition.ts` | 动态列表滚动位置保存与恢复 |
 | `_fleet-planner.scss` | 舰队规划和计划管理样式 |
 | `_decisive-plan.scss` | 旧决战页面样式 |
@@ -1046,20 +1052,12 @@ git diff --check
 npx tsc --noEmit --noUnusedLocals --noUnusedParameters --pretty false
 ```
 
-当前已知仍有开发残留提示，详见
-`docs/reviews/2026-08-03-workspace-review-pending.md`。默认构建不启用这两个选项。
+当前检查通过。Controller 依赖图无环，`src/view` 不直接依赖 Adapter、Model、
+Controller、Repository 或 Electron bridge。
 
 ## 17. 已知边界和后续工作
 
-### 17.1 出征规划直接执行链
-
-`PlanController` 中仍保留一套没有页面入口的直接执行链。当前推荐流程是保存计划后，
-从作战页加入任务列表和队列。待主页执行入口稳定后，需要决定：
-
-- 恢复明确的“加入任务队列”入口并补测试；或
-- 删除无调用的直接执行链。
-
-### 17.2 旧后端源码更新链
+### 17.1 旧后端源码更新链
 
 旧的手动源码检查和拉取实现仍有部分跨层残留。它与以下功能不同：
 
@@ -1069,22 +1067,24 @@ npx tsc --noEmit --noUnusedLocals --noUnusedParameters --pretty false
 
 后续需要先确定产品策略，再整体恢复或整体删除，不能只清理其中一层。
 
-### 17.3 TypeScript 未使用声明
+### 17.2 Alpha 安装边界
 
-严格检查仍可能报告未使用导入、参数和只写字段。当前正常类型编译通过。
-后续应在页面入口和设置策略稳定后逐项判断是补齐功能还是删除声明。
+安装包内置 GUI、Python、pip、ADB、VC++ 运行库、地图、系统计划、模板和舰船资料，
+但不预装 `python/site-packages`。`managed` 模式首次启动需要联网安装锁定提交的
+AutoWSGR 及其依赖。优点是安装包更小、依赖来源明确且不污染系统 Python；缺点是
+首次准备时间受网络影响，离线环境需要预先准备缓存或改用 `external` 模式。
 
-### 17.4 决战流程
+### 17.3 决战流程
 
 决战页面仍是兼容入口，尚未完成统一 YAML 化。未来应将决战执行器从旧页面配置中
 独立出来，并与普通出征形成平级、可测试的执行模型。
 
-### 17.5 当前舰队预览
+### 17.4 当前舰队预览
 
 预览只显示任务请求中能够可靠识别的具体舰船。只有 `fleet_id` 的旧任务不会读取
 游戏屏幕或猜测队伍内容。若后端未来提供当前实际舰队状态接口，可再接入实时状态。
 
-### 17.6 视觉回归
+### 17.5 视觉回归
 
 本轮以用户快速目测为主要视觉验收方式。代码侧负责数据结构、保存、加载、
 YAML 往返、IPC 和构建。不同 Windows 缩放比例仍建议在发布前做一次集中视觉回归。
@@ -1124,9 +1124,9 @@ YAML 往返、IPC 和构建。不同 Windows 缩放比例仍建议在发布前�
 
 建议审查者按以下顺序检查：
 
-1. `electron/main.ts` 中路径校验、原子写入和运行时展开。
+1. `electron/main.ts` 装配的路径校验、原子写入和运行时展开 Service。
 2. `PlanModel.ts` 与舰队/出征 YAML 往返。
-3. `FleetPlannerView.ts` 的位置、备选和拖拽状态转换。
+3. `FleetPlannerController.ts` 与 `FleetDraftEditor.ts` 的位置、备选和拖拽状态转换。
 4. `PlanController.ts` 的新建、加载、保存、改名和来源身份。
 5. `ConfigModel.ts` 与 `ConfigController.ts` 的字段保留和保存事务。
 6. `SchedulerBinder.ts`、`TaskQueue.ts` 和运行时计划准备。
@@ -1205,6 +1205,8 @@ View
 - [ ] `npm run test:legacy-plan` 通过。
 - [ ] `npm run test:settings` 通过。
 - [ ] `git diff --check` 通过。
+- [ ] `npm run dist` 生成 `2.0.0-alpha` 安装包和 `alpha.yml`。
+- [ ] `npm run test:release-package` 通过资源完整性验收。
 - [ ] 安装包不包含用户 YAML。
 - [ ] 调试产物和 Python 缓存未进入版本库。
 

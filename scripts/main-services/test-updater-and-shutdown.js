@@ -1,7 +1,7 @@
 /**
  * GUI 更新策略和后端安全关闭测试。
  *
- * 覆盖稳定、预发布、开发三个版本频道，确保无更新、检查失败和发现更新
+ * 覆盖稳定、Alpha、Beta、开发四类版本频道，确保无更新、检查失败和发现更新
  * 不会互相混淆。后端关闭测试验证系统停止接口一定先于进程终止调用。
  *
  * Windows 环境还会创建父子进程树：子进程独占锁定临时文件，父进程作为
@@ -63,6 +63,13 @@ function testGuiUpdatePolicy() {
     stage: 'stable',
     allowPrerelease: false,
   });
+  const alpha = resolveGuiReleasePolicy('2.0.3-alpha');
+  assert.deepEqual(alpha, {
+    channel: 'alpha',
+    stage: 'prerelease',
+    allowPrerelease: true,
+  });
+  assert.deepEqual(resolveGuiReleasePolicy('2.0.3-alpha.1'), alpha);
   assert.deepEqual(resolveGuiReleasePolicy('2.0.3-beta.2'), {
     channel: 'beta',
     stage: 'prerelease',
@@ -126,6 +133,7 @@ function testGuiUpdatePolicy() {
   );
   assert.ok(yaml.load(workflow).jobs.build);
   assert.match(workflow, /X\.Y\.Z-beta\.N/);
+  assert.match(workflow, /X\.Y\.Z-alpha/);
   assert.match(workflow, /X\.Y\.Z-dev\.N/);
   assert.match(
     workflow,

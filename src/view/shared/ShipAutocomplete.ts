@@ -7,7 +7,7 @@
  *   const ac = new ShipAutocomplete(container, '.fleet-ship');
  *   // container 移除前调用 ac.destroy() 解除全局监听（若容器自身即被移除则可省略）
  */
-import { ALL_SHIPS } from '../../model/fleet/ShipCatalog';
+import { ALL_SHIPS } from '../../shared/shipCatalog';
 import { shipTypeLabel } from '../../shared/fleetShipTypes';
 
 function escapeHtml(str: string): string {

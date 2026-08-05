@@ -27,7 +27,7 @@ Python 环境管理位于 `electron/pythonEnv/` 子目录，采用依赖注入�
 | `cuda.ts` | 校验 CUDA 路径并在同一个 Python 环境上叠加 CUDA 变量 |
 | `envCheck.ts` | 环境验证主流程（VC++ Redistributable 检查、标记文件管理、依赖包验证） |
 | `installer.ts` | Python 安装与依赖管理（pip 设置、autowsgr 安装） |
-| `updater.ts` | autowsgr 自动更新逻辑（PyPI 版本检查 + 升级） |
+| `updater.ts` | managed 模式后端契约检查与固定提交安装 |
 | `utils.ts` | 工具函数与共享接口（路径工具、环境变量、pip 命令、.pth 文件处理） |
 | `index.ts` | 聚合导出 |
 
@@ -94,8 +94,8 @@ managed 后端，也不会把 GUI 的依赖目录混入外部解释器。
 flowchart TD
   A["checkEnvironment()"] --> B{".env_ready 标记存在?"}
   B -->|是| C["读取缓存: pythonCmd, version, autowsgrVersion"]
-  C --> D{"Python 可执行文件仍存在?<br/>autowsgr 版本 ≥ 2.1.0?"}
-  D -->|是| E["自动更新 autowsgr<br/>(后台, 非阻塞)"]
+  C --> D{"Python、环境身份和<br/>GUI 运行契约仍有效?"}
+  D -->|是| E["自动模式检查固定提交契约<br/>不兼容时安装兼容版本"]
   E --> F["返回 {allReady: true}<br/>⚡ 快速路径"]
   D -->|否| G["删除标记, 走完整路径"]
   
@@ -106,7 +106,7 @@ flowchart TD
   K --> L["按环境描述检查<br/>uvicorn/fastapi/autowsgr"]
   L --> M{"所有依赖就绪?"}
   M -->|否| N["返回 {allReady: false, missingPackages}"]
-  M -->|是| O["自动更新 autowsgr"]
+  M -->|是| O["managed 自动模式校验<br/>固定提交运行契约"]
   O --> P["写入 .env_ready 标记"]
   P --> F
 ```
@@ -126,7 +126,8 @@ flowchart TD
 
 - **路径**：`{appRoot}/.env_ready`
 - **失效时机**：安装依赖后删除；Python、模式、仓库或安装目标变化后失效
-- **验证条件**：Python 文件存在 + autowsgr 版本 ≥ 2.1.0
+- **验证条件**：Python 文件存在、环境身份一致、依赖可导入，且 AutoWSGR
+  提供 GUI 所需运行契约和活动资源
 
 ### 依赖安装
 
@@ -144,13 +145,19 @@ flowchart TD
 
 外部模式选中的 Python、pip 安装目标、依赖检查解释器和后端启动解释器必须一致。
 
-### 自动更新
+### managed 后端兼容更新
 
-`updater.ts` 中的 `checkForUpdates()` 在每次启动环境检查通过后自动执行：
-1. 单次 Python 调用：获取本地 autowsgr 版本 + PyPI 最新版本
-2. 若有新版：`pip install --target ... --upgrade autowsgr`
-3. 清理旧 `.dist-info` 目录避免版本检测错误
-4. 验证升级：重新检查 autowsgr 版本 + 关键依赖
+`updater.ts` 中的 `autoUpdateAutowsgr()` 不追随 PyPI 最新版本，而是验证当前
+AutoWSGR 是否具备 GUI 所需的运行时接口和活动资源：
+
+1. 单次隔离检查读取本地版本、活动资源和正式运行契约。
+2. 已兼容时保留当前后端，不做无意义重装。
+3. 不兼容时安装 `backendRequirement.ts` 固定的 AutoWSGR 提交。
+4. 安装后重新验证运行契约、活动资源、FastAPI 和 Uvicorn。
+
+该流程只在 managed + 自动更新模式执行。external 模式始终使用用户选择的
+本地仓库，手动更新模式也不会在启动时改动后端。固定提交提高了 GUI 与后端的
+可复现性，但首次安装或修复不兼容环境时仍需要联网。
 
 ---
 

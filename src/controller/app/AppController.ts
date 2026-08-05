@@ -15,7 +15,7 @@ import { Scheduler, CronScheduler } from '../../model/scheduler';
 import { TaskGroupModel } from '../../model/TaskGroupModel';
 import { TemplateModel } from '../../model/TemplateModel';
 import { Logger } from '../../utils/Logger';
-import { showAlert } from '../shared/DialogHelper';
+import { showAlert } from '../../view/shared/DialogHelper';
 import { TemplateController } from '../template/TemplateController';
 import { TaskGroupController } from '../taskGroup/TaskGroupController';
 import { loadManagedPlanToQueue } from '../taskGroup/queueLoader';
@@ -26,10 +26,10 @@ import { StartupController } from '../startup/StartupController';
 import {
   MigrationConflictController,
 } from '../migration/MigrationConflictController';
-import { fleetPlannerRepository } from '../../adapter/IpcAdapter';
 
 import { SchedulerBinder } from './SchedulerBinder';
 import { ConfigController } from './ConfigController';
+import { CurrentFleetController } from './CurrentFleetController';
 import { NavigationController } from './NavigationController';
 import { OperationsController } from './OperationsController';
 import { SettingsController } from './SettingsController';
@@ -40,6 +40,7 @@ export class AppController {
   private mainView: MainView;
   private planView: PlanPreviewView;
   private fleetPlannerCtrl: FleetPlannerController;
+  private currentFleetCtrl: CurrentFleetController;
   private configView: ConfigView;
   private taskGroupView: TaskGroupView;
   private setupView: SetupWizardView;
@@ -68,13 +69,11 @@ export class AppController {
   private migrationConflictCtrl: MigrationConflictController;
   private startupCtrl!: StartupController;
 
-  /** 待安装的 GUI 版本号 */
-  pendingGuiVersion: string | null = null;
-
   constructor() {
-    this.mainView = new MainView(fleetPlannerRepository);
-    this.planView = new PlanPreviewView(fleetPlannerRepository);
+    this.mainView = new MainView();
+    this.planView = new PlanPreviewView();
     this.fleetPlannerCtrl = new FleetPlannerController();
+    this.currentFleetCtrl = new CurrentFleetController();
     this.decisivePlanCtrl = new DecisivePlanController();
     this.migrationConflictCtrl = new MigrationConflictController();
     this.configView = new ConfigView();
@@ -205,12 +204,19 @@ export class AppController {
       pickLootAutomationPlans: currentPlans => (
         this.planCtrl.pickManagedLootPlans(currentPlans)
       ),
-      reloadShipLibrary: () => this.fleetPlannerCtrl.load(true),
+      reloadShipLibrary: async () => {
+        await Promise.all([
+          this.fleetPlannerCtrl.load(true),
+          this.currentFleetCtrl.load(true),
+        ]);
+        this.renderMain();
+      },
     });
     this.settingsCtrl.bindActions();
 
     this.operationsCtrl.bindOpsActions();
     this.renderMain();
+    void this.currentFleetCtrl.load().then(() => this.renderMain());
     this.planView.render(null);
 
     // 显示版本号
@@ -239,7 +245,6 @@ export class AppController {
       appRoot: this.appRoot,
       plansDir: this.plansDir,
       configDir: this.configDir,
-      pendingGuiVersion: this.pendingGuiVersion,
       syncPaths: (appRoot, plansDir, configDir) => {
         this.appRoot = appRoot;
         this.plansDir = plansDir;
@@ -376,8 +381,12 @@ export class AppController {
   // ════════════════════════════════════════
 
   private renderMain(): void {
+    const running = this.scheduler.currentRunningTask;
     const state: RenderingState = {
       scheduler: this.scheduler,
+      currentFleet: running
+        ? this.currentFleetCtrl.resolve(running.request)
+        : [],
       currentProgress: this.schedulerBinder.currentProgress,
       trackedLoot: this.schedulerBinder.trackedLoot,
       trackedShip: this.schedulerBinder.trackedShip,

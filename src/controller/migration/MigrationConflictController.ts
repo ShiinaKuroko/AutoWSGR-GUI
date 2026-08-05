@@ -2,7 +2,7 @@
 import {
   MigrationConflictView,
 } from '../../view/migration/MigrationConflictView.js';
-import { showAlert, showConfirm } from '../shared/DialogHelper.js';
+import { showAlert, showConfirm } from '../../view/shared/DialogHelper.js';
 
 /** 启动时强制用户处理尚未确认的迁移 YAML 冲突。 */
 export class MigrationConflictController {

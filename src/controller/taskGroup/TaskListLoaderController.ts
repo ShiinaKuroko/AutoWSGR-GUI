@@ -14,7 +14,7 @@ import {
   captureScrollPosition,
   restoreScrollPosition,
 } from '../../view/shared/scrollPosition';
-import { showConfirm } from '../shared/DialogHelper';
+import { showConfirm } from '../../view/shared/DialogHelper';
 
 export class TaskListLoaderController {
   private readonly dialog: HTMLElement;
