@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import { execSync, spawn, ChildProcess } from 'child_process';
 import type { BrowserWindow } from 'electron';
 import { ensurePthFile, ensureSslCertForPython, findPython, localSitePackages } from './pythonEnv';
+import { buildResourceEnvironment, SHIP_LIBRARY_ENV, shipLibraryRoot } from './resourcePaths';
 
 // ════════════════════════════════════════
 // Context — 由 main.ts 在启动时注入
@@ -329,8 +330,10 @@ export async function startBackend(): Promise<void> {
   // 将内置 ADB 目录加入 PATH，使后端 shutil.which('adb') 能找到
   const adbDir = path.join(ctx.appRoot(), 'adb');
   const cudaEnv = buildCudaEnvironment(process.env, configuredCudaRoot);
+  const backendEnv = buildResourceEnvironment(cudaEnv, ctx.resourceRoot());
   const envPath = cudaEnv.PATH || '';
   const pathWithAdb = fs.existsSync(adbDir) ? `${adbDir};${envPath}` : envPath;
+  console.log(`[Backend] ${SHIP_LIBRARY_ENV}=${shipLibraryRoot(ctx.resourceRoot())}`);
 
   // 预连接 ADB 设备（MuMu 多开实例不会自动被 ADB 发现，需要主动 connect）
   try {
@@ -358,7 +361,7 @@ export async function startBackend(): Promise<void> {
     windowsHide: true,
     stdio: 'pipe',
     env: {
-      ...cudaEnv,
+      ...backendEnv,
       PYTHONUTF8: '1',
       PYTHONIOENCODING: 'utf-8',
       PATH: pathWithAdb,
