@@ -22,6 +22,10 @@ import {
   showConfirm,
   showSaveSuccess,
 } from '../../view/shared/DialogHelper';
+import {
+  getManagedCombatPlanRepository,
+  type ManagedCombatPlanRepository,
+} from '../../adapter/IpcAdapter';
 
 export interface BattlePlanLoaderHost {
   getCurrentPlanIdentity(): {
@@ -48,6 +52,8 @@ export class BattlePlanLoaderController {
   constructor(
     private readonly view: BattlePlanLoaderView,
     private readonly host: BattlePlanLoaderHost,
+    private readonly repository: ManagedCombatPlanRepository | undefined =
+      getManagedCombatPlanRepository(),
   ) {}
 
   bindActions(): void {
@@ -141,14 +147,13 @@ export class BattlePlanLoaderController {
   }
 
   private async importLocal(): Promise<void> {
-    const bridge = window.electronBridge;
-    if (!bridge?.importLocalCombatPlan) {
+    if (!this.repository?.importLocalCombatPlan) {
       await showAlert('导入失败', '请完整重启 GUI 后再操作');
       return;
     }
     this.view.setImportLoading(true);
     try {
-      const result = await bridge.importLocalCombatPlan();
+      const result = await this.repository.importLocalCombatPlan();
       if (result.canceled) return;
       if (!result.success || !result.file) {
         throw new Error(result.error || '本地 YAML 导入失败');
@@ -178,14 +183,13 @@ export class BattlePlanLoaderController {
   }
 
   private async refresh(): Promise<void> {
-    const bridge = window.electronBridge;
-    if (!bridge?.getPlanManagement) {
+    if (!this.repository?.getPlanManagement) {
       this.view.setStatus('请完整重启 GUI 后再操作');
       return;
     }
     this.view.setStatus('正在读取作战计划...');
     try {
-      const result = await bridge.getPlanManagement();
+      const result = await this.repository.getPlanManagement();
       const detailedPlans = (
         result as typeof result & { battlePlans?: ManagedBattlePlan[] }
       ).battlePlans;

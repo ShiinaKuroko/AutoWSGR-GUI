@@ -9,6 +9,10 @@ import { ConfigView } from '../../view/config/ConfigView';
 import { TaskGroupView } from '../../view/taskGroup/TaskGroupView';
 import { SetupWizardView } from '../../view/setup/SetupWizardView';
 import { initAnimatedSelects } from '../../view/shared/AnimatedSelect';
+import {
+  applyTheme,
+  watchSystemTheme,
+} from '../../view/theme';
 import { ConfigModel } from '../../model/ConfigModel';
 import { ApiClient } from '../../model/ApiClient';
 import { Scheduler, CronScheduler } from '../../model/scheduler';
@@ -16,6 +20,10 @@ import { TaskGroupModel } from '../../model/TaskGroupModel';
 import { TemplateModel } from '../../model/TemplateModel';
 import { Logger } from '../../utils/Logger';
 import { showAlert } from '../../view/shared/DialogHelper';
+import {
+  getAppRuntimeGateway,
+  type AppRuntimeGateway,
+} from '../../adapter/IpcAdapter';
 import { TemplateController } from '../template/TemplateController';
 import { TaskGroupController } from '../taskGroup/TaskGroupController';
 import { loadManagedPlanToQueue } from '../taskGroup/queueLoader';
@@ -33,7 +41,6 @@ import { CurrentFleetController } from './CurrentFleetController';
 import { NavigationController } from './NavigationController';
 import { OperationsController } from './OperationsController';
 import { SettingsController } from './SettingsController';
-import { applyTheme, getThemeMode } from './theme';
 import { buildMainViewObject, type RenderingState } from './rendering';
 
 export class AppController {
@@ -69,7 +76,10 @@ export class AppController {
   private migrationConflictCtrl: MigrationConflictController;
   private startupCtrl!: StartupController;
 
-  constructor() {
+  constructor(
+    private readonly runtimeGateway: AppRuntimeGateway | undefined =
+      getAppRuntimeGateway(),
+  ) {
     this.mainView = new MainView();
     this.planView = new PlanPreviewView();
     this.fleetPlannerCtrl = new FleetPlannerController();
@@ -86,13 +96,16 @@ export class AppController {
       () => this.taskGroupModel.groups,
     );
 
-    const rawPort = window.electronBridge?.getBackendPort?.();
+    const rawPort = this.runtimeGateway?.getBackendPort();
     let port = Number(rawPort);
     if (!Number.isFinite(port) || port <= 0 || port > 65535) {
       port = 8438;
     }
     this.api = new ApiClient(`http://localhost:${port}`);
-    this.scheduler = new Scheduler(this.api);
+    this.scheduler = new Scheduler(
+      this.api,
+      () => this.configModel.current.ocr.ship_name_aliases,
+    );
     this.navigationCtrl = new NavigationController({
       fleetPlannerController: this.fleetPlannerCtrl,
       getPlanController: () => this.planCtrl,
@@ -128,6 +141,9 @@ export class AppController {
       configModel: this.configModel,
       renderMain: () => this.renderMain(),
       updateOpsAvailability: (c) => this.operationsCtrl.updateOpsAvailability(c),
+      updateExpeditionTimer: (text) => (
+        this.mainView.setExpeditionTimer(text)
+      ),
     });
   }
 
@@ -157,9 +173,12 @@ export class AppController {
 
     this.taskGroupCtrl = new TaskGroupController(
       this.taskGroupModel, this.taskGroupView, this.templateModel,
-      this.mainView, {
+      this.mainView, this.planView, {
         scheduler: this.scheduler,
         plansDir: '',
+        getShipNameAliases: () => (
+          this.configModel.current.ocr.ship_name_aliases
+        ),
         renderMain: () => this.renderMain(),
         switchPage: (p) => this.navigationCtrl.switchPage(p, p === 'plan' ? 'scheme' : undefined),
         importTaskPreset: (preset, fp) => this.planCtrl.importTaskPreset(preset, fp),
@@ -220,22 +239,17 @@ export class AppController {
     this.planView.render(null);
 
     // 显示版本号
-    const bridge = window.electronBridge;
-    if (bridge) {
-      const v = bridge.getAppVersion();
-      if (v) this.mainView.setVersion(`v${v}`);
+    const version = this.runtimeGateway?.getAppVersion();
+    if (version) {
+      this.mainView.setVersion(`v${version}`);
     }
 
-    // 监听系统主题变化
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-      if (getThemeMode() === 'system') applyTheme();
-    });
+    watchSystemTheme();
 
-    // 窗口关闭时保存任务组状态并刷新日志
-    window.addEventListener('beforeunload', () => {
+    this.mainView.onBeforeUnload = () => {
       this.taskGroupModel.save();
       Logger.flush();
-    });
+    };
 
     // 加载配置 → 检测模拟器 → 渲染 → 连接
     this.startupCtrl = new StartupController({
@@ -333,47 +347,63 @@ export class AppController {
   // ════════════════════════════════════════
 
   private bindQueueActions(): void {
-    document.getElementById('btn-stop-task')?.addEventListener('click', async () => {
-      if (this.scheduler.status === 'stopping') return;
-      Logger.info('正在停止当前任务，请等待后端确认…');
-      try {
-        await this.scheduler.stopRunning();
-        this.schedulerBinder.currentProgress = '';
-        this.schedulerBinder.trackedLoot = '';
-        this.schedulerBinder.trackedShip = '';
-        this.renderMain();
-        Logger.info('当前任务已停止（任务已保留在队列中）');
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        Logger.error(`停止任务失败：${message}`);
-        this.renderMain();
-      }
-    });
-    document.getElementById('btn-clear-queue')?.addEventListener('click', () => {
-      this.scheduler.clearQueue(); this.renderMain();
-    });
-    document.getElementById('btn-import-plan')?.addEventListener('click', async () => {
-      const selected = await this.planCtrl.pickManagedBattlePlanForQueue();
-      if (!selected) return;
-      try {
-        await loadManagedPlanToQueue(selected, {
-          scheduler: this.scheduler,
-          renderMain: () => this.renderMain(),
-        });
-      } catch (error) {
-        await showAlert(
-          '无法加载出征计划',
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-    });
-    document.getElementById('btn-start-queue')?.addEventListener('click', () => {
-      this.scheduler.startConsuming(); this.renderMain();
-    });
+    this.mainView.onStopTask = () => {
+      void this.stopCurrentTask();
+    };
+    this.mainView.onClearQueue = () => {
+      this.scheduler.clearQueue();
+      this.renderMain();
+    };
+    this.mainView.onImportPlan = () => {
+      void this.importPlanToQueue();
+    };
+    this.mainView.onStartQueue = () => {
+      this.scheduler.startConsuming();
+      this.renderMain();
+    };
 
-    this.mainView.onRemoveQueueItem = (taskId) => { this.scheduler.removeTask(taskId); this.renderMain(); };
-    this.mainView.onMoveQueueItem = (from, to) => { this.scheduler.moveTask(from, to); this.renderMain(); };
+    this.mainView.onRemoveQueueItem = (taskId) => {
+      this.scheduler.removeTask(taskId);
+      this.renderMain();
+    };
+    this.mainView.onMoveQueueItem = (from, to) => {
+      this.scheduler.moveTask(from, to);
+      this.renderMain();
+    };
+  }
 
+  private async stopCurrentTask(): Promise<void> {
+    if (this.scheduler.status === 'stopping') return;
+    Logger.info('正在停止当前任务，请等待后端确认…');
+    try {
+      await this.scheduler.stopRunning();
+      this.schedulerBinder.resetRuntimeState();
+      this.renderMain();
+      Logger.info('当前任务已停止（任务已保留在队列中）');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      Logger.error(`停止任务失败：${message}`);
+      this.renderMain();
+    }
+  }
+
+  private async importPlanToQueue(): Promise<void> {
+    const selected = await this.planCtrl.pickManagedBattlePlanForQueue();
+    if (!selected) return;
+    try {
+      await loadManagedPlanToQueue(selected, {
+        scheduler: this.scheduler,
+        getShipNameAliases: () => (
+          this.configModel.current.ocr.ship_name_aliases
+        ),
+        renderMain: () => this.renderMain(),
+      });
+    } catch (error) {
+      await showAlert(
+        '无法加载出征计划',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   }
 
   // ════════════════════════════════════════
@@ -382,17 +412,18 @@ export class AppController {
 
   private renderMain(): void {
     const running = this.scheduler.currentRunningTask;
+    const runtime = this.schedulerBinder.runtimeState;
     const state: RenderingState = {
       scheduler: this.scheduler,
       currentFleet: running
         ? this.currentFleetCtrl.resolve(running.request)
         : [],
-      currentProgress: this.schedulerBinder.currentProgress,
-      trackedLoot: this.schedulerBinder.trackedLoot,
-      trackedShip: this.schedulerBinder.trackedShip,
-      dailySortieStats: this.schedulerBinder.dailyStatsSnapshot,
-      wsConnected: this.schedulerBinder.wsConnected,
-      expeditionTimerText: this.schedulerBinder.expeditionTimerText,
+      currentProgress: runtime.currentProgress,
+      trackedLoot: runtime.trackedLoot,
+      trackedShip: runtime.trackedShip,
+      dailySortieStats: runtime.dailySortieStats,
+      wsConnected: runtime.wsConnected,
+      expeditionTimerText: runtime.expeditionTimerText,
     };
     const vo = buildMainViewObject(state);
     this.mainView.render(vo);

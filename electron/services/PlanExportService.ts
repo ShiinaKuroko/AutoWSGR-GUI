@@ -7,6 +7,7 @@ import * as path from 'path';
 import JSZip from 'jszip';
 import type { CombatPlanRepository } from './CombatPlanRepository';
 import type { TeamPlanRepository } from './TeamPlanRepository';
+import { AtomicFileStore } from './AtomicFileStore';
 
 export interface UserPlanExportSelection {
   kind: 'battle' | 'team';
@@ -29,6 +30,7 @@ export class PlanExportService {
   constructor(
     private readonly combatRepository: CombatPlanRepository,
     private readonly teamRepository: TeamPlanRepository,
+    private readonly atomicFiles: AtomicFileStore,
   ) {}
 
   /** 使用本地日期生成导出文件名。 */
@@ -69,7 +71,7 @@ export class PlanExportService {
 
   /** 将已生成的 ZIP 写到系统保存对话框返回的位置。 */
   writeArchive(filePath: string, archive: UserPlanArchive): void {
-    fs.writeFileSync(filePath, archive.content);
+    this.atomicFiles.write(filePath, archive.content);
   }
 
   /** Renderer 输入必须是去重后的用户计划文件清单。 */

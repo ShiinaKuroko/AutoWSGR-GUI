@@ -273,6 +273,7 @@ let lootHandledCalls = 0;
 let binderRunningTask = null;
 const managedPlanReads = [];
 let managedPlanWrites = 0;
+const expeditionTimerUpdates = [];
 const managedLootYaml = [
   'chapter: 9',
   'map: 2',
@@ -363,6 +364,9 @@ const binder = new schedulerBinderModule.SchedulerBinder({
   },
   renderMain: () => {},
   updateOpsAvailability: () => {},
+  updateExpeditionTimer: text => {
+    expeditionTimerUpdates.push(text);
+  },
 });
 binder.bindCronCallbacks();
 binder.bindSchedulerCallbacks();
@@ -515,22 +519,47 @@ assert.equal(
   1,
   '系统停止无限自动出征后应释放 cron pending，允许重启后重试',
 );
-binder.currentProgress = '2/5';
 binderRunningTask = {
   id: 'running-round',
   logicalId: 'running-parent',
+  type: 'normal_fight',
 };
+schedulerCallbacks.onProgressUpdate(
+  'running-round',
+  { current: 2, total: 5, node: null },
+);
 schedulerCallbacks.onLogicalTaskCanceled(
   'other-queued-parent',
   'removed',
 );
 assert.equal(
-  binder.currentProgress,
+  binder.runtimeState.currentProgress,
   '2/5',
   '取消其他排队任务不得清空当前运行任务的进度',
 );
+binder.handleBackendRuntimeLog('[UI] 战利品数量: 3/10');
+binder.handleBackendRuntimeLog('[UI] 舰船数量: 2/8');
+assert.equal(binder.runtimeState.trackedLoot, '3/10');
+assert.equal(binder.runtimeState.trackedShip, '2/8');
+schedulerCallbacks.onExpeditionTimerTick(65);
+assert.deepEqual(expeditionTimerUpdates, ['01:05']);
+assert.equal(binder.runtimeState.expeditionTimerText, '01:05');
+
+binderRunningTask = {
+  id: 'exercise-round',
+  logicalId: 'exercise-parent',
+  type: 'exercise',
+};
+binder.handleBackendRuntimeLog('开始演习流程');
+binder.handleBackendRuntimeLog('正在挑战对手 1');
+binder.handleBackendRuntimeLog('正在挑战对手 1');
+assert.equal(
+  binder.runtimeState.currentProgress,
+  '1/5',
+  '同一轮演习的重复日志不得重复增加进度',
+);
 binderRunningTask = null;
-clearTimeout(binder.dailyStatsRefreshTimer);
+binder.dispose();
 
 function createSchedulerApi(overrides = {}) {
   let callbacks = {};

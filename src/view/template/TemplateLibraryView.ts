@@ -8,6 +8,8 @@ import type { TemplateLibraryItemVO } from '../../types/view.js';
 export class TemplateLibraryView {
   private container: HTMLElement | null;
 
+  onCreate?: () => void;
+  onImport?: () => void;
   onUse?: (id: string) => void;
   onEdit?: (id: string) => void;
   onDelete?: (id: string) => void;
@@ -15,6 +17,14 @@ export class TemplateLibraryView {
 
   constructor() {
     this.container = document.getElementById('template-library-items');
+    document.getElementById('btn-create-template')?.addEventListener(
+      'click',
+      () => this.onCreate?.(),
+    );
+    document.getElementById('btn-import-template')?.addEventListener(
+      'click',
+      () => this.onImport?.(),
+    );
 
     // 委托点击
     this.container?.addEventListener('click', (e) => {

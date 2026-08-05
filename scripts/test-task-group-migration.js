@@ -127,10 +127,10 @@ function migratePresetInventory(content) {
     appPaths,
     new AtomicFileStore(),
   );
-  migration.writeState({ version: 5, completed: [] });
+  migration.migrationState.write({ version: 5, completed: [] });
   const result = migration.migratePresetInventory();
   assert.equal(result.failed, 0);
-  assert.equal(migration.readState().version, 6);
+  assert.equal(migration.migrationState.read().version, 6);
   return {
     content: fs.readFileSync(taskGroups, 'utf8'),
     userPlanDir: appPaths.userBattlePlansDir(),
@@ -266,6 +266,7 @@ async function verifyRealLegacyFixtureLifecycle() {
       scheduler: {
         addTask: (...args) => scheduledTasks.push(args),
       },
+      getShipNameAliases: () => ({}),
       switchPage: (page) => {
         switchedPage = page;
       },

@@ -9,7 +9,6 @@ import {
   spawn,
   ChildProcess,
 } from 'child_process';
-import type { BrowserWindow } from 'electron';
 import {
   buildBackendRuntimeEnvironment,
   ensurePthFile,
@@ -35,7 +34,7 @@ export interface BackendContext {
   userDataRoot: () => string;
   resourceRoot: () => string;
   BACKEND_PORT: number;
-  getMainWindow: () => BrowserWindow | null;
+  sendToRenderer: (channel: string, ...args: unknown[]) => boolean;
 }
 
 let ctx: BackendContext;
@@ -234,12 +233,12 @@ export function runSetupScript(): Promise<{
     proc.stdout?.on('data', (data: Buffer) => {
       const text = data.toString();
       output += text;
-      ctx.getMainWindow()?.webContents.send('setup-log', text);
+      ctx.sendToRenderer('setup-log', text);
     });
     proc.stderr?.on('data', (data: Buffer) => {
       const text = data.toString();
       output += text;
-      ctx.getMainWindow()?.webContents.send('setup-log', text);
+      ctx.sendToRenderer('setup-log', text);
     });
     proc.on('close', (code) => {
       resolve({ success: code === 0, output: output.slice(-1000) });
@@ -276,24 +275,23 @@ export async function startBackend(): Promise<void> {
     environment,
     ctx.BACKEND_PORT,
   );
-  const mainWindow = ctx.getMainWindow();
   if (localBackendRepo) {
     console.log(`[Backend] 使用本地后端仓库: ${localBackendRepo}`);
-    mainWindow?.webContents.send(
+    ctx.sendToRenderer(
       'backend-log',
       `[GUI] 使用本地后端仓库: ${localBackendRepo}`,
     );
   } else {
-    mainWindow?.webContents.send(
+    ctx.sendToRenderer(
       'backend-log',
       '[GUI] 未启用本地后端仓库覆盖，使用 site-packages 中的 autowsgr',
     );
   }
-  mainWindow?.webContents.send(
+  ctx.sendToRenderer(
     'backend-log',
     `[GUI] CUDA 路径: ${configuredCudaRoot ?? '系统自动检测'}`,
   );
-  mainWindow?.webContents.send(
+  ctx.sendToRenderer(
     'backend-log',
     `[GUI] 保存识别异常截图: ${saveBackendScreenshots ? '开启' : '关闭'}`,
   );
@@ -319,7 +317,7 @@ export async function startBackend(): Promise<void> {
     cwd,
     runtimeEnv,
   );
-  mainWindow?.webContents.send(
+  ctx.sendToRenderer(
     'backend-log',
     `[GUI] OCR 加速模式: ${requestedOcrGpuMode}${
       requestedOcrGpuMode === 'auto'
@@ -341,7 +339,7 @@ export async function startBackend(): Promise<void> {
     cwd,
     backendEnv,
   );
-  mainWindow?.webContents.send(
+  ctx.sendToRenderer(
     'backend-log',
     '[GUI] 后端运行契约验证通过',
   );
@@ -364,8 +362,11 @@ export async function startBackend(): Promise<void> {
         console.log(`[Backend] ADB connect ${serial} 完成`);
       }
     }
-  } catch (error: any) {
-    console.warn(`[Backend] ADB connect 失败 (非致命): ${error.message}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error
+      ? error.message
+      : String(error);
+    console.warn(`[Backend] ADB connect 失败 (非致命): ${message}`);
   }
 
   const spawnedProcess = spawn(
@@ -414,7 +415,7 @@ export async function startBackend(): Promise<void> {
       ) {
         continue;
       }
-      mainWindow?.webContents.send('backend-log', trimmed);
+      ctx.sendToRenderer('backend-log', trimmed);
     }
   };
   spawnedProcess.stdout?.on('data', handleOutput);

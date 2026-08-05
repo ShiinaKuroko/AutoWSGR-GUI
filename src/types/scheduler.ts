@@ -26,6 +26,14 @@ export type SchedulerTaskType =
   | 'decisive'
   | 'expedition';
 
+export interface ExpeditionCheckRequest {
+  type: 'expedition';
+}
+
+export type SchedulerTaskRequest =
+  | TaskRequest
+  | ExpeditionCheckRequest;
+
 export interface SchedulerTask {
   id: string;
   /** Stable identity for all single-round follow-up tasks. */
@@ -33,7 +41,7 @@ export interface SchedulerTask {
   name: string;
   type: SchedulerTaskType;
   priority: TaskPriority;
-  request: TaskRequest;
+  request: SchedulerTaskRequest;
   /** 重复剩余次数 (用于任务分拆: 打500次 → 每次打1次然后后触发剩余) */
   remainingTimes: number;
   /** 总次数（用于显示进度） */

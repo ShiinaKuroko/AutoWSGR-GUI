@@ -1,25 +1,32 @@
-/**
- * 识别、校验并归一化独立任务预设 YAML。
- */
+/** 识别、校验并归一化独立任务预设。 */
+import type {
+  StopCondition,
+  TaskPreset,
+} from '../types/model.js';
 
-export type TaskPresetType =
-  | 'normal_fight'
-  | 'event_fight'
-  | 'campaign'
-  | 'exercise'
-  | 'decisive';
+export type TaskPresetType = TaskPreset['task_type'];
+export type TaskPresetDocument =
+  TaskPreset & Record<string, unknown>;
 
-export type TaskPresetDocument = Record<string, unknown> & {
-  task_type: TaskPresetType;
-};
-
-const TASK_PRESET_TYPES = new Set<TaskPresetType>([
+const TASK_PRESET_TYPES = [
   'normal_fight',
   'event_fight',
   'campaign',
   'exercise',
   'decisive',
-]);
+] as const satisfies readonly TaskPresetType[];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object'
+    && value !== null
+    && !Array.isArray(value)
+  );
+}
+
+function isTaskPresetType(value: string): value is TaskPresetType {
+  return TASK_PRESET_TYPES.some(type => type === value);
+}
 
 /** 负责独立任务预设的类型判断和字段校验。 */
 export class TaskPresetCodec {
@@ -36,24 +43,29 @@ export class TaskPresetCodec {
     const rawType = typeof root.task_type === 'string'
       ? root.task_type.trim().toLowerCase()
       : '';
-    if (!TASK_PRESET_TYPES.has(rawType as TaskPresetType)) {
+    if (!isTaskPresetType(rawType)) {
       throw new Error(`不支持的任务预设类型：${rawType || '空'}`);
     }
-    const taskType = rawType as TaskPresetType;
     const result: TaskPresetDocument = {
       ...structuredClone(root),
-      task_type: taskType,
+      task_type: rawType,
     };
 
     this.normalizeCommonFields(result);
-    if (taskType === 'normal_fight' || taskType === 'event_fight') {
+    if (rawType === 'normal_fight' || rawType === 'event_fight') {
       result.plan_id = this.safePlanReference(root.plan_id);
-    } else if (taskType === 'campaign') {
+      if (root.fleet_id !== undefined) {
+        result.fleet_id = this.positiveInteger(
+          root.fleet_id,
+          'fleet_id',
+        );
+      }
+    } else if (rawType === 'campaign') {
       result.campaign_name = this.nonEmptyText(
         root.campaign_name,
         'campaign_name',
       );
-    } else if (taskType === 'exercise') {
+    } else if (rawType === 'exercise') {
       result.fleet_id = this.integerInRange(
         root.fleet_id,
         'fleet_id',
@@ -92,6 +104,20 @@ export class TaskPresetCodec {
       ) {
         throw new Error('gap 必须是大于或等于 0 的数字');
       }
+    }
+    if (result.stop_condition !== undefined) {
+      result.stop_condition = this.stopCondition(
+        result.stop_condition,
+      );
+    }
+    if (
+      result.scheduled_time !== undefined
+      && (
+        typeof result.scheduled_time !== 'string'
+        || !result.scheduled_time.trim()
+      )
+    ) {
+      throw new Error('scheduled_time 必须是非空字符串');
     }
   }
 
@@ -147,4 +173,24 @@ export class TaskPresetCodec {
       return item.trim();
     });
   }
+
+  private stopCondition(value: unknown): StopCondition {
+    if (!isRecord(value)) {
+      throw new Error('stop_condition 必须是对象');
+    }
+    const result: StopCondition = {};
+    for (const field of ['loot_count_ge', 'ship_count_ge'] as const) {
+      const count = value[field];
+      if (count === undefined) continue;
+      if (!Number.isInteger(count) || Number(count) < 0) {
+        throw new Error(
+          `stop_condition.${field} 必须是大于或等于 0 的整数`,
+        );
+      }
+      result[field] = Number(count);
+    }
+    return result;
+  }
 }
+
+export const taskPresetCodec = new TaskPresetCodec();

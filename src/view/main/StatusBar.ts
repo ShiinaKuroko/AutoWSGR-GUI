@@ -2,6 +2,13 @@
 import type { MainViewObject } from '../../types/view.js';
 import { resolveTaskProgressPercent } from './TaskQueueView';
 
+export type OperationName =
+  | 'expedition'
+  | 'reward'
+  | 'buildCollect'
+  | 'cook'
+  | 'repair';
+
 export class StatusBar {
   private statusDot: HTMLElement;
   private statusText: HTMLElement;
@@ -12,9 +19,13 @@ export class StatusBar {
   private taskProgress: HTMLElement;
   private taskProgressFill: HTMLElement;
 
-  private static readonly OPS_BTN_IDS = [
-    'btn-ops-expedition', 'btn-ops-reward', 'btn-ops-build-collect', 'btn-ops-cook', 'btn-ops-repair',
-  ];
+  private readonly operationButtons: Record<
+    OperationName,
+    HTMLButtonElement | null
+  >;
+  private operationsConnected = false;
+
+  onOperation?: (operation: OperationName) => void;
 
   constructor() {
     this.statusDot = document.getElementById('status-dot')!;
@@ -25,6 +36,20 @@ export class StatusBar {
     this.taskRemaining = document.getElementById('nav-task-remaining')!;
     this.taskProgress = document.getElementById('nav-task-progress')!;
     this.taskProgressFill = document.getElementById('nav-task-progress-fill')!;
+    this.operationButtons = {
+      expedition: this.getButton('btn-ops-expedition'),
+      reward: this.getButton('btn-ops-reward'),
+      buildCollect: this.getButton('btn-ops-build-collect'),
+      cook: this.getButton('btn-ops-cook'),
+      repair: this.getButton('btn-ops-repair'),
+    };
+    for (const [operation, button] of Object.entries(
+      this.operationButtons,
+    ) as [OperationName, HTMLButtonElement | null][]) {
+      button?.addEventListener('click', () => {
+        this.onOperation?.(operation);
+      });
+    }
   }
 
   render(vo: MainViewObject): void {
@@ -57,11 +82,22 @@ export class StatusBar {
   }
 
   setOpsAvailability(connected: boolean): void {
-    for (const id of StatusBar.OPS_BTN_IDS) {
-      const btn = document.getElementById(id) as HTMLButtonElement | null;
-      if (btn) btn.disabled = !connected;
+    this.operationsConnected = connected;
+    for (const button of Object.values(this.operationButtons)) {
+      if (button) button.disabled = !connected;
     }
     this.setOpsStatus(connected ? '' : '未连接');
+  }
+
+  setOperationLoading(
+    operation: OperationName,
+    loading: boolean,
+  ): void {
+    const button = this.operationButtons[operation];
+    if (button) {
+      button.disabled = loading || !this.operationsConnected;
+      button.setAttribute('aria-busy', String(loading));
+    }
   }
 
   setOpsStatus(text: string): void {
@@ -69,8 +105,16 @@ export class StatusBar {
     if (el) el.textContent = text;
   }
 
+  setExpeditionTimer(text: string): void {
+    this.expeditionTimer.textContent = text;
+  }
+
   setVersion(v: string): void {
     const el = document.getElementById('app-version');
     if (el) el.textContent = v;
+  }
+
+  private getButton(id: string): HTMLButtonElement | null {
+    return document.getElementById(id) as HTMLButtonElement | null;
   }
 }

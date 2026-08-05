@@ -281,9 +281,97 @@ async function testUserPlanExport() {
   ]]);
 }
 
+/** 验证设置批量提交失败时恢复 usersettings.yaml。 */
+function testSettingsCommitRollback() {
+  const settingsIpc = new MemoryIpcRegistrar();
+  let yamlContent = 'old: yaml\n';
+  let guiSettingsWritten = false;
+  let failGuiSettingsWrite = true;
+  registerConfigurationIpc(settingsIpc, {
+    configuration: {
+      commitSettings: (_request, patch) => {
+        assert.deepEqual(patch, {
+          default_window_width: 1280,
+          default_window_height: 720,
+          remember_window_bounds: true,
+        });
+        if (failGuiSettingsWrite) {
+          throw new Error('模拟 GUI JSON 写入失败');
+        }
+        guiSettingsWritten = true;
+        return {
+          expeditionInterval: 15,
+          battleTimes: 3,
+          autoDecisive: false,
+          decisiveTemplateId: 'builtin',
+          autoLoot: false,
+          lootPlanSource: 'system',
+          lootPlanId: 'loot.yaml',
+          lootPlans: [],
+          lootStopCount: 50,
+        };
+      },
+    },
+    secureFiles: {
+      snapshot: () => ({
+        exists: true,
+        content: yamlContent,
+      }),
+      save: (_file, content) => {
+        yamlContent = content;
+      },
+      restore: (_file, snapshot) => {
+        yamlContent = snapshot.content;
+      },
+    },
+    windows: {
+      preparePreferences: preferences => ({
+        preferences,
+        settingsPatch: {
+          default_window_width: preferences.defaultWidth,
+          default_window_height: preferences.defaultHeight,
+          remember_window_bounds: preferences.rememberBounds,
+        },
+      }),
+    },
+  });
+  const handler = settingsIpc.handles.get('commit-gui-settings');
+  const request = {
+    updateMode: 'manual',
+    backendPort: 8438,
+    backendStartupMode: 'managed',
+    backendRepoPath: null,
+    ocrGpuMode: 'auto',
+    cudaPath: null,
+    saveBackendScreenshots: false,
+    pythonPath: null,
+    windowPreferences: {
+      defaultWidth: 1280,
+      defaultHeight: 720,
+      rememberBounds: true,
+    },
+    automation: {},
+    usersettingsYaml: 'new: yaml\n',
+  };
+
+  assert.throws(
+    () => handler({}, request),
+    /模拟 GUI JSON 写入失败/,
+  );
+  assert.equal(yamlContent, 'old: yaml\n');
+  assert.equal(guiSettingsWritten, false);
+
+  failGuiSettingsWrite = false;
+  const result = handler({}, request);
+  assert.equal(yamlContent, 'new: yaml\n');
+  assert.equal(guiSettingsWritten, true);
+  assert.equal(result.windowPreferences.rememberBounds, true);
+}
+
 async function main() {
   await testLocalCombatPlanImport();
   await testUserPlanExport();
+  testSettingsCommitRollback();
 }
 
 main()

@@ -87,9 +87,13 @@ export class Scheduler {
   // ── 泡澡修理 ──
   private repairManager: RepairManager;
 
-  constructor(api: ApiClient) {
+  constructor(
+    api: ApiClient,
+    getShipNameAliases:
+      () => Readonly<Record<string, string>> = () => ({}),
+  ) {
     this.api = api;
-    this._taskQueue = new TaskQueue();
+    this._taskQueue = new TaskQueue(getShipNameAliases);
     this.repairManager = new RepairManager(api);
     this.stopChecker = new StopConditionChecker(api, (level, message) => this.emitLog(level, message));
     this.expeditionTimer = new ExpeditionTimer(DEFAULT_EXPEDITION_INTERVAL_MS, {
@@ -562,6 +566,9 @@ export class Scheduler {
   /** 向后端发起 taskStart，失败时按重试策略处理 */
   private async executeTaskStart(task: SchedulerTask): Promise<void> {
     try {
+      if (task.request.type === 'expedition') {
+        throw new Error('远征检查不能通过 taskStart 执行');
+      }
       const resp = await this.api.taskStart(task.request);
       if (!this.systemActive || this.currentTask?.id !== task.id) return;
       if (resp.success && resp.data) {
@@ -1013,7 +1020,7 @@ export class Scheduler {
       name: '远征检查',
       type: 'expedition',
       priority: TaskPriority.EXPEDITION,
-      request: { type: 'expedition' } as unknown as TaskRequest,
+      request: { type: 'expedition' },
       remainingTimes: 1,
       totalTimes: 1,
       maxRetries: 1,

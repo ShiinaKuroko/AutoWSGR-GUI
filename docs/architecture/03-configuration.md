@@ -1,6 +1,6 @@
 # 配置系统
 
-> 涉及文件：`src/model/ConfigModel.ts` · `src/view/config/ConfigView.ts` · `src/controller/app/ConfigController.ts` · `src/controller/app/theme.ts` · `src/types/model.ts` · `electron/services/GuiSettingsStore.ts` · `electron/services/GuiConfigurationService.ts` · `electron/ipc/ConfigurationIpc.ts`
+> 涉及文件：`src/model/ConfigModel.ts` · `src/view/config/ConfigView.ts` · `src/view/theme.ts` · `src/controller/app/ConfigController.ts` · `src/types/model.ts` · `electron/services/GuiSettingsStore.ts` · `electron/services/GuiConfigurationService.ts` · `electron/ipc/ConfigurationIpc.ts`
 
 ## 概述
 
@@ -156,17 +156,17 @@ flowchart LR
 1. 用户点击“保存配置”
 2. `ConfigView.collect()` 从表单提取当前值 → `ConfigViewObject`
 3. `ConfigController.saveConfig()` 执行以下操作：
-   - 保存 UI 偏好到 `localStorage`（主题、调试模式）
-   - 调用 `bridge.setBackendPort()` 更新端口（需重启生效）
-   - 调用 `ConfigModel.update()` 深合并后端配置
-   - 调用 `setGuiAutomation()` 保存 GUI 私有自动化字段
+   - 在候选 `ConfigModel` 中校验并合并表单字段
+   - 通过 `ConfigurationGateway.commitGuiSettings()` 提交 YAML、GUI 设置和窗口偏好
+   - Main 进程先写 YAML，再原子提交 JSON；JSON 失败时恢复原 YAML
+   - 提交成功后才更新内存模型和 `localStorage` UI 偏好
    - 同步 `CronScheduler.updateConfig()` 更新定时任务规则
    - 同步 `Scheduler.setExpeditionInterval()` 更新远征检查间隔
-   - 序列化写入 `usersettings.yaml`
 
 ### 主题管理
 
-主题相关逻辑位于 `controller/app/theme.ts`，支持亮色/暗色/自动切换和强调色应用。
+主题 DOM 逻辑位于 `view/theme.ts`，通过 `StorageAdapter` 读取偏好，支持亮色、
+暗色、自动切换和强调色应用。
 
 ---
 

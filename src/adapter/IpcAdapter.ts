@@ -15,6 +15,155 @@ export function getRendererIpc(): RendererIpc {
   return { bridge };
 }
 
+export type ManagedCombatPlanRepository = Partial<Pick<
+  ElectronBridge,
+  | 'getPlanManagement'
+  | 'importLocalCombatPlan'
+  | 'readManagedCombatPlan'
+  | 'saveManagedCombatPlan'
+>>;
+
+export function getManagedCombatPlanRepository(
+): ManagedCombatPlanRepository | undefined {
+  return window.electronBridge;
+}
+
+export type TaskGroupRepository = Partial<Pick<
+  ElectronBridge,
+  | 'getPlanManagement'
+  | 'listDailyPlans'
+  | 'readDailyPlan'
+  | 'readManagedCombatPlan'
+  | 'readCombatPlanFile'
+  | 'readFile'
+  | 'saveFile'
+  | 'openFileDialog'
+>>;
+
+export function getTaskGroupRepository(
+): TaskGroupRepository | undefined {
+  return window.electronBridge;
+}
+
+export type TemplateRepository = Pick<
+  ElectronBridge,
+  'listPlanFiles' | 'openFileDialog' | 'readFile'
+>;
+
+export function getTemplateRepository(
+): TemplateRepository | undefined {
+  return window.electronBridge;
+}
+
+export type SettingsGateway = Pick<
+  ElectronBridge,
+  | 'checkAdbDevices'
+  | 'checkGuiUpdates'
+  | 'connectAdbDevice'
+  | 'disconnectAdbDevice'
+  | 'downloadGuiUpdate'
+  | 'getShipLibraryStatus'
+  | 'getUpdateMode'
+  | 'onShipLibraryUpdateProgress'
+  | 'openDirectoryDialog'
+  | 'openFileDialog'
+  | 'openFolder'
+  | 'readManagedCombatPlan'
+  | 'updateShipLibrary'
+  | 'validateCudaPath'
+  | 'validatePython'
+>;
+
+export function getSettingsGateway(): SettingsGateway | undefined {
+  return window.electronBridge;
+}
+
+export type AppRuntimeGateway = Pick<
+  ElectronBridge,
+  'getAppVersion' | 'getBackendPort'
+>;
+
+export function getAppRuntimeGateway(): AppRuntimeGateway | undefined {
+  return window.electronBridge;
+}
+
+export type StartupGateway = Pick<
+  ElectronBridge,
+  | 'appendFile'
+  | 'checkEnvironment'
+  | 'checkGuiUpdates'
+  | 'downloadGuiUpdate'
+  | 'getAppRoot'
+  | 'getBackendStartupMode'
+  | 'getConfigDir'
+  | 'getPlansDir'
+  | 'getUpdateMode'
+  | 'installDeps'
+  | 'installPortablePython'
+  | 'onBackendLog'
+  | 'onSetupLog'
+  | 'onUpdateStatus'
+  | 'readFile'
+  | 'runSetup'
+  | 'saveFile'
+  | 'startBackend'
+>;
+
+export function getStartupGateway(): StartupGateway | undefined {
+  return window.electronBridge;
+}
+
+export type ConfigurationGateway = Pick<
+  ElectronBridge,
+  | 'checkAdbDevices'
+  | 'commitGuiSettings'
+  | 'detectEmulator'
+  | 'getBackendPort'
+  | 'getBackendRepoPath'
+  | 'getBackendStartupMode'
+  | 'getCudaPath'
+  | 'getGuiAutomationSettings'
+  | 'getOcrGpuMode'
+  | 'getPythonPath'
+  | 'getSaveBackendScreenshots'
+  | 'getUpdateMode'
+  | 'getWindowPreferences'
+  | 'migrateLegacyDecisiveAutomation'
+  | 'readFile'
+  | 'saveFile'
+  | 'setGuiAutomationSettings'
+  | 'setPythonPath'
+>;
+
+export function getConfigurationGateway(
+): ConfigurationGateway | undefined {
+  return window.electronBridge;
+}
+
+export type ScheduledTaskRepository = Pick<
+  ElectronBridge,
+  | 'getDecisivePlanSettings'
+  | 'readManagedCombatPlan'
+  | 'readCombatPlanFile'
+  | 'readFile'
+>;
+
+export function getScheduledTaskRepository(
+): ScheduledTaskRepository | undefined {
+  return window.electronBridge;
+}
+
+export type MigrationConflictRepository = Partial<Pick<
+  ElectronBridge,
+  | 'getMigrationConflicts'
+  | 'resolveMigrationConflicts'
+>>;
+
+export function getMigrationConflictRepository(
+): MigrationConflictRepository | undefined {
+  return window.electronBridge;
+}
+
 export type FileRepository = Pick<ElectronBridge, 'readFile' | 'saveFile' | 'appendFile'>;
 
 export const rendererFileRepository: FileRepository = {

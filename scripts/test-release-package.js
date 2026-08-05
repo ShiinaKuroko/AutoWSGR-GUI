@@ -10,12 +10,14 @@
  * 6. AutoWSGR managed 模式固定到明确提交。
  * 7. 应用版本与更新频道元数据一致。
  * 8. NSIS 安装包和频道清单已生成。
+ * 9. ASAR 只包含 Renderer bundle，不重复携带独立 Renderer 模块。
  *
  * 该脚本只读取产物，不修改 release 或用户数据。
  */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const asar = require('@electron/asar');
 const yaml = require('js-yaml');
 
 const root = path.resolve(__dirname, '..');
@@ -83,6 +85,33 @@ assertFile(
   path.join(unpacked, 'resources', 'app.asar'),
   'GUI app.asar',
 );
+const asarFiles = asar.listPackage(
+  path.join(unpacked, 'resources', 'app.asar'),
+).map(file => file.replaceAll('\\', '/').replace(/^\/+/, ''));
+for (const file of [
+  'dist/electron/main.js',
+  'dist/electron/preload.js',
+  'dist/renderer.bundle.js',
+  'dist/src/shared/taskPreset.js',
+  'src/view/index.html',
+  'src/view/styles/styles.css',
+]) {
+  assert.equal(asarFiles.includes(file), true, `ASAR 缺失: ${file}`);
+}
+for (const directory of [
+  'dist/src/adapter/',
+  'dist/src/controller/',
+  'dist/src/model/',
+  'dist/src/types/',
+  'dist/src/utils/',
+  'dist/src/view/',
+]) {
+  assert.equal(
+    asarFiles.some(file => file.startsWith(directory)),
+    false,
+    `ASAR 不应重复包含 Renderer 模块: ${directory}`,
+  );
+}
 assertFile(
   path.join(unpacked, 'python', 'python.exe'),
   '内置 Python',

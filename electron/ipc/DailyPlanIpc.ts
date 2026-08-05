@@ -2,10 +2,10 @@
  * 连接日常任务计划服务与渲染进程。
  */
 import type { DailyPlanService } from '../services/DailyPlanService';
+import type { GuiConfigurationService } from '../services/GuiConfigurationService';
 import type {
   DecisivePlanSettings,
-  GuiConfigurationService,
-} from '../services/GuiConfigurationService';
+} from '../../src/shared/decisivePlan';
 import type { IpcRegistrar } from './IpcRegistrar';
 
 export interface DailyPlanIpcDependencies {

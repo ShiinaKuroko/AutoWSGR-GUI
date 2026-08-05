@@ -9,6 +9,9 @@ import type {
   LegacyDecisiveAutomationSettings,
 } from '../shared/legacyDecisiveAutomation.js';
 import type {
+  DecisivePlanSettings,
+} from '../shared/decisivePlan.js';
+import type {
   MigrationConflictListResult,
   MigrationConflictResolutionResult,
 } from '../shared/migrationConflicts.js';
@@ -17,6 +20,9 @@ export type { GuiAutomationSettings } from './model.js';
 export type {
   LegacyDecisiveAutomationSettings,
 } from '../shared/legacyDecisiveAutomation.js';
+export type {
+  DecisivePlanSettings,
+} from '../shared/decisivePlan.js';
 
 export interface WindowPreferences {
   defaultWidth: number;
@@ -24,11 +30,23 @@ export interface WindowPreferences {
   rememberBounds: boolean;
 }
 
-export interface DecisivePlanSettings {
-  chapter: number;
-  useQuickRepair: boolean;
-  level1: string[];
-  level2: string[];
+export interface GuiSettingsCommitRequest {
+  updateMode: 'auto' | 'manual';
+  backendPort: number;
+  backendStartupMode: 'managed' | 'external';
+  backendRepoPath: string | null;
+  ocrGpuMode: 'auto' | 'cpu' | 'cuda';
+  cudaPath: string | null;
+  saveBackendScreenshots: boolean;
+  pythonPath: string | null;
+  windowPreferences: WindowPreferences;
+  automation: GuiAutomationSettings;
+  usersettingsYaml: string;
+}
+
+export interface GuiSettingsCommitResult {
+  automation: GuiAutomationSettings;
+  windowPreferences: WindowPreferences;
 }
 
 export interface AdbOperationResult {
@@ -361,6 +379,9 @@ export interface ElectronBridge {
   setGuiAutomationSettings: (
     settings: GuiAutomationSettings,
   ) => Promise<GuiAutomationSettings>;
+  commitGuiSettings: (
+    request: GuiSettingsCommitRequest,
+  ) => Promise<GuiSettingsCommitResult>;
   migrateLegacyDecisiveAutomation: (
     settings: LegacyDecisiveAutomationSettings,
   ) => Promise<LegacyDecisiveAutomationSettings>;

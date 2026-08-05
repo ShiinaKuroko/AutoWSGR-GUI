@@ -7,15 +7,16 @@ import type {
   Scheduler,
 } from '../model/scheduler/index.js';
 import type {
-  ElectronBridge,
   ManagedBattlePlanSelection,
   PlanPresetSource,
 } from '../types/ipc.js';
+import type { StartupGateway } from '../adapter/IpcAdapter.js';
 import type { TaskPreset } from '../types/model.js';
 
 export interface TaskGroupHost {
   readonly scheduler: Scheduler;
   plansDir: string;
+  getShipNameAliases(): Readonly<Record<string, string>>;
   renderMain(): void;
   switchPage(page: string): void;
   importTaskPreset(preset: TaskPreset, filePath: string): void;
@@ -48,13 +49,13 @@ export interface StartupHost {
   configDir: string;
 
   syncPaths(appRoot: string, plansDir: string, configDir: string): void;
-  initLogger(bridge: ElectronBridge): void;
+  initLogger(bridge: StartupGateway): void;
   loadConfigAndSync(): Promise<void>;
   detectAndApplyEmulator(): Promise<void>;
   showSetupWizard(): Promise<void>;
-  loadModelsAndRender(bridge: ElectronBridge): Promise<void>;
+  loadModelsAndRender(bridge: StartupGateway): Promise<void>;
   reviewMigrationConflicts(): Promise<void>;
-  bindBackendLog(bridge: ElectronBridge): void;
+  bindBackendLog(bridge: StartupGateway): void;
   renderMain(): void;
   startHeartbeat(): void;
 }

@@ -60,12 +60,36 @@ export class TaskQueueView {
   onMoveQueueItem?: (fromIndex: number, toIndex: number) => void;
   onDropFromTaskGroup?: (itemIndex: number) => void;
   onEditQueueItem?: (taskId: string, x: number, y: number) => void;
+  onStopTask?: () => void;
+  onClearQueue?: () => void;
+  onImportPlan?: () => void;
+  onStartQueue?: () => void;
 
   constructor() {
     this.taskAreaIdle = document.getElementById('task-area-idle')!;
     this.taskAreaQueue = document.getElementById('task-area-queue')!;
     this.taskQueueList = document.getElementById('task-queue-list')!;
     this.initDropZone();
+    this.bindActions();
+  }
+
+  private bindActions(): void {
+    document.getElementById('btn-stop-task')?.addEventListener(
+      'click',
+      () => this.onStopTask?.(),
+    );
+    document.getElementById('btn-clear-queue')?.addEventListener(
+      'click',
+      () => this.onClearQueue?.(),
+    );
+    document.getElementById('btn-import-plan')?.addEventListener(
+      'click',
+      () => this.onImportPlan?.(),
+    );
+    document.getElementById('btn-start-queue')?.addEventListener(
+      'click',
+      () => this.onStartQueue?.(),
+    );
   }
 
   private initDropZone(): void {

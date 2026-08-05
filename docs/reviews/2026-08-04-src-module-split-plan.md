@@ -2,8 +2,9 @@
 
 ## 1. 范围和结论
 
-本方案最初覆盖 `src/` 下 77 个 TypeScript 文件。S6 完成后的粒度复核将
-`types` 合并为完整领域文件；功能边界复核后当前 `src/` 共有 97 个 TypeScript 文件：
+本方案是历史拆分记录，早期阶段曾覆盖 `src/` 下 77 个 TypeScript 文件，阶段中间曾
+记录 97 个文件。它不定义当前目录数量；当前模块和职责以
+`docs/architecture/09-src-typescript-catalog.md` 为准：
 
 | 目录 | 文件数 |
 |---|---:|
@@ -137,7 +138,7 @@ src/
 | `controller/app/constants.ts` | 保留并清理 | 保留优先级和状态文案；删除无引用的 `resolveRepairModeLabel()` |
 | `controller/app/index.ts` | 已删除 | 无代码、脚本或打包入口引用 |
 | `controller/app/rendering.ts` | 保留 | 继续作为纯 ViewObject 构造模块 |
-| `controller/app/theme.ts` | 保留 | 完整管理 Renderer 主题偏好和 DOM 主题应用 |
+| `controller/app/theme.ts` | 已迁移到 `view/theme.ts` | View 持有 DOM 和系统主题事件；偏好读取复用 Storage Adapter |
 | `controller/plan/BattlePlanLoaderController.ts` | 新增并收口 | 独立持有受管方案选择器状态并返回最终选择结果 |
 | `controller/plan/PlanController.ts` | 收口完成 | 保留当前方案编辑、地图、保存和执行；方案选择委托给 Loader |
 | `controller/plan/index.ts` | 已删除 | 无代码、脚本或打包入口引用 |
@@ -295,13 +296,13 @@ npm run test:main-ipc
 最终静态边界检查：
 
 ```powershell
+npm run test:controller-boundaries
 rg -n "window\.electronBridge|\(window as any\)" src/model src/view
-rg -n "localStorage" src/model src/view
 rg -n "js-yaml|yaml\.load|yaml\.dump" src/controller src/model src/view
 rg -n "\bas any\b" src/controller src/model src/view
 ```
 
-以上 4 条均应无结果。
+Controller 门禁应通过，其余 3 条均应无结果。
 
 S6 最终验证已通过：
 

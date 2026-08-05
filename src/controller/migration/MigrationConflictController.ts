@@ -3,10 +3,19 @@ import {
   MigrationConflictView,
 } from '../../view/migration/MigrationConflictView.js';
 import { showAlert, showConfirm } from '../../view/shared/DialogHelper.js';
+import {
+  getMigrationConflictRepository,
+  type MigrationConflictRepository,
+} from '../../adapter/IpcAdapter.js';
 
 /** 启动时强制用户处理尚未确认的迁移 YAML 冲突。 */
 export class MigrationConflictController {
   private finishReview: (() => void) | null = null;
+
+  constructor(
+    private readonly repository: MigrationConflictRepository | undefined =
+      getMigrationConflictRepository(),
+  ) {}
 
   private readonly view = new MigrationConflictView({
     onSubmit: keepIds => {
@@ -15,9 +24,8 @@ export class MigrationConflictController {
   });
 
   async reviewPending(): Promise<void> {
-    const bridge = window.electronBridge;
-    if (!bridge?.getMigrationConflicts) return;
-    const result = await bridge.getMigrationConflicts();
+    if (!this.repository?.getMigrationConflicts) return;
+    const result = await this.repository.getMigrationConflicts();
     if (result.pending && result.conflicts.length > 0) {
       this.view.open(result.conflicts);
       await new Promise<void>(resolve => {
@@ -27,8 +35,7 @@ export class MigrationConflictController {
   }
 
   private async submit(keepIds: string[]): Promise<void> {
-    const bridge = window.electronBridge;
-    if (!bridge?.resolveMigrationConflicts) {
+    if (!this.repository?.resolveMigrationConflicts) {
       this.view.setStatus('当前环境不支持处理迁移冲突，请重启 GUI。');
       return;
     }
@@ -48,7 +55,9 @@ export class MigrationConflictController {
     this.view.setBusy(true);
     this.view.setStatus('');
     try {
-      const result = await bridge.resolveMigrationConflicts(keepIds);
+      const result = await this.repository.resolveMigrationConflicts(
+        keepIds,
+      );
       if (result.remaining.length > 0) {
         this.view.replace(result.remaining);
         this.view.setStatus(result.errors.join('\n'));

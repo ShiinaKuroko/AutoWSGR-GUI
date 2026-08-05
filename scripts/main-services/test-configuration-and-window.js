@@ -42,7 +42,10 @@ const {
 /** 验证窗口偏好、创建参数和唯一窗口状态。 */
 function testWindowService() {
   const settingsPath = path.join(temporaryDirectory, 'window-settings.json');
-  const settings = new GuiSettingsStore(() => settingsPath);
+  const settings = new GuiSettingsStore(
+    () => settingsPath,
+    new AtomicFileStore(),
+  );
   settings.write({
     default_window_width: 400,
     default_window_height: 'invalid',
@@ -59,12 +62,27 @@ function testWindowService() {
   let loadedFile = null;
   let headersHandler = null;
   let normalBounds = { x: 20, y: 30, width: 1400, height: 800 };
+  let windowDestroyed = false;
+  let webContentsDestroyed = false;
+  let sendFailsAsDestroyed = false;
+  const sentMessages = [];
   const windowHandlers = new Map();
   const webContentsHandlers = new Map();
   const fakeWindow = {
-    isDestroyed: () => false,
+    isDestroyed: () => windowDestroyed,
     getNormalBounds: () => normalBounds,
     webContents: {
+      isDestroyed: () => webContentsDestroyed,
+      send: (...args) => {
+        if (
+          windowDestroyed
+          || webContentsDestroyed
+          || sendFailsAsDestroyed
+        ) {
+          throw new TypeError('Object has been destroyed');
+        }
+        sentMessages.push(args);
+      },
       session: {
         webRequest: {
           onHeadersReceived: handler => {
@@ -120,6 +138,34 @@ function testWindowService() {
     path.join(temporaryDirectory, 'app', 'src', 'view', 'index.html'),
   );
   assert.equal(service.getMainWindow(), fakeWindow);
+  assert.equal(
+    service.sendToRenderer('backend-log', 'backend running'),
+    true,
+  );
+  assert.deepEqual(sentMessages, [
+    ['backend-log', 'backend running'],
+  ]);
+  sendFailsAsDestroyed = true;
+  assert.equal(
+    service.sendToRenderer('backend-log', 'racing close output'),
+    false,
+  );
+  assert.equal(sentMessages.length, 1);
+  sendFailsAsDestroyed = false;
+  webContentsDestroyed = true;
+  assert.equal(
+    service.sendToRenderer('backend-log', 'late output'),
+    false,
+  );
+  assert.equal(sentMessages.length, 1);
+  webContentsDestroyed = false;
+  windowDestroyed = true;
+  assert.equal(
+    service.sendToRenderer('backend-log', 'destroyed window output'),
+    false,
+  );
+  assert.equal(sentMessages.length, 1);
+  windowDestroyed = false;
 
   let responseHeaders = null;
   headersHandler(
@@ -138,6 +184,10 @@ function testWindowService() {
   assert.deepEqual(settings.read().window_bounds, normalBounds);
   windowHandlers.get('closed')();
   assert.equal(service.getMainWindow(), null);
+  assert.equal(
+    service.sendToRenderer('backend-log', 'closed window output'),
+    false,
+  );
 
   assert.deepEqual(service.setPreferences({
     defaultWidth: 1440,
@@ -154,11 +204,19 @@ function testWindowService() {
 /** 验证 GUI 设置读取、损坏回退和浅合并格式。 */
 function testGuiSettingsStore() {
   const settingsPath = path.join(temporaryDirectory, 'gui_settings.json');
-  const store = new GuiSettingsStore(() => settingsPath);
+  const store = new GuiSettingsStore(
+    () => settingsPath,
+    new AtomicFileStore(),
+  );
 
   assert.deepEqual(store.read(), {});
   fs.writeFileSync(settingsPath, '{invalid', 'utf8');
   assert.deepEqual(store.read(), {});
+  assert.throws(
+    () => store.write({ backend_port: 18438 }),
+    /Unexpected token|JSON/,
+  );
+  assert.equal(fs.readFileSync(settingsPath, 'utf8'), '{invalid');
 
   fs.writeFileSync(
     settingsPath,
@@ -188,7 +246,10 @@ function testGuiConfigurationService() {
     temporaryDirectory,
     'gui_configuration.json',
   );
-  const store = new GuiSettingsStore(() => settingsPath);
+  const store = new GuiSettingsStore(
+    () => settingsPath,
+    new AtomicFileStore(),
+  );
   const environmentPort = { value: undefined };
   let clearPythonCacheCalls = 0;
   const service = new GuiConfigurationService(store, {
@@ -557,6 +618,59 @@ function testGuiConfigurationService() {
       level2: ['G', 'H', 'I'],
     },
   });
+
+  const committedAutomation = service.commitSettings({
+    updateMode: 'manual',
+    backendPort: 19438,
+    backendStartupMode: 'external',
+    backendRepoPath: '  C:\\AutoWSGR  ',
+    ocrGpuMode: 'cuda',
+    cudaPath: ' C:/CUDA/v12.8 ',
+    saveBackendScreenshots: true,
+    pythonPath: 'C:\\Python313\\python.exe',
+    windowPreferences: {
+      defaultWidth: 1400,
+      defaultHeight: 800,
+      rememberBounds: true,
+    },
+    automation: {
+      expeditionInterval: 30,
+      battleTimes: 5,
+      autoDecisive: true,
+      decisiveTemplateId: 'system_preset',
+      autoLoot: false,
+      lootPlanSource: 'system',
+      lootPlanId: DEFAULT_LOOT_PLANS[0].file,
+      lootPlans: DEFAULT_LOOT_PLANS,
+      lootStopCount: 40,
+    },
+    usersettingsYaml: 'ignored by service',
+  }, {
+    default_window_width: 1400,
+    default_window_height: 800,
+    remember_window_bounds: true,
+  });
+  const committedSettings = store.read();
+  assert.equal(committedAutomation.battleTimes, 5);
+  assert.equal(committedSettings.update_mode, 'manual');
+  assert.equal(committedSettings.backend_port, 19438);
+  assert.equal(
+    committedSettings.backend_startup_mode,
+    'external',
+  );
+  assert.equal(committedSettings.backend_repo_path, 'C:\\AutoWSGR');
+  assert.equal(committedSettings.ocr_gpu_mode, 'cuda');
+  assert.equal(committedSettings.cuda_path, 'C:\\CUDA\\v12.8');
+  assert.equal(committedSettings.save_backend_screenshots, true);
+  assert.equal(
+    committedSettings.python_path,
+    'C:\\Python313\\python.exe',
+  );
+  assert.equal(committedSettings.default_window_width, 1400);
+  assert.equal(committedSettings.default_window_height, 800);
+  assert.equal(committedSettings.remember_window_bounds, true);
+  assert.deepEqual(committedSettings.automation, committedAutomation);
+  assert.equal(clearPythonCacheCalls, 3);
 
   fs.rmSync(settingsPath, { force: true });
   const defaults = service.decisivePlan();

@@ -33,11 +33,15 @@ import {
   captureScrollPosition,
   restoreScrollPosition,
 } from '../shared/scrollPosition';
+import {
+  calculateGalleryBatchSize,
+  filterAndSortGalleryShips,
+  type GallerySortField,
+} from './GalleryShipCollection';
 import { createShipArtwork } from './ShipArtwork';
 
 export type DecisiveLevel = 'level1' | 'level2';
 type FilterKind = 'group' | 'type' | 'country';
-type SortField = 'type' | 'name' | 'id';
 
 export interface DecisivePlanViewState {
   chapter: number;
@@ -89,10 +93,6 @@ const LEVEL_LABELS: Record<DecisiveLevel, string> = {
 };
 const MAIN_SLOT_COUNT = 6;
 const DEFAULT_BACKUP_SLOT_COUNT = 6;
-const MIN_GALLERY_BATCH_SIZE = 12;
-const GALLERY_CARD_WIDTH = 128;
-const GALLERY_CARD_HEIGHT = 200;
-const GALLERY_GAP = 6;
 const DECISIVE_DRAG_MIME = 'application/x-autowsgr-decisive-ship';
 const EMPTY_LABELS: ShipLibraryLabels = {
   ship_types: {},
@@ -179,7 +179,7 @@ export class DecisivePlanView {
   private typeFilters = new Set<string>();
   private countryFilters = new Set<string>();
   private refitOnly = false;
-  private sortField: SortField = 'id';
+  private sortField: GallerySortField = 'id';
   private descending = false;
   private galleryDragScrollTop: number | null = null;
   private backupDragScroll: { top: number; left: number } | null = null;
@@ -239,7 +239,7 @@ export class DecisivePlanView {
         '[data-sort-field]',
       );
       if (sortOption) {
-        this.sortField = sortOption.dataset['sortField'] as SortField;
+        this.sortField = sortOption.dataset['sortField'] as GallerySortField;
         this.updateFilterControls();
         this.renderGallery();
       }
@@ -907,54 +907,20 @@ export class DecisivePlanView {
     const previousRenderedCount = resetScroll
       ? 0
       : this.renderedGalleryCount;
-    const search = this.normalizeGallerySearch(this.gallerySearch.value);
     const state = this.host.getState();
     const selectedNames = new Set([
       ...state.level1,
       ...state.level2,
     ]);
-    const refitSearchNames = this.refitOnly
-      ? new Set(
-          this.ships
-            .filter(ship => ship.variant === 'refit')
-            .map(ship => ship.search_name),
-        )
-      : null;
-    this.visibleGalleryShips = this.ships.filter(ship => {
-      const typeMatches = this.typeFilters.size === 0
-        || this.typeFilters.has(ship.ship_type);
-      const countryMatches = this.countryFilters.size === 0
-        || this.countryFilters.has(ship.country);
-      const refitMatches = refitSearchNames === null
-        || ship.variant === 'refit'
-        || !refitSearchNames.has(ship.search_name);
-      const searchMatches = !search || [
-        ship.name,
-        ship.search_name,
-        String(ship.id),
-        this.labels.ship_types[ship.ship_type] ?? '',
-        ship.ship_type,
-      ].some(value => this.normalizeGallerySearch(value).includes(search));
-      return !selectedNames.has(ship.search_name)
-        && typeMatches
-        && countryMatches
-        && refitMatches
-        && searchMatches;
-    });
-
-    const direction = this.descending ? -1 : 1;
-    this.visibleGalleryShips.sort((left, right) => {
-      let result = 0;
-      if (this.sortField === 'name') {
-        result = left.name.localeCompare(right.name, 'zh-CN');
-      } else if (this.sortField === 'type') {
-        const leftType = this.labels.ship_types[left.ship_type] ?? left.ship_type;
-        const rightType = this.labels.ship_types[right.ship_type] ?? right.ship_type;
-        result = leftType.localeCompare(rightType, 'zh-CN');
-      } else {
-        result = left.id - right.id;
-      }
-      return (result || left.id - right.id) * direction;
+    this.visibleGalleryShips = filterAndSortGalleryShips(this.ships, {
+      searchText: this.gallerySearch.value,
+      typeFilters: this.typeFilters,
+      countryFilters: this.countryFilters,
+      refitOnly: this.refitOnly,
+      sortField: this.sortField,
+      descending: this.descending,
+      shipTypeLabels: this.labels.ship_types,
+      isExcluded: ship => selectedNames.has(ship.search_name),
     });
 
     this.renderedGalleryCount = 0;
@@ -980,23 +946,9 @@ export class DecisivePlanView {
 
   /** 根据图鉴当前宽高计算首屏和下一批需要的卡片数量。 */
   private galleryBatchSize(): number {
-    const columns = Math.max(
-      1,
-      Math.floor(
-        (this.gallery.clientWidth + GALLERY_GAP)
-        / (GALLERY_CARD_WIDTH + GALLERY_GAP),
-      ),
-    );
-    const visibleRows = Math.max(
-      1,
-      Math.ceil(
-        (this.gallery.clientHeight + GALLERY_GAP)
-        / (GALLERY_CARD_HEIGHT + GALLERY_GAP),
-      ),
-    );
-    return Math.max(
-      MIN_GALLERY_BATCH_SIZE,
-      columns * (visibleRows + 2),
+    return calculateGalleryBatchSize(
+      this.gallery.clientWidth,
+      this.gallery.clientHeight,
     );
   }
 
@@ -1057,12 +1009,6 @@ export class DecisivePlanView {
     }
     this.galleryCount.textContent =
       `显示 ${this.visibleGalleryShips.length} / ${this.ships.length} 艘`;
-  }
-
-  private normalizeGallerySearch(value: string): string {
-    return value
-      .toLocaleLowerCase('zh-CN')
-      .replace(/[\s·•._-]+/g, '');
   }
 
   private async resetTeam(): Promise<void> {

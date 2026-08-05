@@ -13,6 +13,10 @@ import {
 } from '../../view/shared/DialogHelper';
 import { showWizardWithTemplate } from './wizard';
 import { jsonCodec } from '../../adapter';
+import {
+  getTemplateRepository,
+  type TemplateRepository,
+} from '../../adapter/IpcAdapter.js';
 
 function isTemplateRecord(
   value: unknown,
@@ -123,11 +127,11 @@ export async function importTemplatesFlow(
   wizardPlanPaths: { value: string[] },
   appRoot: string,
   renderLibrary: () => void,
+  repository: TemplateRepository | undefined = getTemplateRepository(),
 ): Promise<void> {
-  const bridge = window.electronBridge;
-  if (!bridge) return;
+  if (!repository) return;
   const defaultDir = appRoot ? `${appRoot}\\templates` : undefined;
-  const result = await bridge.openFileDialog(
+  const result = await repository.openFileDialog(
     [{ name: '模板文件', extensions: ['json'] }],
     defaultDir,
   );

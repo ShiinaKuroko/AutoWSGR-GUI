@@ -76,6 +76,24 @@ async function runRendererTest(root, tempDirectory) {
     'dist/src/view/plan/BattlePlanLoaderView.js',
   ));
   const {
+    TaskGroupModel,
+  } = require(rendererPath.join(
+    root,
+    'dist/src/model/TaskGroupModel.js',
+  ));
+  const {
+    TaskListLoaderController,
+  } = require(rendererPath.join(
+    root,
+    'dist/src/controller/taskGroup/TaskListLoaderController.js',
+  ));
+  const {
+    TaskListLoaderView,
+  } = require(rendererPath.join(
+    root,
+    'dist/src/view/taskGroup/TaskListLoaderView.js',
+  ));
+  const {
     DEFAULT_LOOT_PLANS,
   } = require(rendererPath.join(
     root,
@@ -140,8 +158,8 @@ async function runRendererTest(root, tempDirectory) {
     ocrGpu: true,
     ocrMirror: 'github',
     ocrConfidence: 0.73,
-    shipNameAliasesText: '测试别名: U-47',
-    shipNameCorrectionsText: '测试错字: U-81',
+    shipNameAliasesText: '测试别名:U-47',
+    shipNameCorrectionsText: '测试错字:U-81',
     cudaPath: 'C:\\SettingsTest\\CUDA',
     saveBackendScreenshots: true,
     pythonPath: 'C:\\SettingsTest\\python.exe',
@@ -388,6 +406,97 @@ async function runRendererTest(root, tempDirectory) {
       ignoredUnlinkedPlans: [],
     }),
   };
+  const taskGroupModel = new TaskGroupModel();
+  taskGroupModel.upsertGroup('常规任务', [
+    {
+      kind: 'plan',
+      managedSource: 'system',
+      managedFile: 'bettle-周常-8-2.yaml',
+      times: 2,
+      label: '周常 8-2',
+    },
+    {
+      kind: 'daily',
+      dailySource: 'user',
+      dailyFile: 'daily-test.yaml',
+      times: 1,
+      label: '日常测试',
+    },
+  ]);
+  taskGroupModel.upsertGroup('空任务组', []);
+  taskGroupModel.setActiveGroup('常规任务');
+  const taskListLoaderView = new TaskListLoaderView();
+  const taskListLoaderController = new TaskListLoaderController(
+    taskGroupModel,
+    () => {},
+    window.electronBridge,
+    taskListLoaderView,
+  );
+  taskListLoaderController.open();
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  rendererAssert.equal(
+    document.getElementById('task-list-loader')?.style.display,
+    'flex',
+    '队列管理浮窗没有打开',
+  );
+  rendererAssert.equal(
+    document.getElementById('task-list-loader-count')?.textContent,
+    '共 2 个计划组',
+    '队列管理浮窗没有显示正确的计划组数量',
+  );
+  rendererAssert.equal(
+    document.querySelectorAll('.task-list-loader-group-card').length,
+    2,
+    '队列管理浮窗没有渲染全部计划组',
+  );
+  rendererAssert.deepStrictEqual(
+    Array.from(
+      document.querySelectorAll(
+        '#task-list-loader-preview .tg-label',
+      ),
+    ).map(element => element.textContent),
+    ['周常 8-2', '日常测试'],
+    '队列管理浮窗没有按原顺序渲染计划预览',
+  );
+  rendererAssert.deepStrictEqual(
+    Array.from(
+      document.querySelectorAll(
+        '#task-list-loader-preview .tg-source',
+      ),
+    ).map(element => element.textContent),
+    ['系统预设', '日常任务'],
+    '队列管理浮窗没有显示正确的计划来源',
+  );
+  const emptyTaskGroupButton = Array.from(
+    document.querySelectorAll('.task-list-loader-group-select'),
+  ).find(button => (
+    button.querySelector('strong')?.textContent === '空任务组'
+  ));
+  rendererAssert.ok(
+    emptyTaskGroupButton,
+    '队列管理浮窗缺少空任务组',
+  );
+  emptyTaskGroupButton.click();
+  rendererAssert.equal(
+    document.getElementById('task-list-loader-preview-title')
+      ?.textContent,
+    '计划列表预览：空任务组',
+    '切换任务组后预览标题没有更新',
+  );
+  rendererAssert.equal(
+    document.getElementById('task-list-loader-preview')
+      ?.textContent,
+    '该计划组尚未关联出征计划',
+    '空任务组没有显示空状态',
+  );
+  document.getElementById('btn-cancel-task-list-loader')?.click();
+  rendererAssert.equal(
+    document.getElementById('task-list-loader')?.style.display,
+    'none',
+    '取消队列管理后浮窗没有关闭',
+  );
+
   const loaderView = new BattlePlanLoaderView();
   const loaderController = new BattlePlanLoaderController(
     loaderView,
@@ -738,6 +847,7 @@ async function runRendererTest(root, tempDirectory) {
   };
   let failGuiAutomationMigration = false;
   let failLegacyDecisiveMigration = false;
+  let failSettingsCommit = false;
   let legacyDecisiveMigrationCalls = 0;
   const writeGuiSettings = patch => {
     Object.assign(guiSettings, patch);
@@ -774,6 +884,34 @@ async function runRendererTest(root, tempDirectory) {
         automation: structuredClone(settings),
       });
       return settings;
+    },
+    commitGuiSettings: async request => {
+      if (failSettingsCommit) {
+        throw new Error('模拟设置批量提交失败');
+      }
+      rendererFs.writeFileSync(
+        rendererPath.join(tempDirectory, 'usersettings.yaml'),
+        request.usersettingsYaml,
+        'utf8',
+      );
+      writeGuiSettings({
+        update_mode: request.updateMode,
+        backend_port: request.backendPort,
+        backend_startup_mode: request.backendStartupMode,
+        backend_repo_path: request.backendRepoPath ?? '',
+        ocr_gpu_mode: request.ocrGpuMode,
+        cuda_path: request.cudaPath ?? '',
+        save_backend_screenshots: request.saveBackendScreenshots,
+        python_path: request.pythonPath ?? '',
+        default_window_width: request.windowPreferences.defaultWidth,
+        default_window_height: request.windowPreferences.defaultHeight,
+        remember_window_bounds: request.windowPreferences.rememberBounds,
+        automation: structuredClone(request.automation),
+      });
+      return {
+        automation: structuredClone(request.automation),
+        windowPreferences: structuredClone(request.windowPreferences),
+      };
     },
     migrateLegacyDecisiveAutomation: async settings => {
       legacyDecisiveMigrationCalls += 1;
@@ -986,7 +1124,82 @@ async function runRendererTest(root, tempDirectory) {
     '损坏计划标识只能安全回退到默认计划',
   );
 
+  const runWithAutoClosedAlert = async action => {
+    const notices = [];
+    const timer = window.setInterval(() => {
+      const overlay = document.getElementById('generic-prompt');
+      if (!overlay || overlay.style.display === 'none') return;
+      const title = document.getElementById(
+        'generic-prompt-title',
+      )?.textContent ?? '';
+      const message = document.getElementById(
+        'generic-prompt-message',
+      )?.textContent ?? '';
+      if (!title) return;
+      notices.push({ title, message });
+      document.getElementById('generic-prompt-ok')?.click();
+    }, 5);
+    try {
+      await action();
+    } finally {
+      window.clearInterval(timer);
+    }
+    return notices;
+  };
+
   const controller = new ConfigController(host);
+  const yamlBeforeFailedCommit = rendererFs.readFileSync(
+    rendererPath.join(tempDirectory, 'usersettings.yaml'),
+    'utf8',
+  );
+  const guiBeforeFailedCommit = rendererFs.readFileSync(
+    rendererPath.join(tempDirectory, 'gui_settings.json'),
+    'utf8',
+  );
+  const modelBeforeFailedCommit = model.toYaml();
+  const localStorageBeforeFailedCommit = {
+    themeMode: localStorage.getItem('themeMode'),
+    accentColor: localStorage.getItem('accentColor'),
+    debugMode: localStorage.getItem('debugMode'),
+    updateMode: localStorage.getItem('updateMode'),
+  };
+  failSettingsCommit = true;
+  const failedCommitNotices = await runWithAutoClosedAlert(
+    () => controller.saveConfig(),
+  );
+  failSettingsCommit = false;
+  rendererAssert.match(
+    failedCommitNotices[0]?.message ?? '',
+    /模拟设置批量提交失败/,
+  );
+  rendererAssert.equal(
+    rendererFs.readFileSync(
+      rendererPath.join(tempDirectory, 'usersettings.yaml'),
+      'utf8',
+    ),
+    yamlBeforeFailedCommit,
+    '批量提交失败不得改写 usersettings.yaml',
+  );
+  rendererAssert.equal(
+    rendererFs.readFileSync(
+      rendererPath.join(tempDirectory, 'gui_settings.json'),
+      'utf8',
+    ),
+    guiBeforeFailedCommit,
+    '批量提交失败不得改写 gui_settings.json',
+  );
+  rendererAssert.equal(
+    model.toYaml(),
+    modelBeforeFailedCommit,
+    '批量提交失败不得修改 ConfigModel',
+  );
+  rendererAssert.deepStrictEqual({
+    themeMode: localStorage.getItem('themeMode'),
+    accentColor: localStorage.getItem('accentColor'),
+    debugMode: localStorage.getItem('debugMode'),
+    updateMode: localStorage.getItem('updateMode'),
+  }, localStorageBeforeFailedCommit);
+
   await controller.saveConfig();
 
   const savedYaml = yaml.load(rendererFs.readFileSync(
@@ -1162,29 +1375,6 @@ async function runRendererTest(root, tempDirectory) {
     level1: ['当前主力'],
     level2: ['当前替补'],
   });
-
-  const runWithAutoClosedAlert = async action => {
-    const notices = [];
-    const timer = window.setInterval(() => {
-      const overlay = document.getElementById('generic-prompt');
-      if (!overlay || overlay.style.display === 'none') return;
-      const title = document.getElementById(
-        'generic-prompt-title',
-      )?.textContent ?? '';
-      const message = document.getElementById(
-        'generic-prompt-message',
-      )?.textContent ?? '';
-      if (!title) return;
-      notices.push({ title, message });
-      document.getElementById('generic-prompt-ok')?.click();
-    }, 5);
-    try {
-      await action();
-    } finally {
-      window.clearInterval(timer);
-    }
-    return notices;
-  };
 
   failLegacyDecisiveMigration = true;
   const failedNotices = await runWithAutoClosedAlert(

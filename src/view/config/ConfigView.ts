@@ -19,6 +19,30 @@ import {
 
 type StatusKind = 'ok' | 'error' | 'unknown';
 
+export interface ConfigViewActions {
+  onSave(): void;
+  onOpenConfigDir(): void;
+  onBrowseEmulator(): void;
+  onBrowsePython(): void;
+  onBrowseBackendRepo(): void;
+  onBrowseCuda(): void;
+  onBrowseLogRoot(): void;
+  onBrowsePlanRoot(): void;
+  onAddNormalFightTask(): void;
+  onLoadLootPlans(): void;
+  onCheckBackend(): void;
+  onValidateCuda(): void;
+  onValidatePython(): void;
+  onCheckUpdates(): void;
+  onUpdateShipLibrary(): void;
+  onConnectAdb(): void;
+  onDisconnectAdb(): void;
+  onCheckAdb(): void;
+  onResetAccent(): void;
+  onThemeModeChange(mode: string): void;
+  onAccentColorInput(color: string): void;
+}
+
 function element<T extends HTMLElement>(id: string): T {
   const target = document.getElementById(id);
   if (!target) throw new Error(`设置控件不存在: ${id}`);
@@ -139,6 +163,39 @@ export class ConfigView {
     document.querySelectorAll<HTMLSelectElement>(
       '#page-config select.input',
     ).forEach(select => this.updateSettingSelectWidth(select));
+  }
+
+  bindActions(actions: ConfigViewActions): void {
+    const bindClick = (id: string, action: () => void) => {
+      document.getElementById(id)?.addEventListener('click', action);
+    };
+    bindClick('btn-save-config', actions.onSave);
+    bindClick('btn-open-config-dir', actions.onOpenConfigDir);
+    bindClick('btn-browse-emu', actions.onBrowseEmulator);
+    bindClick('btn-browse-python', actions.onBrowsePython);
+    bindClick('btn-browse-backend-repo', actions.onBrowseBackendRepo);
+    bindClick('btn-browse-cuda', actions.onBrowseCuda);
+    bindClick('btn-browse-log-root', actions.onBrowseLogRoot);
+    bindClick('btn-browse-plan-root', actions.onBrowsePlanRoot);
+    bindClick('btn-add-normal-fight-task', actions.onAddNormalFightTask);
+    bindClick('btn-load-loot-plans', actions.onLoadLootPlans);
+    bindClick('btn-check-backend', actions.onCheckBackend);
+    bindClick('btn-validate-cuda', actions.onValidateCuda);
+    bindClick('btn-validate-python', actions.onValidatePython);
+    bindClick('btn-check-updates', actions.onCheckUpdates);
+    bindClick('btn-update-ship-library', actions.onUpdateShipLibrary);
+    bindClick('btn-connect-adb', actions.onConnectAdb);
+    bindClick('btn-disconnect-adb', actions.onDisconnectAdb);
+    bindClick('btn-check-adb', actions.onCheckAdb);
+    bindClick('btn-reset-accent', actions.onResetAccent);
+    this.themeMode.addEventListener(
+      'change',
+      () => actions.onThemeModeChange(this.themeMode.value),
+    );
+    this.accentColor.addEventListener(
+      'input',
+      () => actions.onAccentColorInput(this.accentColor.value),
+    );
   }
 
   /** 用 ViewObject 填充表单。 */
@@ -517,6 +574,52 @@ export class ConfigView {
     if (!this.updateShipLibraryBtn) return;
     this.updateShipLibraryBtn.disabled = loading;
     this.updateShipLibraryBtn.textContent = loading ? '正在更新…' : '更新舰船数据库';
+  }
+
+  setBackendCheckLoading(loading: boolean): void {
+    this.setButtonLoading('btn-check-backend', loading, '检测中…', '检测');
+  }
+
+  setAdbCheckLoading(loading: boolean): void {
+    this.setButtonLoading(
+      'btn-check-adb',
+      loading,
+      '检测中…',
+      '自动检测',
+    );
+  }
+
+  setAdbConnectionLoading(
+    action: 'connect' | 'disconnect',
+    loading: boolean,
+  ): void {
+    this.setButtonLoading(
+      action === 'connect' ? 'btn-connect-adb' : 'btn-disconnect-adb',
+      loading,
+      action === 'connect' ? '连接中…' : '断开中…',
+      action === 'connect' ? '主动连接' : '断开连接',
+    );
+  }
+
+  setUpdateCheckLoading(loading: boolean): void {
+    this.setButtonLoading(
+      'btn-check-updates',
+      loading,
+      '检查中…',
+      '立即检查',
+    );
+  }
+
+  private setButtonLoading(
+    id: string,
+    loading: boolean,
+    loadingText: string,
+    idleText: string,
+  ): void {
+    const button = document.getElementById(id) as HTMLButtonElement | null;
+    if (!button) return;
+    button.disabled = loading;
+    button.textContent = loading ? loadingText : idleText;
   }
 
   resetAccentColor(defaultColor: string): void {

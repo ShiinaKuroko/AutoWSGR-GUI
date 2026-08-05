@@ -23,11 +23,17 @@ import {
   loadGroupToQueue,
   loadSingleItemToQueue,
 } from './queueLoader';
-import { showContextMenuForItem, hideContextMenu, handleContextMenuEdit, type ContextMenuTarget, type ContextMenuHost } from './contextMenu';
 import { loadItemMetas } from './metaLoader';
 import { TaskListLoaderController } from './TaskListLoaderController';
 import { DailyTaskLoaderController } from './DailyTaskLoaderController';
 import { DailyTaskLoaderView } from '../../view/taskGroup/DailyTaskLoaderView';
+import type { PlanPreviewView } from '../../view/plan/PlanPreviewView.js';
+import {
+  createContextMenuTarget,
+  handleContextMenuEdit,
+  type ContextMenuHost,
+  type ContextMenuTarget,
+} from './contextMenu';
 
 function toTaskGroupItemViewObject(
   item: TaskGroupItem,
@@ -56,6 +62,7 @@ export class TaskGroupController {
     private readonly taskGroupView: TaskGroupView,
     private readonly templateModel: TemplateModel,
     private readonly mainView: { onDropFromTaskGroup?: (index: number) => void; onEditQueueItem?: (taskId: string, x: number, y: number) => void },
+    private readonly planView: PlanPreviewView,
     readonly host: TaskGroupHost,
   ) {
     this.taskListLoader = new TaskListLoaderController(
@@ -171,19 +178,24 @@ export class TaskGroupController {
     this.mainView.onDropFromTaskGroup = (index) => loadSingleItemToQueue(index, this.taskGroupModel, this.templateModel, this.host);
 
     this.taskGroupView.onEditItem = (index, x, y) => {
-      this.contextMenuTarget = showContextMenuForItem('taskgroup', index, x, y);
+      this.contextMenuTarget = createContextMenuTarget('taskgroup', index);
+      this.taskGroupView.showContextMenu(x, y);
     };
     this.mainView.onEditQueueItem = (taskId, x, y) => {
-      this.contextMenuTarget = showContextMenuForItem('queue', taskId, x, y);
+      this.contextMenuTarget = createContextMenuTarget('queue', taskId);
+      this.taskGroupView.showContextMenu(x, y);
     };
 
-    document.addEventListener('click', () => hideContextMenu());
-    document.getElementById('ctx-edit')?.addEventListener('click', () => {
-      handleContextMenuEdit(this.contextMenuTarget, this.taskGroupModel, this.host as ContextMenuHost);
+    this.taskGroupView.onContextMenuEdit = () => {
+      void handleContextMenuEdit(
+        this.contextMenuTarget,
+        this.taskGroupModel,
+        this.host as ContextMenuHost,
+      );
       this.contextMenuTarget = null;
-    });
+    };
 
-    document.getElementById('btn-add-to-group')?.addEventListener('click', () => {
+    this.planView.onAddCurrentPlanToGroup = () => {
       addCurrentPlanToGroup(
         this.taskGroupModel,
         () => this.host.getCurrentPlan(),
@@ -193,17 +205,16 @@ export class TaskGroupController {
         const msg = e instanceof Error ? e.message : String(e);
         void showAlert('加入任务组失败', msg);
       });
-    });
+    };
 
-    document.getElementById('btn-close-preset')?.addEventListener('click', () => this.host.closePresetDetail());
-    document.getElementById('btn-tp-add-queue')?.addEventListener('click', () => this.host.executePreset());
-    document.getElementById('btn-tp-add-group')?.addEventListener('click', () =>
-      addPresetToGroup(this.taskGroupModel, () => this.host.getCurrentPresetInfo(), () => this.render()));
-
-    document.getElementById('tp-fleet-enable-ex')?.addEventListener('change', (e) => {
-      const checked = (e.target as HTMLInputElement).checked;
-      document.getElementById('tp-fleet-grid-ex')!.style.display = checked ? '' : 'none';
-    });
+    this.planView.onClosePreset = () => this.host.closePresetDetail();
+    this.planView.onExecutePreset = () => this.host.executePreset();
+    this.planView.onAddPresetToGroup = () => addPresetToGroup(
+      this.taskGroupModel,
+      () => this.host.getCurrentPresetInfo(),
+      this.planView.collectPresetFormValues().times,
+      () => this.render(),
+    );
   }
 
   render(): void {

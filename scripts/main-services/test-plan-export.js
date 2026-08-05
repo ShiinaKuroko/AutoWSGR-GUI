@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const JSZip = require('jszip');
 const {
+  AtomicFileStore,
   fs,
   temporaryDirectory,
 } = require('./test-context');
@@ -44,6 +45,7 @@ async function testPlanExportService() {
         return userTeamDirectory;
       },
     },
+    new AtomicFileStore(),
   );
 
   assert.equal(

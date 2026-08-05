@@ -6,6 +6,10 @@ import type {
 } from '../../types/ipc.js';
 import { DailyTaskLoaderView } from '../../view/taskGroup/DailyTaskLoaderView';
 import { showAlert } from '../../view/shared/DialogHelper';
+import {
+  getTaskGroupRepository,
+  type TaskGroupRepository,
+} from '../../adapter/IpcAdapter';
 
 export interface DailyTaskLoaderActions {
   addToList(selection: DailyPlanSelection): void;
@@ -25,6 +29,8 @@ export class DailyTaskLoaderController {
   constructor(
     private readonly view: DailyTaskLoaderView,
     private readonly actions: DailyTaskLoaderActions,
+    private readonly repository: TaskGroupRepository | undefined =
+      getTaskGroupRepository(),
   ) {}
 
   bindActions(): void {
@@ -55,14 +61,13 @@ export class DailyTaskLoaderController {
   }
 
   private async refresh(): Promise<void> {
-    const bridge = window.electronBridge;
-    if (!bridge?.listDailyPlans) {
+    if (!this.repository?.listDailyPlans) {
       this.view.setStatus('请完整重启 GUI 后再操作');
       return;
     }
     this.view.setStatus('正在读取日常任务...');
     try {
-      const result = await bridge.listDailyPlans();
+      const result = await this.repository.listDailyPlans();
       this.plans = result.plans;
       this.plans.forEach(plan => this.draft(plan));
       const visible = this.visiblePlans();

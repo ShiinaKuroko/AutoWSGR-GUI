@@ -16,6 +16,7 @@ import {
   UserDataMigrationService,
   type LegacyPlanReferenceTarget,
 } from './UserDataMigrationService';
+import { MigrationStateStore } from './MigrationStateStore';
 
 /** v7 将演习、战役和决战从普通出征计划迁移到独立日常目录。 */
 const LEGACY_PLAN_MIGRATION_VERSION = 7;
@@ -73,6 +74,7 @@ export class LegacyPlanMigration<TTeam> {
     private readonly appPaths: AppPaths,
     private readonly atomicFiles: AtomicFileStore,
     private readonly userDataMigration: UserDataMigrationService,
+    private readonly migrationState: MigrationStateStore,
     private readonly dependencies: LegacyPlanMigrationDependencies<TTeam>,
   ) {}
 
@@ -85,7 +87,7 @@ export class LegacyPlanMigration<TTeam> {
     const detected = legacyDetected || misplacedDailyPlans.length > 0;
     const summary = emptyLegacyMigrationSummary(detected);
     if (
-      !this.userDataMigration.isStageComplete(
+      !this.migrationState.isStageComplete(
         PRESET_INVENTORY_MIGRATION_STAGE,
       )
     ) {
@@ -98,21 +100,21 @@ export class LegacyPlanMigration<TTeam> {
       return summary;
     }
     if (
-      this.userDataMigration.isStageComplete(
+      this.migrationState.isStageComplete(
         LEGACY_PLAN_MIGRATION_STAGE,
       )
     ) {
       return summary;
     }
     if (!detected) {
-      this.userDataMigration.completeStage(
+      this.migrationState.completeStage(
         LEGACY_PLAN_MIGRATION_STAGE,
         LEGACY_PLAN_MIGRATION_VERSION,
       );
       return summary;
     }
 
-    const state = this.userDataMigration.readState();
+    const state = this.migrationState.read();
     const completed = new Set(state.completed);
     const fileMap = new Map<string, LegacyPlanReferenceTarget>();
     const decisiveFailed = legacyDetected
@@ -142,17 +144,9 @@ export class LegacyPlanMigration<TTeam> {
       || misplacedFailed
       || additionalFailed
     );
-    const latestState = this.userDataMigration.readState();
-    const mergedCompleted = new Set([
-      ...latestState.completed,
-      ...completed,
-    ]);
-    this.userDataMigration.writeState({
-      version: latestState.version,
-      completed: [...mergedCompleted].sort(),
-    });
+    this.migrationState.mergeCompleted(completed);
     if (!failed) {
-      this.userDataMigration.completeStage(
+      this.migrationState.completeStage(
         LEGACY_PLAN_MIGRATION_STAGE,
         LEGACY_PLAN_MIGRATION_VERSION,
       );

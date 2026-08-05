@@ -1,6 +1,6 @@
 # `src` TypeScript 模块目录
 
-当前 `src` 共有 117 个 TypeScript 文件。每个模块均有文件头职责说明；本目录由
+当前 `src` 共有 124 个 TypeScript 文件。每个模块均有文件头职责说明；本目录由
 这些说明汇总，用于快速定位功能所有者。
 
 ## 当前结构
@@ -8,11 +8,11 @@
 ```text
 src/
 ├─ adapter/     6 个：API、IPC、JSON、YAML、Storage 边界
-├─ controller/ 41 个：页面和用例编排
+├─ controller/ 42 个：页面和用例编排
 ├─ model/      23 个：领域状态、Fleet、Scheduler 和统计规则
-├─ view/       31 个：DOM 渲染、表单输入和 UI 意图
+├─ view/       35 个：DOM 渲染、表单输入和 UI 意图
 ├─ types/       7 个：API、IPC、Model、View、Fleet、Scheduler、统计类型
-├─ shared/      8 个：跨层无状态业务契约
+├─ shared/     10 个：跨层无状态业务契约
 ├─ data/           舰船静态 JSON
 └─ utils/       1 个：统一日志
 ```
@@ -28,7 +28,7 @@ src/
 | `src/adapter/StorageAdapter.ts` | 定义键值存储契约，并封装浏览器 localStorage 实现。 |
 | `src/adapter/YamlAdapter.ts` | 统一 YAML 编解码及作战方案元数据读取。 |
 
-## Controller（41）
+## Controller（42）
 
 | 文件 | 职责 |
 |---|---|
@@ -40,9 +40,10 @@ src/
 | `src/controller/app/NavigationController.ts` | 处理主页面导航、标签切换和当前页面状态。 |
 | `src/controller/app/OperationsController.ts` | 编排远征收取、奖励领取等常用自动化操作。 |
 | `src/controller/app/rendering.ts` | 把调度器和游戏状态转换为主页面 ViewObject。 |
-| `src/controller/app/SchedulerBinder.ts` | 绑定 Scheduler 回调并同步日志、进度、队列和连接状态。 |
+| `src/controller/app/ScheduledTaskLoader.ts` | 读取自动决战、出征和战利品计划并转换为 Scheduler 任务。 |
+| `src/controller/app/SchedulerBinder.ts` | 绑定 Scheduler 与 CronScheduler 回调并协调任务生命周期。 |
+| `src/controller/app/SchedulerRuntimeTracker.ts` | 跟踪运行日志派生出的进度、掉落、统计和连接状态。 |
 | `src/controller/app/SettingsController.ts` | 编排设置页的环境检测、设备连接、资料库更新和主题交互。 |
-| `src/controller/app/theme.ts` | 读取并应用主题、强调色和系统主题变化。 |
 | `src/controller/contracts.ts` | 定义跨 Controller 流程共享的最小 Host 契约，避免反向依赖主 Controller。 |
 | `src/controller/migration/MigrationConflictController.ts` | 协调迁移冲突弹窗与主进程安全文件操作。 |
 | `src/controller/plan/BattlePlanLoaderController.ts` | 管理受管作战方案选择器的加载、筛选、选择和结果返回流程。 |
@@ -102,7 +103,7 @@ src/
 | `src/model/TaskGroupModel.ts` | 持有任务组及条目状态，并负责 JSON 迁移和持久化。 |
 | `src/model/TemplateModel.ts` | 管理内置与用户模板，负责校验、CRUD 和持久化。 |
 
-## View（31）
+## View（35）
 
 | 文件 | 职责 |
 |---|---|
@@ -110,6 +111,7 @@ src/
 | `src/view/main/FleetPreviewView.ts` | 渲染当前舰队舰船、等级和损伤状态预览。 |
 | `src/view/main/LogView.ts` | 追加、筛选并滚动展示运行日志。 |
 | `src/view/main/MainView.ts` | 组合主页面状态栏、舰队、队列和日志子视图。 |
+| `src/view/main/NavigationView.ts` | 持有主导航和计划子标签的 DOM 状态并上报选择意图。 |
 | `src/view/main/StatusBar.ts` | 渲染连接、运行状态、当前任务和远征倒计时。 |
 | `src/view/main/TaskQueueView.ts` | 渲染任务队列进度并发出删除和停止操作意图。 |
 | `src/view/migration/MigrationConflictView.ts` | 渲染迁移 YAML 冲突的双列表选择弹窗并上报保留意图。 |
@@ -120,6 +122,7 @@ src/
 | `src/view/plan/FleetPlannerView.ts` | 组合舰队编辑、规则、图鉴、计划管理和编队加载视图。 |
 | `src/view/plan/FleetPresetView.ts` | 渲染方案内舰队预设并提供应用、编辑和任务创建入口。 |
 | `src/view/plan/FleetRuleView.ts` | 渲染主选、候选、舰种和等级规则编辑区。 |
+| `src/view/plan/GalleryShipCollection.ts` | 提供普通与决战舰船图库共用的搜索、筛选、排序和批量计算纯函数。 |
 | `src/view/plan/MapView.ts` | 绘制作战地图节点与连线并发出节点选择意图。 |
 | `src/view/plan/NodeEditorView.ts` | 渲染节点属性和敌舰规则编辑对话框。 |
 | `src/view/plan/PlanManagementView.ts` | 渲染本地方案列表并发出导入、导出、重命名和删除意图。 |
@@ -134,9 +137,11 @@ src/
 | `src/view/shared/ShipAutocomplete.ts` | 为舰名输入框提供搜索建议、键盘选择和补全。 |
 | `src/view/taskGroup/DailyTaskLoaderView.ts` | 渲染日常任务浮窗并上报页签、参数和提交意图。 |
 | `src/view/taskGroup/TaskGroupView.ts` | 渲染任务组和任务条目，并发出选择、排序和菜单意图。 |
+| `src/view/taskGroup/TaskListLoaderView.ts` | 渲染任务列表加载浮窗并上报分组、删除、排序和确认意图。 |
 | `src/view/template/SelectorDialog.ts` | 渲染通用选项对话框并返回用户选择。 |
 | `src/view/template/TemplateLibraryView.ts` | 渲染模板库卡片并发出使用、编辑和删除意图。 |
 | `src/view/template/TemplateWizardView.ts` | 渲染模板创建向导、计划列表和分步表单。 |
+| `src/view/theme.ts` | 通过存储 Adapter 读取主题偏好，并应用主题、强调色和系统主题变化。 |
 
 ## Types（7）
 
@@ -150,11 +155,12 @@ src/
 | `src/types/statistics.ts` | 定义今日出征统计、战斗评级和掉落提示结构。 |
 | `src/types/view.ts` | 定义 Controller 交给各页面渲染的 ViewObject、表单值和展示状态。 |
 
-## Shared（8）
+## Shared（10）
 
 | 文件 | 职责 |
 |---|---|
 | `src/shared/decisiveAutomation.ts` | 定义自动决战的用户计划、系统预设来源和稳定标识。 |
+| `src/shared/decisivePlan.ts` | 定义 Main、Preload、Renderer 共用的决战计划设置契约和默认值。 |
 | `src/shared/fleetShipTypes.ts` | 提供 22 种规范舰种代码、标签、映射和契约校验。 |
 | `src/shared/legacyDecisiveAutomation.ts` | 定义旧决战自动化配置的无损迁移结构。 |
 | `src/shared/lootPlans.ts` | 定义刷胖次稳定计划标识、来源和旧数字索引映射。 |
@@ -162,6 +168,7 @@ src/
 | `src/shared/nativeFleetShipTypes.generated.ts` | 保存由 autowsgr_native 生成的舰种代码，供前端漂移检查。 |
 | `src/shared/shipCatalog.ts` | 加载静态舰船资料并提供舰名和国籍只读目录。 |
 | `src/shared/shipNameNormalizer.ts` | 统一舰名别名、后端标准名和搜索名转换。 |
+| `src/shared/taskPreset.ts` | 统一识别和校验 Main、Renderer 共用的独立任务预设。 |
 
 ## Utils（1）
 

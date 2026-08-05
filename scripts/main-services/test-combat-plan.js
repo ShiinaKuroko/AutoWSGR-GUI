@@ -53,6 +53,7 @@ function testCombatPlanServices() {
   const atomicFiles = new AtomicFileStore();
   const settings = new GuiSettingsStore(
     () => path.join(userData, 'gui_settings.json'),
+    atomicFiles,
   );
   const teamCodec = new TeamPlanCodec();
   const teamRepository = new TeamPlanRepository(
@@ -351,6 +352,29 @@ function testCombatPlanServices() {
   assert.equal(managedPreset.success, true);
   assert.equal(managedPreset.kind, 'preset');
   assert.equal(managedPreset.runtimePath, undefined);
+  const taskPresetCodec = new TaskPresetCodec();
+  assert.throws(
+    () => taskPresetCodec.normalize({
+      task_type: 'normal_fight',
+      plan_id: '../outside.yaml',
+    }),
+    /plan_id 不能引用受管目录外的路径/,
+  );
+  assert.throws(
+    () => taskPresetCodec.normalize({
+      task_type: 'exercise',
+      fleet_id: 5,
+    }),
+    /fleet_id 必须是 1 到 4/,
+  );
+  assert.throws(
+    () => taskPresetCodec.normalize({
+      task_type: 'campaign',
+      campaign_name: '困难航母',
+      stop_condition: 'invalid',
+    }),
+    /stop_condition 必须是对象/,
+  );
   assert.deepEqual(
     management.deleteUserCombat(importedPreset.file),
     { success: true },

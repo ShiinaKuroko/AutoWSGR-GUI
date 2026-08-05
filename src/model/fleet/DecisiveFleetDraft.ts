@@ -1,5 +1,12 @@
 /** 维护决战舰队独立草稿及决战配置转换规则。 */
-import type { DecisivePlanSettings } from '../../types/ipc.js';
+import {
+  DEFAULT_DECISIVE_PLAN_SETTINGS,
+  type DecisivePlanSettings,
+} from '../../shared/decisivePlan.js';
+
+export {
+  DEFAULT_DECISIVE_PLAN_SETTINGS,
+} from '../../shared/decisivePlan.js';
 
 export type DecisiveFleetLevel = 'level1' | 'level2';
 
@@ -7,42 +14,6 @@ export interface DecisiveFleetPosition {
   level: DecisiveFleetLevel;
   index: number;
 }
-
-export const DEFAULT_DECISIVE_PLAN_SETTINGS: DecisivePlanSettings = {
-  chapter: 6,
-  useQuickRepair: true,
-  level1: [
-    'U-47',
-    'U-1405',
-    'U-1206',
-    'U-2540',
-    'U-81',
-    'U-96',
-  ],
-  level2: [
-    'U-505',
-    '射水鱼',
-    '大青花鱼',
-    'M-296',
-    '鹦鹉螺',
-    'S-49',
-    'IIIA',
-    'K-21',
-    'U-441',
-    '潜甲',
-    '潜乙',
-    '伊-201',
-    '伊-25',
-    '鲃鱼',
-    '伊-400',
-    '激流',
-    'U-4501',
-    'U-459',
-    'U-14',
-    'U-35',
-    'K1',
-  ],
-};
 
 export function cloneDecisiveFleetDraft(
   settings: DecisivePlanSettings,

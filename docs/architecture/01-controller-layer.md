@@ -55,8 +55,10 @@ Controller。接口彼此独立，不继承公共基接口；Controller 内部�
 | `OperationsController.ts` | 远征收取和奖励领取等常用操作 |
 | `SchedulerBinder.ts` | 绑定 Scheduler/CronScheduler 回调，按稳定 `logicalId` 管理等待任务并维护今日出征统计 |
 | `rendering.ts` | 渲染分发：构建 `MainViewObject` → 调用 `MainView.render()` |
-| `theme.ts` | 主题管理：亮色/暗色/自动切换、强调色应用 |
 | `constants.ts` | 常量定义 |
+
+导航、队列按钮、快捷操作、主题和浏览器生命周期事件由 `src/view` 持有。
+Controller 只接收 View 上报的用户意图并编排用例。
 
 **SchedulerBinder Host 接口**：
 
@@ -94,15 +96,15 @@ interface StartupHost {
   appRoot: string;
   plansDir: string;
   configDir: string;
-  pendingGuiVersion: string | null;
 
   syncPaths(appRoot: string, plansDir: string, configDir: string): void;
-  initLogger(bridge: ElectronBridge): void;
+  initLogger(gateway: StartupGateway): void;
   loadConfigAndSync(): Promise<void>;
   detectAndApplyEmulator(): Promise<void>;
   showSetupWizard(): Promise<void>;
-  loadModelsAndRender(bridge: ElectronBridge): Promise<void>;
-  bindBackendLog(bridge: ElectronBridge): void;
+  loadModelsAndRender(gateway: StartupGateway): Promise<void>;
+  reviewMigrationConflicts(): Promise<void>;
+  bindBackendLog(gateway: StartupGateway): void;
   renderMain(): void;
   startHeartbeat(): void;
 }
@@ -247,5 +249,8 @@ graph TD
 
 - **Model 层**：Controller 持有 Model 实例引用，通过 Model 的公共方法读写数据
 - **View 层**：Controller 构建 ViewObject 传递给 View 渲染，View 通过回调将用户操作传回 Controller
-- **IPC 层**：StartupController 和 ConfigController 通过 `window.electronBridge` 调用主进程功能
+- **IPC 层**：Adapter 独占 `window.electronBridge`；Controller 仅注入 `StartupGateway`、`ConfigurationGateway` 等窄能力
 - **调度系统**：SchedulerBinder 封装 Scheduler/CronScheduler 的回调绑定；各子控制器通过 Host 的 `scheduler` 属性添加任务
+
+`npm run test:controller-boundaries` 会扫描全部 Controller，禁止 DOM 全局、DOM
+实现类型、浏览器事件所有权和直接 `window.electronBridge` 访问重新进入该层。

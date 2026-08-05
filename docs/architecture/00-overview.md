@@ -24,7 +24,7 @@ graph TB
     Root["组合根<br/>main.ts"]
     IPC["IPC Adapter<br/>ipc/*.ts · preload.ts"]
     Service["用例与领域服务<br/>services/*.ts"]
-    PyEnv["Python 环境管理<br/>pythonEnv/ (12 个模块)"]
+    PyEnv["Python 环境管理<br/>pythonEnv/"]
     Backend["后端进程管理<br/>services/BackendService.ts"]
     Emulator["模拟器检测<br/>emulatorDetect.ts"]
   end
@@ -84,11 +84,12 @@ AutoWSGR-GUI/
 │   ├── services/               # 用例、领域和基础设施服务
 │   │   ├── AppPaths.ts · SafePathService.ts · SecureFileService.ts
 │   │   ├── AtomicFileStore.ts · GuiSettingsStore.ts
-│   │   ├── WindowService.ts · UserDataMigrationService.ts
+│   │   ├── WindowService.ts · SingleInstanceService.ts
+│   │   ├── MigrationStateStore.ts · UserDataMigrationService.ts
 │   │   ├── TeamPlanCodec.ts · TeamPlanRepository.ts · TeamPlanService.ts
 │   │   ├── CombatPlanCodec.ts · CombatPlanRepository.ts
 │   │   ├── RuntimePlanService.ts · PlanManagementService.ts
-│   │   ├── DailyPlanService.ts · TaskPresetCodec.ts
+│   │   ├── DailyPlanService.ts
 │   │   ├── ShipLibraryService.ts · ShipLibraryUpdater.ts
 │   │   ├── AdbService.ts · CudaEnvironmentService.ts
 │   │   ├── GuiConfigurationService.ts · PythonEnvironmentService.ts
@@ -110,7 +111,7 @@ AutoWSGR-GUI/
 │       └── index.ts            # 聚合导出
 ├── src/                        # 渲染进程 (MVC)
 │   ├── controller/             # 控制器（6 个子目录）
-│   │   ├── app/                # 应用控制器：AppController · ConfigController · SchedulerBinder · AutomaticDecisiveTask
+│   │   ├── app/                # 应用控制器：AppController · SchedulerBinder · SchedulerRuntimeTracker · ScheduledTaskLoader
 │   │   ├── startup/            # 启动流程：StartupController · connection · envAndUpdates
 │   │   ├── plan/               # 方案控制器：PlanController · BattlePlanLoaderController · FleetPlannerController · DecisivePlanController
 │   │   ├── taskGroup/          # 任务组：TaskGroupController · DailyTaskLoaderController · queueLoader
@@ -143,7 +144,7 @@ AutoWSGR-GUI/
 │   │   ├── view.ts             # 页面 ViewObject 和表单值
 │   │   ├── scheduler.ts        # 调度器公共类型
 │   │   └── statistics.ts       # 今日出征统计类型
-│   ├── shared/                 # 决战、胖次和舰种等跨层稳定契约
+│   ├── shared/                 # 决战、任务预设、胖次和舰种等跨层稳定契约
 │   ├── data/                   # 舰船静态 JSON；运行时规则位于 model/fleet
 │   └── utils/                  # 工具类（Logger）
 ├── resource/                   # 只读资源
@@ -159,6 +160,7 @@ AutoWSGR-GUI/
 │   └── images/                 # 图片资源
 ├── templates/                  # 用户自定义模板（历史兼容来源）
 ├── scripts/                    # 构建脚本
+├── tools/                      # 独立开发者工具；仅明确白名单文件进入安装包
 ├── build/                      # electron-builder 配置
 ├── usersettings.yaml           # 历史兼容来源，运行时写入 userData
 ├── gui_settings.json           # 历史兼容来源，运行时写入 userData
@@ -168,13 +170,13 @@ AutoWSGR-GUI/
 
 用户可变计划、舰队、日常计划、设置和迁移状态写入 Electron `userData`：
 `user_battle_plans/`、`user_team_plans/`、`user_daily_plans/`、`gui_settings.json` 和
-`.migration-state.json`。安装目录和 `resource/` 只读；v5 迁移会合并当前
+`.migration-state.json`。迁移账本由 `MigrationStateStore` 独占读写。安装目录和
+`resource/` 只读；v5 迁移会合并当前
 安装目录的旧设置、任务组和模板，递归识别有效计划 YAML，并按新规范重命名
 后纳入 GUI 管理。不同内容的同名配置保存为“（旧版）”副本，源文件始终保留。
-当前迁移状态版本为 v6：在 v5 计划迁移完成项之上，继续升级系统预设库存、
-旧系统计划引用和胖次稳定计划标识。只有 v6 操作全部成功才写入版本 6；失败项
-在下次启动重试。本次存在实际迁移项时，主窗口创建后会显示成功、失败数量和
-失败文件说明。
+v6 继续升级系统预设库存、旧系统计划引用和胖次稳定计划标识，v7 再分类迁移
+旧计划。每一阶段只有全部成功才写入独立完成键并推进版本；失败项在下次启动
+重试。本次存在实际迁移项时，主窗口创建后会显示成功、失败数量和失败文件说明。
 
 ### 主进程依赖方向
 
@@ -190,8 +192,10 @@ Codec / Repository
 AppPaths / SafePathService / AtomicFileStore
 ```
 
-`main.ts` 不包含 IPC 业务分支，只创建一次实例并保持原启动顺序。可变状态有
-唯一所有者：后端子进程在 `BackendService`，资料库更新互斥在
+`main.ts` 不包含 IPC 业务分支，并在迁移旧配置前通过
+`SingleInstanceService` 获取 Electron 单实例锁。重复启动的进程立即退出并通知
+主实例恢复、显示和聚焦已有窗口，不会再次执行配置迁移、环境检查或 pip 安装。
+可变状态有唯一所有者：后端子进程在 `BackendService`，资料库更新互斥在
 `ShipLibraryUpdater`，运行时计划序号在 `RuntimePlanService`，Python 发现缓存
 在 `pythonEnv/context.ts`。配置服务每次读取唯一的 `gui_settings.json`，不建立
 第二份内存配置。
@@ -337,5 +341,5 @@ CUDA 检测和后端启动复用同一环境描述。通过 `.env_ready` 标记�
 | [后端通信](06-backend-communication.md) | IPC Bridge · ApiClient · REST API · WebSocket 事件 |
 | [环境管理](07-environment-management.md) | Python 发现/安装 (pythonEnv/) · 模拟器检测 · 后端生命周期 |
 | [开发环境搭建](08-dev-setup.md) | 依赖安装 · 开发/构建/打包命令 · SCSS 架构 · 调试技巧 |
-| [`src` TypeScript 模块目录](09-src-typescript-catalog.md) | 当前 107 个 TS 文件和逐文件职责 |
+| [`src` TypeScript 模块目录](09-src-typescript-catalog.md) | 当前 `src` 模块和逐文件职责；数量以该文档为准 |
 | [当前运行时边界 ADR](10-runtime-boundaries-adr.md) | 存储 · IPC 权限 · 迁移 · 调度身份 · 更新安装决策 |

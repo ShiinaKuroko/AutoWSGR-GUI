@@ -1,397 +1,189 @@
-# AutoWSGR-GUI Agent 项目约束
+# AutoWSGR-GUI Agent 约束
 
-本文件是所有 AI 编码 Agent 进入本仓库时的统一入口。它负责规定阅读顺序和执行协议，不替代详细规范，也不得削弱详细规范中的任何要求。
+本文件是所有人工辅助 Agent、自动化 Agent、代码生成/审查工具和 Issue 分析工具的统一入口。它规定加载顺序和项目特有约束；不得替代、改写或削弱权威规范。
 
-适用范围包括人工辅助 Agent、自动化 Agent、代码生成工具、代码审查工具和 Issue 分析工具。
+## 1. 接入协议
 
-## 0. 首次接入协议
+开始分析、写入文件或执行可能改变仓库状态的命令前，必须：
 
-开始分析、修改文件或执行可能改变仓库状态的命令前，Agent 必须：
+1. 执行 `git status --short --branch`，确认分支、worktree 和未提交修改。
+2. 完整读取 `docs/engineering-standards.md`，以及 `.editorconfig`、`.gitattributes`、`tsconfig.json`、`package.json` 和 `CONTRIBUTING.md`。
+3. 按任务范围读取第 3 节的架构文档和现有测试。
+4. 搜索已有实现、同领域规则、历史 workaround 和相关数据契约。
+5. 修改前明确行为目标/非目标、状态所有者、受影响架构层、当前止损等级和验证方式。
 
-1. 执行 `git status --short --branch`，确认当前分支、worktree 和未提交修改。
-2. 完整读取 `docs/engineering-standards.md`，不得只读取摘要、标题或局部章节。
-3. 读取 `.editorconfig`、`.gitattributes`、`tsconfig.json` 和 `package.json`。
-4. 读取 `CONTRIBUTING.md`。
-5. 根据任务影响范围，读取第 2 节列出的相关架构文档和现有测试。
-6. 搜索现有实现、相同领域规则、历史 workaround 和相关数据契约。
-7. 在修改前明确行为目标、非目标、状态所有者、受影响架构层和验证方式。
+无法读取强制规范，或无法确认工作树是否含有他人修改时，必须停止写入并报告阻塞原因。
 
-如果无法读取强制规范，或者无法确认当前工作树是否包含他人修改，Agent 必须停止写入并报告阻塞原因。
+## 2. 权威规则与不可削弱要求
 
-## 1. 强制性规则
+### 2.1 权威顺序
 
-### 1.1 完整保留原则
+冲突按以下顺序处理：
 
-`docs/engineering-standards.md` 是强制工程规则的唯一正文来源，其中全部规则均原样生效。
+1. `package.json`、`tsconfig.json`、`.editorconfig`、`.gitattributes` 等可执行配置；
+2. `docs/engineering-standards.md`；
+3. `docs/architecture/` 当前架构文档；
+4. `CONTRIBUTING.md`；
+5. `docs/teaching/` 历史教学。
 
-- `必须 / 不得（MUST / MUST NOT）` 是合并门槛。
-- `应当 / 不应（SHOULD / SHOULD NOT）` 默认必须遵守；偏离时必须在 PR 中说明理由。
-- 本文件中的概述不能替代原文。
-- Agent 不得通过摘要、改写、选择性引用或工具限制忽略原文中的任何规则。
-- 修改强制规范时，必须保留原有规则的完整语义；删除、降级或豁免必须经过维护者书面批准。
+本文件和工具入口文件只负责加载规则，不能覆盖上述来源。工程规范中的 `MUST/MUST NOT` 是合并门槛，`SHOULD/SHOULD NOT` 默认必须遵守，偏离须在 PR 说明理由。修改强制规范须保留完整语义；删除、降级或豁免须经维护者书面批准。
 
-### 1.2 权威顺序
+### 2.2 必须完整遵守
 
-发生冲突时，严格按照以下顺序处理：
+必须执行 `docs/engineering-standards.md` 全部章节，尤其是：文档权威顺序和技术债务、正确性证据、单一状态所有者、根因修复、最小充分实现与反堆积门禁、可回滚行为单元、MVC + ViewObject 边界、公共数据契约和迁移、用户目录/原子写入/文件 IPC 安全、Python 环境与进程树、Patch 止损及 L0-L4、第三次修复门槛、干净基线重写、AI Agent 协议、PR/提交/规模审查、构建和确定性验证、临时 containment 例外、合并审查清单。
 
-1. `package.json`、`tsconfig.json`、`.editorconfig`、`.gitattributes` 等可执行配置。
-2. `docs/engineering-standards.md`。
-3. `docs/architecture/` 中描述当前系统结构的文档。
-4. `CONTRIBUTING.md`。
-5. `docs/teaching/` 中的历史重构教学。
+不可弱化的核心检查：
 
-`AGENTS.md` 和各工具入口文件只负责加载上述规则，不形成更高优先级，也不能覆盖它们。
-
-### 1.3 强制规则范围
-
-Agent 必须完整执行 `docs/engineering-standards.md` 的全部章节，包括但不限于：
-
-1. 文档权威顺序和现有技术债务处理。
-2. 正确性证据、单一状态所有者、根因修复和可回滚行为单元。
-3. MVC + ViewObject 架构边界，以及 View、Controller、Model、Types、Electron 和 Python 后端职责。
-4. 公共数据契约、版本化迁移、用户目录、原子写入和 Electron 文件安全。
-5. Python 环境一致性、后端进程树和更新生命周期。
-6. Patch 失败计数、止损信号、L0-L4 升级和第三次修复门槛。
-7. 干净基线重写、行为契约、旧代码复用清单和垂直切片。
-8. AI Agent 修改前、修改中、强制暂停和交付记录要求。
-9. PR 范围、提交粒度、Conventional Commits 和规模审查。
-10. 构建、确定性验证、测试原则和文档同步。
-11. 临时 containment 的例外条件、批准和移除要求。
-12. 合并前审查清单。
-
-### 1.4 不得弱化的核心约束
-
-- 每份可变数据只能有一个权威所有者；不得用标志、影子集合或重复缓存掩盖所有权问题。
-- 标准数据流是 `Model -> Controller -> ViewObject -> View`，用户意图由 View 返回 Controller。
-- View 不得直接调用 Model、ApiClient、文件 IPC 或持久化能力。
-- Controller 不得成为第二个 Model，也不得承载 parser、路径安全和环境发现等基础设施实现。
-- Model 不得依赖具体 View、DOM、Electron 或 Node 文件系统实现。
-- ViewObject、领域模型、API DTO 和 IPC DTO 必须区分；不得使用 `any` 或类型断言逃避契约设计。
+- 每份可变数据只有一个权威所有者；不得用标志、影子集合或重复缓存掩盖所有权。
+- 数据流为 `Model -> Controller -> ViewObject -> View`，用户意图由 View 返回 Controller。
+- View 不得直接调用 Model、ApiClient、文件 IPC 或持久化；Controller 不得成为第二个 Model 或实现 parser、路径安全、环境发现；Model 不得依赖具体 View、DOM、Electron 或 Node 文件系统。
+- ViewObject、领域模型、API DTO、IPC DTO 必须区分；不得用 `any` 或类型断言逃避契约。
 - `electron/main.ts` 只负责生命周期、IPC 注册、模块初始化和依赖注入。
-- GUI 只能依赖后端公开且版本化的接口；跨仓数据结构必须有契约测试或固定 fixture。
-- 已发布的数据格式、目录、模板 ID、任务索引和默认行为属于兼容契约。
-- 安装资源只读，用户数据写入系统用户目录；文件替换失败必须保留旧文件。
+- GUI 只能依赖后端公开、版本化接口；跨仓结构必须有契约测试或固定 fixture。
+- 已发布格式、目录、模板 ID、任务索引和默认行为属于兼容契约；安装资源只读，用户数据写入系统用户目录，原子替换失败须保留旧文件。
 - renderer 不得通过通用 IPC 操作任意绝对路径；路径必须 canonicalize 并检查 containment。
-- Bug 修复必须提供修复前失败、修复后通过的可复现证据。
-- 已失败的 workaround 必须删除，不得在外围继续叠加 guard、retry、delay 或 fallback。
-- 达到止损条件时必须暂停，Agent 不得自行批准 L2 以上继续实施。
+- Bug 修复须有修复前失败、修复后通过的可复现证据；已失败 workaround 必须删除，不得外围叠加 guard、retry、delay 或 fallback。
+- 达到止损条件必须暂停；Agent 不得自行批准 L2 以上工作继续实施。
 
-### 1.5 最低验证
+### 2.3 最低验证
 
-- TypeScript 或 SCSS 变更至少执行 `npm run build`。
-- 打包、安装资源或发布流程变更应执行 `npm run pack`，无法执行时必须说明原因。
-- 行为修改必须提供额外的确定性验证，不能只以 build、lint、截图或一次手工运行作为完成证据。
-- Bug 修复测试必须证明旧实现失败、新实现通过。
-- 修改架构、目录、命令、数据格式、后端契约或发布流程时，必须同步更新对应文档。
+- TypeScript/SCSS 变更至少执行 `npm run build`。
+- 打包、安装资源或发布流程变更应执行 `npm run pack`；无法执行须说明原因。
+- 行为变更还须有确定性验证，不能只依赖 build、lint、截图或一次手工运行。
+- 已有专项测试必须按行为风险选择；涉及 Electron、端口、`userData`、临时目录、进程或共享缓存时默认串行执行，除非已证明资源隔离。
+- Bug 测试须证明旧实现失败、新实现通过。
+- 架构、目录、命令、数据格式、后端契约或发布流程变更须同步文档。
 
-## 2. 约束性规则
+## 3. 架构文档路由
 
-约束性规则用于保持现有结构和团队协作方式。相关文件必须保留；偏离时必须说明理由并同步文档。
-
-### 2.1 贡献和代码风格
-
-完整规则见 `CONTRIBUTING.md`：
-
-- 使用 UTF-8、LF 和文件末尾换行。
-- TypeScript、SCSS、JSON、Markdown 和 YAML 默认使用 2 空格缩进；Python 使用 4 空格。
-- TypeScript 使用 strict 模式，新代码不得利用 `noImplicitAny: false` 引入隐式 `any`。
-- 类文件使用 PascalCase，工具和类型文件使用 camelCase。
-- 样式使用 SCSS，并遵循现有 BEM 命名和目录结构。
-- 分支使用 `feat/`、`fix/`、`chore/` 或 `docs/` 等语义前缀。
-- Commit 使用 Conventional Commits，一个 commit 对应一个逻辑变更。
-
-### 2.2 架构文档路由
-
-任务开始时至少读取对应领域文档。跨领域任务必须读取所有受影响文档。
+任务开始至少读取受影响领域文档；跨领域任务读取全部相关文档。实现与文档不一致时，修正实现或在同一变更更新文档，不得无说明地二选一。
 
 | 影响范围 | 必读文档 |
 |---|---|
-| 全局分层、目录、启动流程、Types | `docs/architecture/00-overview.md` |
-| Controller、Host、依赖注入、启动编排 | `docs/architecture/01-controller-layer.md` |
+| 分层、目录、启动、Types | `docs/architecture/00-overview.md` |
+| Controller、Host、依赖注入、启动 | `docs/architecture/01-controller-layer.md` |
 | Scheduler、TaskQueue、定时任务、修理 | `docs/architecture/02-task-scheduling.md` |
-| 用户配置、主题、设置持久化 | `docs/architecture/03-configuration.md` |
-| 计划、地图、节点和舰队预设 | `docs/architecture/04-battle-plan.md` |
-| 模板、任务组和队列加载 | `docs/architecture/05-template-and-taskgroup.md` |
-| IPC、HTTP、WebSocket 和后端契约 | `docs/architecture/06-backend-communication.md` |
-| Python、模拟器、后端和更新生命周期 | `docs/architecture/07-environment-management.md` |
-| 环境搭建、构建、打包、SCSS | `docs/architecture/08-dev-setup.md` |
+| 配置、主题、设置持久化 | `docs/architecture/03-configuration.md` |
+| 计划、地图、节点、舰队预设 | `docs/architecture/04-battle-plan.md` |
+| 模板、任务组、队列加载 | `docs/architecture/05-template-and-taskgroup.md` |
+| IPC、HTTP、WebSocket、后端契约 | `docs/architecture/06-backend-communication.md` |
+| Python、模拟器、后端、更新生命周期 | `docs/architecture/07-environment-management.md` |
+| 环境、构建、打包、SCSS | `docs/architecture/08-dev-setup.md` |
 
-如果实现与架构文档不一致，必须修正实现或在同一变更中更新文档，不得无说明地选择其中一套。
+`docs/teaching/` 只用于理解历史动机；不得把历史文件数、行数或快照当作当前事实，也不得覆盖强制规范或架构文档。修改应优先在现有职责边界内形成最小行为闭环；不得混入无关重构、格式化、生成文件或资源。跨 Model、Controller、Types、View 的自然功能可形成垂直切片，但必须保持依赖方向；历史违规只处理与当前目标和风险相称的范围，并在 PR 披露剩余债务。
 
-### 2.3 教学文档
+## 4. 风格、工具与执行记录
 
-`docs/teaching/` 用于理解历史设计动机，不是合并规范。可以从中复用设计思路，但：
+- 使用 UTF-8、LF、文件末尾换行；TS/SCSS/JSON/Markdown/YAML 2 空格，Python 4 空格。
+- TypeScript 使用 strict；新代码不得借 `noImplicitAny: false` 引入隐式 `any`。类文件 PascalCase，工具/类型文件 camelCase；样式用 SCSS，遵循现有 BEM 和目录结构。
+- 分支使用 `feat/`、`fix/`、`chore/`、`docs/` 等语义前缀；Commit 使用 Conventional Commits，一个 commit 一个逻辑变更。
+- 不得手工修改构建生成物，除非仓库明确要求提交；lockfile 变更须由明确依赖变更产生。大型资源、fixture、图片和机械生成内容须与手写行为代码分别统计说明。
+- 不得提交密钥、Token、用户配置、日志、运行时数据或本地环境文件；不得关闭 SSL、路径、类型、Schema、测试或权限校验来绕过问题。
+- 证据不足时区分事实与推测；Issue 分析须给出实现位置、行为链路、最小修复和验证步骤。数据迁移、文件 IPC、更新器、发布或跨仓契约须优先验证失败和回滚路径。
 
-- 不得把历史文件数、行数或代码快照当作当前事实。
-- 不得用教学示例覆盖强制规范或当前架构文档。
-- 涉及拆分类、Host 接口、ViewObject、Electron、View、Model 或 Types 时，可以读取对应教学章节辅助理解。
+### 4.1 最小充分实现原则
 
-### 2.4 变更范围
+在不降低正确性、安全性、可维护性、类型约束和验证完整性的前提下，Agent 必须用满足目标所需的最少代码完成任务：
 
-- 优先在现有模块和职责边界内完成最小行为闭环。
-- 不得把无关重构、格式化、生成文件或资源更新混入行为修改。
-- 同一功能自然涉及 Model、Controller、Types 和 View 时可以形成一个垂直切片，但必须保持依赖方向。
-- 发现历史违规时，只处理与当前行为目标和风险相称的范围，并在 PR 中披露剩余技术债务。
+- 能通过修改现有代码实现的，不得新增重复代码、包装层、状态源或辅助模块。
+- 优先合理复用职责、输入输出、生命周期和副作用均匹配的现有模块、函数、类型、组件、测试工具和数据契约；不得为表面复用强行扩大原模块职责。
+- 遵循最小拆分原则：仅在职责独立、生命周期不同、复用价值明确或现有模块违反职责边界时拆分；不得为减少单文件行数、追求形式分层或制造抽象而拆分。
+- 不得为实现小功能顺手重构无关代码、引入无必要抽象、重复已有规则或堆积防御性分支。
+- 新增的每个函数、类型、模块、状态源、依赖和测试都必须能说明必要性；无法说明必要性的代码不得加入。
+- 实现前必须搜索现有实现和调用链，并明确可直接复用的代码、只能复用思路的代码、必须新增的主要符号及不能采用更小修改范围的原因。
+- 当最小实现与架构边界、公共契约、安全要求或可验证性冲突时，优先满足后者，并在交付记录中说明增加代码的原因。
 
-## 3. 宽泛规则中的高风险约束
+### 4.2 Agent 编码门禁
 
-本节只把现有工具说明中的高风险操作提升为通用项目约束。其他工具规则仍按其原始适用范围执行。
+Agent 必须按以下顺序工作，不能跳过“最小方案”直接堆积实现：
 
-### 3.1 Git 和工作区安全
+1. **先搜索再设计**：搜索现有调用链、同领域规则、类型、适配器、组件、测试和失败 workaround。
+2. **先写最小方案**：明确唯一行为目标、非目标、可复用代码、最少修改文件、计划新增符号及其必要性；默认方案是修改现有实现。
+3. **先做最小闭环**：只实现能证明行为的最小路径，不先搭目录、接口、Facade、Factory、Manager、Registry、EventBus、兼容层或未来扩展点。
+4. **逐项批准新增物**：每新增函数、类型、文件、依赖、状态源、缓存或错误分支，都必须说明当前调用方/测试证据、不能复用的原因和不能采用更小修改的原因。
+5. **发现堆积立即停**：出现无独立职责的 wrapper/helper、无调用方的预留代码、形式拆分、重复转换/校验/状态、或为未来扩展增加的代码时，停止继续写入并回到最小方案。
+6. **交付前删减**：检查是否能删除新增代码而不影响目标；能删除的必须删除。新增文件必须有真实调用方、独立职责或独立行为契约。
 
-- 不得覆盖、回退、删除或暂存不是当前任务产生的修改。
-- 工作树存在无关修改时，使用独立 branch 或 worktree 隔离任务。
-- 未经用户明确要求，不得执行 `git reset --hard`、`git checkout -- <path>`、强制清理或历史重写。
-- 不得使用 `git push --force`、`--no-verify` 或其他绕过保护的参数。
-- 不得使用 `git add .` 混入无关文件；必须按逻辑变更显式暂存。
-- 推送前必须检查待推送 commit 范围和工作树状态。
+以下理由不得用于增加代码：“以后可能扩展”“方便复用”“先搭起来再整理”“这样更规范”“文件太长”“以后可能会用到”。
 
-### 3.2 发布和 Tag
+修改前记录目标、非目标、工作树/隔离方式、已读规范、状态所有者/数据流、止损等级和验证计划。修改中说明是在替代旧尝试、删除 workaround 还是新增行为；出现新状态源、跨层补偿或范围扩散立即重新评估，不得用“先跑起来”保留无法解释的 fallback。交付前检查 diff 仅含任务文件，执行强制构建和风险匹配的确定性验证，更新文档，并记录命令、结果、未验证路径、失败尝试、状态源变化、回滚方式和工程规范第 12 节审查结果。
 
-- 只有用户明确要求发布时，才能修改版本、创建 Tag 或触发发布。
-- 发布前必须确认功能修改已独立提交并推送，工作树干净。
-- Release commit 只能包含版本和发布元数据，不得夹带功能代码。
-- Tag、`package.json` 版本和发布产物版本必须一致。
-- 不得修改、删除或覆盖已有远程 Tag 来掩盖发布错误。
+## 5. Git、发布与专用规则
 
-### 3.3 安全和证据
+### 5.1 工作区安全
 
-- 不得提交密钥、Token、用户配置、日志、运行时数据或本地环境文件。
-- 不得通过关闭 SSL、路径、类型、Schema、测试或权限校验绕过问题。
-- 证据不足时必须区分已验证事实与推测，不得给出确定性根因结论。
-- Issue 分析必须给出实现位置、行为链路、最小修复方案和验证步骤。
-- 涉及数据迁移、文件 IPC、更新器、发布或跨仓契约时，必须优先验证失败路径和回滚路径。
+- 不得覆盖、回退、删除或暂存非当前任务修改；有无关修改时用独立 branch/worktree 隔离。
+- 未经用户明确要求，不得 `git reset --hard`、`git checkout -- <path>`、强制清理或历史重写；不得 `git push --force`、`--no-verify` 或其他绕过保护参数。
+- 不得 `git add .`；按逻辑变更显式暂存。推送前检查待推送 commit 范围和工作树状态。
 
-### 3.4 生成文件、资源和依赖
+### 5.2 发布
 
-- 不得手工修改可由构建生成的输出，除非仓库明确要求提交该输出。
-- Lockfile 变更必须由明确的依赖变更产生，并与依赖修改一起说明。
-- 大型资源、fixture、图片和机械生成内容必须与手写行为代码分别统计和说明。
-- 安装资源和内置资源的兼容更新必须有 manifest、版本规则或迁移策略。
+只有用户明确要求发布时，才能改版本、创建 Tag 或触发发布。发布前须确认功能修改已独立提交并推送且工作树干净；Release commit 只含版本/发布元数据；Tag、`package.json` 版本和产物版本一致；不得修改、删除或覆盖已有远程 Tag。
 
-### 3.5 专用工具规则的边界
+### 5.3 专用入口边界
 
-- `.github/agents/code-length-audit.agent.md` 仅在代码长度审计任务中生效，不自动成为所有 PR 的行数合并门槛。
-- `.github/skills/commit-and-release/SKILL.md` 在提交、推送和发布任务中生效。
-- `.claude/skills/generic-issue-log-analysis/SKILL.md` 在 Issue 和日志分析任务中生效。
-- `.github/workflows/` 定义实际自动化行为；修改 workflow 前必须说明权限、Secret、触发条件和发布影响。
+- `.github/agents/code-length-audit.agent.md` 只在代码长度审计中生效，不是所有 PR 的行数门槛。
+- `.github/skills/commit-and-release/SKILL.md` 仅在提交、推送、发布任务中生效。
+- `.claude/skills/generic-issue-log-analysis/SKILL.md` 仅在 Issue/日志分析中生效。
+- `.github/workflows/` 定义实际自动化；修改 workflow 前说明权限、Secret、触发条件和发布影响。
 
-## 4. Agent 执行协议
+### 5.4 ShiinaKuroko Fork
 
-### 4.1 修改前
+- GUI：`C:\ShiinaKuroko\01.Project\AutoWSGR-GUI`，远端 `https://github.com/ShiinaKuroko/AutoWSGR-GUI.git`；后端：`C:\ShiinaKuroko\01.Project\AutoWSGR`，远端 `https://github.com/ShiinaKuroko/AutoWSGR.git`；两者发布分支均为 `ShiinaKuroko`。
+- GitHub fetch/pull/push 前读取 `HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings` 的 `ProxyServer`。当前代理为 `127.0.0.1:7897`；端口监听时优先临时使用 `git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 ...`，不得改全局 Git 配置；未启用时可直连，并按实际错误区分网络、认证和远端冲突。
+- `main` 只同步 `OpenWSGR/AutoWSGR-GUI:main`，不得在其直接开发、提交或推送功能。`ShiinaKuroko` 是唯一允许 `git push origin ShiinaKuroko` 的本地发布入口；独立分支/worktree 只编码、测试、审查，完成后合并、cherry-pick 或 rebase 到本地发布分支。不得推送 `origin <local-feature-branch>`，除非维护者明确授权。
+- 每次更新发布分支前创建 `backup/YYYYMMDD-<short-sha>`：更新前稳定提交和更新后新版本各备份，最多保留两个；备份不得移动、覆盖或追加，只删除最旧备份，不删除当前/上一版本备份。
+- 推送前确认当前为本地 `ShiinaKuroko`，检查 `git status --short --branch`、`git diff --check`、`git log --oneline -5`、`git log origin/ShiinaKuroko..ShiinaKuroko`；先备份，再以 `git push --force-with-lease` 更新，禁止无条件 `--force`。删除远程分支前列出分支、提交和原因；不得删除 `main`、`ShiinaKuroko` 或未授权分支。
 
-Agent 必须报告或在工作记录中明确：
+## 6. GUI 2.0 合并边界
 
-- 行为目标与非目标；
-- 当前工作树和隔离方式；
-- 读取过的强制规范和相关架构文档；
-- 状态所有者和数据流；
-- 当前 Patch 止损等级；
-- 计划执行的验证。
+### 6.1 合并前负责范围
 
-### 4.2 修改中
+目标是让 GUI 2.0 现有功能安全、兼容、可合并，不实现自动强化。优先修复：
 
-- 声明当前修改是在替代旧尝试、删除旧 workaround，还是新增独立行为。
-- 一旦出现新的状态源、跨层补偿或意外扩大范围，立即重新评估止损等级。
-- 不得以“先跑起来”为由保留无法解释的 fallback。
+- 主进程文件 IPC 路径 containment，禁止穿越和受管目录外访问；AtomicFileStore 失败保留旧文件。
+- 外部 Python 安装目录与启动目录统一。
+- 兼容 v1.4.1 和当前稳定版计划格式，不要求手工重写；完成旧 path-form 任务组迁移，失败保留原数据并给出明确错误。
+- 设置 YAML round-trip 保留未知字段，尤其未知嵌套字段。
+- candidate-only：无顶层 `name` 时所有 `candidates` 平等，不得将第一个提升为 primary。
 
-### 4.3 交付前
+必须保持：舰队方案与出征计划分离；编辑态计划可引用独立舰队 YAML；运行前由 `RuntimePlanService` 展开为后端可执行 YAML；系统计划与用户计划读写边界明确；`SchedulerRepairPolicy`、`SchedulerTaskPolicy`、`RepairManager`、`TaskQueue.switchTaskPreset()` 职责清晰；编队轮换只用统一 Scheduler，不得新增并行状态机。
 
-- 检查 diff，只保留当前任务文件。
-- 执行强制构建和与行为风险匹配的确定性验证。
-- 更新受影响文档。
-- 记录执行命令、测试结果、未验证路径、失败尝试、状态源变化和回滚方式。
-- 对照 `docs/engineering-standards.md` 第 12 节完成审查清单。
-
-## 5. 维护本文件
-
-- 强制规范只在 `docs/engineering-standards.md` 维护正文，本文件通过引用完整继承。
-- 架构变化先更新对应架构文档，再更新本文件的路由或摘要。
-- 工具入口文件只能指向本文件，不得复制整套规则。
-- 新增规则时必须明确属于强制性、约束性还是高风险宽泛规则。
-- 如果本文件与权威来源冲突，以第 1.2 节顺序为准，并在同一变更中修复冲突。
-
-## 6. ShiinaKuroko Fork 分支管理
-
-本仓库的个人 Fork 为 `https://github.com/ShiinaKuroko/AutoWSGR-GUI.git`。后续 Agent
-必须遵守以下分支职责：
-
-### 6.1 本机仓库与 GitHub 网络路径
-
-- GUI 仓库固定为 `C:\ShiinaKuroko\01.Project\AutoWSGR-GUI`，后端仓库固定为 `C:\ShiinaKuroko\01.Project\AutoWSGR`。
-- GUI 个人远端为 `https://github.com/ShiinaKuroko/AutoWSGR-GUI.git`，后端个人远端为 `https://github.com/ShiinaKuroko/AutoWSGR.git`，发布分支均为 `ShiinaKuroko`。
-- 本机开启代理时，Git CLI 不会自动继承 Windows 系统代理。执行 GitHub `fetch`、`pull` 或 `push` 前，应读取 `HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings` 的 `ProxyServer`；当前代理为 `127.0.0.1:7897`。
-- `127.0.0.1:7897` 正在监听时，GitHub 命令应优先通过临时参数使用代理，例如 `git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 push origin ShiinaKuroko`。不得为此修改全局 Git 配置。
-- 代理未启用或端口未监听时，允许使用正常直连路径；连接失败时应根据实际错误区分网络、认证和远端冲突问题。
-
-- `main` 只用于同步 `OpenWSGR/AutoWSGR-GUI:main`，禁止在该分支直接开发、提交或推送功能代码。
-- `ShiinaKuroko` 是个人 Fork 的最新开发分支，经过验证的最新 GUI 代码才允许推送到这里。
-- 本地独立分支或 worktree 只能用于编码、测试和审查，禁止直接推送到 Fork 的发布分支。
-- 本地独立分支完成后，必须将已验证提交合并、`cherry-pick` 或 rebase 整理到本地 `ShiinaKuroko` 分支；只有本地 `ShiinaKuroko` 分支允许执行 `git push origin ShiinaKuroko`。
-- 不得执行 `git push origin <local-feature-branch>` 作为发布流程；远程临时分支如确有协作需要，必须获得维护者明确授权，并不得替代 `ShiinaKuroko` 发布入口。
-- `backup/YYYYMMDD-<short-sha>` 是版本备份分支。每次更新 `ShiinaKuroko` 前创建更新前稳定提交的备份，完成更新后创建新版本备份，最多保留两个。
-- 备份分支一旦创建不得移动、覆盖或追加提交。超过两个备份时只删除最旧备份，不删除当前备份和上一版本备份。
-- 推送前必须确认当前分支为本地 `ShiinaKuroko`，并检查 `git status --short --branch`、`git diff --check`、`git log --oneline -5` 以及 `git log origin/ShiinaKuroko..ShiinaKuroko`。
-- 推送最新代码前必须先创建备份，并使用 `git push --force-with-lease` 更新 `ShiinaKuroko`，禁止无条件 `--force`。
-- 任何删除远程分支的操作都必须先列出分支、提交和原因；禁止删除 `main`、`ShiinaKuroko` 或未明确授权的分支。
-
-## 7. GUI 2.0 合并协作边界
-
-我这边已经梳理过 GUI 2.0 和当前稳定分支的差异。为了避免我们分别修改 Scheduler、配置模型和舰队语义，后续按下面的边界协作。
-
-### 你在合并前需要完成的范围
-
-你负责把 GUI 2.0 当前已经实现的功能收敛到“可合并、不会破坏已有数据”的状态，重点是现有功能和基础架构，不需要替我实现自动强化。
-
-#### 1. 先解决当前 review 中会造成数据损坏、安全问题或兼容性破坏的阻塞项
-
-- 给主进程文件 IPC 加严格的路径边界校验，禁止路径穿越和访问受管目录以外的文件。
-- 修复 AtomicFileStore：写入失败时必须保留原文件，不能出现旧文件先被删除、临时文件又未成功替换的情况。
-- 统一外部 Python 环境的依赖安装目录和实际启动目录。
-- 保持 v1.4.1 及当前稳定版计划格式兼容，不能要求用户手工重写旧计划。
-- 完成旧 path-form 任务组迁移，迁移失败时要保留原数据并给出明确错误。
-- 设置 YAML round-trip 时保留 GUI 尚不认识的字段，尤其是未知嵌套字段。
-- 修复 candidate-only 语义：槽位没有顶层 `name` 时，所有 `candidates` 都是平等备选，不能把第一个 candidate 自动提升成 primary。
-
-#### 2. 稳定 GUI 2.0 已经引入的核心契约
-
-- 舰队方案与出征计划保持分离。
-- 编辑态计划可以引用独立舰队 YAML。
-- 运行前由 `RuntimePlanService` 展开为后端可执行的完整 YAML。
-- 系统计划与用户计划有明确的读写边界。
-- `SchedulerRepairPolicy`、`SchedulerTaskPolicy`、`RepairManager`、`TaskQueue.switchTaskPreset()` 的责任边界保持清晰。
-- 编队轮换继续使用统一 Scheduler，不再增加另一套并行状态机。
-
-#### 3. 处理旧活动计划兼容性
-
-当前旧目录中有用户正在使用的活动计划，不能仅通过删除：
+旧目录中的活动计划不得靠删除以下文件并放置相似文件来宣称迁移完成：
 
 - `resource/builtin_plans/活动20260730-E1炸鱼.yaml`
 - `resource/builtin_plans/活动20260730-E5夜战.yaml`
 - `resource/builtin_plans/活动20260730-H1炸鱼.yaml`
 - `resource/builtin_plans/活动20260730-H5夜战.yaml`
 
-并在 `resource/system_battle_plans` 放几个相似文件，就认为迁移完成。
+合并前须验证旧计划可读取、执行或显式迁移；新旧行为等价；用户修改不会被静默覆盖；迁移失败保留原文件并显示可理解错误。
 
-合并前需要验证：
+### 6.2 合并验收
 
-- 旧计划仍可读取、执行或显式迁移。
-- 新旧计划行为等价。
-- 用户修改过的旧文件不会被安装、升级或迁移流程静默覆盖。
-- 无法迁移时保留原文件，并显示可理解的错误。
+须通过 `npm run build` 和 `git diff --check`，并覆盖：legacy plan 读取/迁移、candidate-only 舰队槽位、设置未知字段保留、原子写入失败恢复、文件 IPC 越界拒绝、旧任务组迁移、四个活动计划兼容性、舰队引用展开后的运行时 YAML 合法性。未接 UI 的执行入口必须接通、删除死入口或明确标记暂不支持，不得保留看似可用的无调用链路。提交应尽量按 Electron 服务、舰队 YAML、运行时计划、Scheduler 规则、UI、舰船资源拆分，至少可分别审查。
 
-#### 4. 合并前最低验收程度
+### 6.3 自动强化边界
 
-- `npm run build` 通过。
-- `git diff --check` 通过。
-- 至少覆盖以下回归测试：
-  - legacy plan 读取和迁移；
-  - candidate-only 舰队槽位；
-  - 设置 YAML 未知字段保留；
-  - 原子写入失败恢复；
-  - 文件 IPC 路径越界拒绝；
-  - 任务组旧格式迁移；
-  - 四个活动计划的兼容性；
-  - 舰队引用展开后的运行时 YAML 合法性。
-- 把 PR 中尚未接到 UI 的执行入口明确处理：要么接通，要么删除死入口，要么明确标记为暂不支持，不能保留一个看似可用但实际没有调用方的链路。
-- 最好按领域拆分提交，至少让 Electron 服务、舰队 YAML、运行时计划、Scheduler 规则、UI 和舰船资源可以分别审查。
+合并前不要求自动强化业务、后端 API/设备 lease、`intensify` 任务类型、保护舰集合、与轮换/泡澡/战斗优先级、设置 UI/最终接线、日志/重试/状态展示，或后端唯一舰船 ID（未提供时可先用舰名）。但 Scheduler task type、API 请求和设置 schema 必须预留扩展边界，不能封闭设计。
 
-### 可以在合并后交给我处理的内容
+自动强化由另一协作方负责：后端 API；全局 device lease（不得与战斗、泡澡、解装并发）；统一 Scheduler 正式任务（不得独立定时器）；强化前重新读取并保护当前编队、启用轮换预设、泡澡舰、收藏/锁定舰、强化目标舰和用户名单；素材筛选/上限/失败/重试；接入 `ApiClient`、API/ Scheduler types、`ConfigModel`、`ConfigController`、`SchedulerBinder`；真实坐标/OCR 未完成前 fail closed，不点击或消耗舰船；GUI 2.0 合并后再接最终 Scheduler 和配置架构，避免双方修改同一状态机。
 
-以下内容不要求你在 GUI 2.0 合并前完成：
+## 7. Windows 打包约束
 
-- 自动强化的业务实现。
-- 自动强化后端 API 和设备独占租约。
-- intensify Scheduler 任务类型。
-- 自动强化的保护舰集合计算。
-- 自动强化与轮换、泡澡、战斗任务之间的优先级。
-- 自动强化设置 UI 和最终 Scheduler 接线。
-- 自动强化运行日志、失败重试和任务状态展示。
-- 将后端唯一舰船 ID 引入自动强化保护规则；在后端尚未提供 ID 时先兼容舰名。
+### 7.1 winCodeSign
 
-但请预留正常的扩展边界，不要把 Scheduler task type、API 请求或设置 schema 写成无法扩展的封闭分支。
+无 Windows 开发者模式或符号链接权限时，Electron Builder 解压 `winCodeSign-2.6.0.7z` 会因 `darwin/10.12/lib/libcrypto.dylib`、`libssl.dylib` 创建失败而阻断，即使文件属于 macOS 也不能忽略。打包前检查开发者模式或当前终端权限；确认缺失后不得重复相同命令/下载。
 
-### 我这边会负责什么
+正式解决方式是启用开发者模式或使用有权限终端执行 `npm run dist`；不得把本地工具路径覆盖当正式解决。启用后用 Electron Builder 自带 `7za.exe` 和 `winCodeSign-2.6.0.7z` 做一次带 `-snld` 的解压探针，确认两个 `.dylib` 符号链接可创建后直接执行原始 `npm run dist`。PowerShell 5 的 `New-Item -ItemType SymbolicLink` 可能误报，不作为唯一前置检查。
 
-我负责自动强化以及它与稳定分支公共调度层的最终集成：
+不得用 `--config.win.signAndEditExecutable=false` 生成正式包；`ELECTRON_BUILDER_RCEDIT_PATH` 单独设置，或与 `SIGNTOOL_PATH` 同时设置，均不足以完成 NSIS 打包，不得重复尝试。失败后不得以重试、延时或运行时文件写入 fallback 掩盖问题，须先区分工具权限错误和应用持久化错误。
 
-- 后端定义并实现自动强化 API。
-- 所有强化设备操作使用全局 device lease，不能与战斗、泡澡或解装并发。
-- 自动强化只作为统一 Scheduler 的正式任务执行，不启动独立后台定时器。
-- 强化前重新读取保护集合，至少保护：
-  - 当前游戏编队；
-  - 所有启用轮换预设；
-  - 正在泡澡的舰船；
-  - 收藏或锁定舰；
-  - 强化目标舰；
-  - 用户自定义保护名单。
-- 设计素材舰筛选、上限、失败和重试规则。
-- 接入 `ApiClient`、API types、Scheduler types、`ConfigModel`、`ConfigController` 和 `SchedulerBinder`。
-- 最终处理自动强化与 GUI 2.0 合并后的公共文件冲突。
+### 7.2 单 EXE 交付
 
-### 我在 GUI 2.0 合并前会做到的程度
+用户要求“只有 EXE”时目标是 NSIS 安装程序而非 `--dir`：关闭所有 `release/win-unpacked` GUI；确认 `package.json` 与 `package-lock.json` 版本一致；用完整 `winCodeSign` 权限执行 `npm run dist`；从 `release/` 单独取出 `AutoWSGR-GUI-Setup-<version>.exe`，不得混入 `win-unpacked`、更新清单或 blockmap；检查版本、哈希、签名并实际启动安装后的 GUI。安装包、`release/` 和本地 Electron Builder 缓存不得提交。
 
-我会优先在后端和独立领域层工作，避免现在修改你的舰队编辑器、计划管理 UI 和 Scheduler 核心：
+## 8. 维护
 
-- 先稳定自动强化的 HTTP contract。
-- 接入后端全局设备租约。
-- 建立 ops 层和 UI controller 的责任边界。
-- 定义目标舰、允许的素材舰种、素材数量上限和保护名单。
-- 编写无设备单元测试和 route contract 测试。
-- 未完成真实设备坐标与 OCR 标定前，功能必须 fail closed，不能尝试点击或消耗任何舰船。
-- GUI 2.0 合并后，我再基于你的最终 Scheduler 和配置架构完成 GUI 任务接线，避免双方同时修改同一套状态机。
-
-总体原则是：你负责让 GUI 2.0 已有功能安全、兼容、可合并；我负责自动强化及合并后的公共调度集成。编队轮换核心继续以你的 GUI 2.0 实现为准，我不会另写一套。
-
-## 8. Windows 打包失败记录
-
-### 8.1 `winCodeSign` 符号链接权限
-
-在未启用 Windows 开发者模式、且终端没有创建符号链接权限时，
-Electron Builder 解压旧版 `winCodeSign-2.6.0.7z` 会失败。典型日志为：
-
-```text
-ERROR: Cannot create symbolic link : 客户端没有所需的特权。
-darwin\10.12\lib\libcrypto.dylib
-darwin\10.12\lib\libssl.dylib
-```
-
-这两个文件属于 macOS 工具，但 7-Zip 使用 `-snld` 解压整个工具包，因此
-Windows 打包仍会被阻断。开始打包前必须先检查开发者模式或当前终端的符号链接
-权限，不得在确认缺少权限后反复执行相同命令和重复下载。
-
-正式解决方式是启用 Windows 开发者模式，或使用具备创建符号链接权限的终端执行
-`npm run dist`。不要把本地工具路径覆盖当成正式解决方式。
-
-启用开发者模式后，应使用 Electron Builder 自带的 `7za.exe` 和
-`winCodeSign-2.6.0.7z` 执行一次带 `-snld` 的解压探针。PowerShell 5 的
-`New-Item -ItemType SymbolicLink` 即使在开发者模式已经开启时，也可能继续
-误报“需要管理员权限”，不能把它作为打包前置检查。确认 7-Zip 能创建两个
-`.dylib` 符号链接后，直接执行原始 `npm run dist`；不要再设置工具路径覆盖。
-
-### 8.2 已失败的规避方式
-
-- 不得使用 `--config.win.signAndEditExecutable=false` 生成正式交付包。该参数会
-  跳过 EXE 资源、版本信息和 ASAR 完整性写入，只能用于诊断，不能作为成功打包。
-- 只设置 `ELECTRON_BUILDER_RCEDIT_PATH` 不足以完成打包。EXE 资源编辑会通过，
-  但处理附带的 ADB、Python 等 EXE 时仍会查找签名工具并下载旧版
-  `winCodeSign`。
-- 同时设置 `ELECTRON_BUILDER_RCEDIT_PATH` 和 `SIGNTOOL_PATH` 仍不足以完成
-  NSIS 打包。应用 EXE 资源编辑及附带 EXE 处理会通过，但进入 NSIS 阶段前仍会
-  强制获取旧版 `winCodeSign`。不要重复尝试该双路径方案。
-- 打包失败后不得继续使用外围重试、延时或运行时文件写入 fallback 掩盖问题；
-  必须先区分打包工具权限错误和应用自身持久化错误。
-
-### 8.3 单 EXE 交付检查
-
-用户要求“只有 EXE”时，目标是 NSIS 安装程序，不是 `--dir` 目录包：
-
-1. 关闭所有从 `release/win-unpacked` 启动的 GUI 进程。
-2. 确认 `package.json` 与 `package-lock.json` 版本一致。
-3. 使用具备完整 `winCodeSign` 权限的环境执行 `npm run dist`。
-4. 从 `release/` 中单独取出
-   `AutoWSGR-GUI-Setup-<version>.exe`，交付目录不得混入
-   `win-unpacked`、更新清单或 blockmap。
-5. 检查安装程序版本、文件哈希和签名状态，并实际启动安装后的 GUI。
-
-生成的安装包、`release/` 和本地 Electron Builder 缓存不得提交到 Git。
+- 强制规范正文只维护于 `docs/engineering-standards.md`；架构变化先更新架构文档，再更新本文件路由/摘要。
+- 工具入口只应指向本文件，不得复制整套规则。新增规则须标明属于强制、约束或高风险宽泛规则。
+- 本文件与权威来源冲突时按第 2.1 节处理，并在同一变更修复冲突。

@@ -11,6 +11,10 @@ import type {
 } from '../../types/ipc.js';
 import { Logger } from '../../utils/Logger';
 import { yamlCodec } from '../../adapter';
+import {
+  getTaskGroupRepository,
+  type TaskGroupRepository,
+} from '../../adapter/IpcAdapter';
 
 function buildInlinePlanPath(plan: PlanModel, plansDir: string): string {
   const safeMap = plan.mapName.replace(/[^a-zA-Z0-9_-]+/g, '_');
@@ -83,11 +87,12 @@ export async function addCurrentPlanToGroup(
   getCurrentPlan: () => PlanModel | null,
   plansDir: string,
   render: () => void,
+  repository: TaskGroupRepository | undefined =
+    getTaskGroupRepository(),
 ): Promise<void> {
   const plan = getCurrentPlan();
   if (!plan) { Logger.warn('没有已加载的方案'); return; }
-  const bridge = window.electronBridge;
-  if (!bridge) return;
+  if (!repository) return;
 
   let fileName = plan.fileName?.trim();
   if (!fileName) {
@@ -96,7 +101,7 @@ export async function addCurrentPlanToGroup(
     Logger.warn(`当前方案未保存，已自动保存为临时方案: ${fileName}`);
   }
 
-  await bridge.saveFile(fileName, plan.toYaml());
+  await repository.saveFile!(fileName, plan.toYaml());
 
   const group = ensureActiveGroup(taskGroupModel);
   const times = plan.data.times ?? 1;
@@ -113,12 +118,13 @@ export async function addFileToGroup(
   taskGroupModel: TaskGroupModel,
   plansDir: string,
   render: () => void,
+  repository: TaskGroupRepository | undefined =
+    getTaskGroupRepository(),
 ): Promise<void> {
-  const bridge = window.electronBridge;
-  if (!bridge) return;
+  if (!repository) return;
   const group = ensureActiveGroup(taskGroupModel);
 
-  const result = await bridge.openFileDialog([
+  const result = await repository.openFileDialog!([
     { name: 'YAML 方案/预设', extensions: ['yaml', 'yml'] },
   ], plansDir || undefined);
   if (!result) return;
@@ -151,16 +157,24 @@ export async function addFileToGroup(
 export function addPresetToGroup(
   taskGroupModel: TaskGroupModel,
   getCurrentPresetInfo: () => { preset: TaskPreset; filePath: string } | null,
+  times: number,
   render: () => void,
 ): void {
   const info = getCurrentPresetInfo();
   if (!info) { Logger.warn('没有已加载的任务预设'); return; }
   const group = ensureActiveGroup(taskGroupModel);
-  const times = Math.max(1, parseInt((document.getElementById('tp-times') as HTMLInputElement).value, 10) || 1);
+  const normalizedTimes = Math.max(1, Math.trunc(times) || 1);
   const label = info.filePath.split(/[\\/]/).pop()?.replace(/\.ya?ml$/i, '') ?? info.preset.task_type;
 
-  taskGroupModel.addItem(group.name, { path: info.filePath, kind: 'preset', times, label });
+  taskGroupModel.addItem(group.name, {
+    path: info.filePath,
+    kind: 'preset',
+    times: normalizedTimes,
+    label,
+  });
   taskGroupModel.save();
   render();
-  Logger.info(`已将「${label} ×${times}」加入任务组「${group.name}」`);
+  Logger.info(
+    `已将「${label} ×${normalizedTimes}」加入任务组「${group.name}」`,
+  );
 }

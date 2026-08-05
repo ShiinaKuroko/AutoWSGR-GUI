@@ -15,6 +15,20 @@ import {
 type ManagementSource = PlanPresetSource | 'all';
 type ManagementKind = 'battle' | 'team' | 'all';
 
+/**
+ * 计算当前筛选视图下已勾选、可执行批量操作的用户配置。
+ * 勾选状态跨筛选条件保留，破坏性操作必须限定在过滤后的可见结果内。
+ */
+export function filterVisibleSelections(
+  visibleSelections: readonly UserPlanExportSelection[],
+  selections: ReadonlyMap<string, UserPlanExportSelection>,
+  keyOf: (selection: UserPlanExportSelection) => string,
+): UserPlanExportSelection[] {
+  return visibleSelections.filter(selection =>
+    selections.has(keyOf(selection)),
+  );
+}
+
 export class PlanManagementView {
   onRefresh?: () => Promise<void>;
   onExportPlans?: (
@@ -578,10 +592,18 @@ export class PlanManagementView {
     return `${selection.kind}:${selection.file.toLocaleLowerCase('en-US')}`;
   }
 
+  /** 当前筛选视图下已勾选、可执行批量删除的用户配置。 */
+  private selectedVisibleSelections(): UserPlanExportSelection[] {
+    return filterVisibleSelections(
+      this.visibleSelections,
+      this.selections,
+      selection => this.selectionKey(selection),
+    );
+  }
+
   private updateSelectionControls(): void {
-    const visibleSelectedCount = this.visibleSelections.filter(
-      selection => this.selections.has(this.selectionKey(selection)),
-    ).length;
+    const visibleSelected = this.selectedVisibleSelections();
+    const visibleSelectedCount = visibleSelected.length;
     if (this.selectAll) {
       this.selectAll.checked = (
         this.visibleSelections.length > 0
@@ -607,11 +629,11 @@ export class PlanManagementView {
     }
     if (this.deleteButton) {
       this.deleteButton.disabled = (
-        this.exporting || this.deleting || this.selections.size === 0
+        this.exporting || this.deleting || visibleSelected.length === 0
       );
-      this.deleteButton.title = this.selections.size > 0
-        ? `删除已选择的 ${this.selections.size} 个用户配置`
-        : '请先选择用户配置';
+      this.deleteButton.title = visibleSelected.length > 0
+        ? `删除当前筛选下已选择的 ${visibleSelected.length} 个用户配置`
+        : '当前筛选下没有已选择的用户配置';
     }
     this.body
       ?.querySelectorAll<HTMLInputElement>('[data-plan-selection]')
@@ -635,7 +657,8 @@ export class PlanManagementView {
 
   private async deleteSelectedPlans(): Promise<void> {
     if (this.exporting || this.deleting || this.selections.size === 0) return;
-    const selections = [...this.selections.values()];
+    const selections = this.selectedVisibleSelections();
+    if (selections.length === 0) return;
     this.deleting = true;
     this.updateSelectionControls();
     try {

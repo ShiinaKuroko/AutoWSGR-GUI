@@ -1,7 +1,6 @@
 /**
  * 连接 GUI 自动更新 IPC 与 electron-updater。
  */
-import type { BrowserWindow } from 'electron';
 import {
   autoUpdater,
   type ProgressInfo,
@@ -15,7 +14,7 @@ import {
 } from '../services/GuiUpdatePolicy';
 
 export interface UpdaterContext {
-  getMainWindow(): BrowserWindow | null;
+  sendToRenderer(channel: string, ...args: unknown[]): boolean;
   getAppVersion(): string;
   stopBackend(): Promise<void>;
 }
@@ -35,7 +34,7 @@ export function registerUpdaterIpc(
   let approvedUpdateVersion: string | null = null;
   let downloadedUpdateVersion: string | null = null;
   const reportError = (message: string): void => {
-    context.getMainWindow()?.webContents.send('update-status', {
+    context.sendToRenderer('update-status', {
       status: 'error',
       message,
     });
@@ -52,7 +51,7 @@ export function registerUpdaterIpc(
       return;
     }
     approvedUpdateVersion = info.version;
-    context.getMainWindow()?.webContents.send('update-status', {
+    context.sendToRenderer('update-status', {
       status: 'available',
       version: info.version,
       releaseNotes: typeof info.releaseNotes === 'string'
@@ -63,12 +62,12 @@ export function registerUpdaterIpc(
   autoUpdater.on('update-not-available', () => {
     approvedUpdateVersion = null;
     downloadedUpdateVersion = null;
-    context.getMainWindow()?.webContents.send('update-status', {
+    context.sendToRenderer('update-status', {
       status: 'up-to-date',
     });
   });
   autoUpdater.on('download-progress', (progress: ProgressInfo) => {
-    context.getMainWindow()?.webContents.send('update-status', {
+    context.sendToRenderer('update-status', {
       status: 'downloading',
       percent: Math.round(progress.percent),
       transferred: progress.transferred,
@@ -86,7 +85,7 @@ export function registerUpdaterIpc(
       return;
     }
     downloadedUpdateVersion = info.version;
-    context.getMainWindow()?.webContents.send('update-status', {
+    context.sendToRenderer('update-status', {
       status: 'downloaded',
       version: info.version,
     });
@@ -146,7 +145,7 @@ export function registerUpdaterIpc(
         message: '没有已下载并通过频道校验的更新',
       };
     }
-    context.getMainWindow()?.webContents.send('update-status', {
+    context.sendToRenderer('update-status', {
       status: 'installing',
       message: '正在停止后端并准备安装更新',
     });

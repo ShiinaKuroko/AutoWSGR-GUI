@@ -4,6 +4,10 @@
  * legacy/local file path.
  */
 import type { TaskGroupItem } from '../../model/TaskGroupModel';
+import {
+  getTaskGroupRepository,
+  type TaskGroupRepository,
+} from '../../adapter/IpcAdapter';
 
 export interface TaskGroupItemFile {
   content: string;
@@ -12,15 +16,16 @@ export interface TaskGroupItemFile {
 
 export async function readTaskGroupItemFile(
   item: TaskGroupItem,
+  repository: TaskGroupRepository | undefined =
+    getTaskGroupRepository(),
 ): Promise<TaskGroupItemFile> {
-  const bridge = window.electronBridge;
-  if (!bridge) throw new Error('Electron bridge is unavailable');
+  if (!repository) throw new Error('Electron bridge is unavailable');
 
   if (item.dailySource && item.dailyFile) {
-    if (!bridge.readDailyPlan) {
+    if (!repository.readDailyPlan) {
       throw new Error('当前 GUI 不支持读取日常任务目录');
     }
-    const result = await bridge.readDailyPlan(
+    const result = await repository.readDailyPlan(
       item.dailySource,
       item.dailyFile,
     );
@@ -34,10 +39,10 @@ export async function readTaskGroupItemFile(
   }
 
   if (item.managedSource && item.managedFile) {
-    if (!bridge.readManagedCombatPlan) {
+    if (!repository.readManagedCombatPlan) {
       throw new Error('当前 GUI 不支持读取计划管理目录');
     }
-    const result = await bridge.readManagedCombatPlan(
+    const result = await repository.readManagedCombatPlan(
       item.managedSource,
       item.managedFile,
     );
@@ -51,8 +56,8 @@ export async function readTaskGroupItemFile(
   }
 
   if (!item.path) throw new Error('任务没有关联配置文件');
-  if (bridge.readCombatPlanFile) {
-    const result = await bridge.readCombatPlanFile(item.path);
+  if (repository.readCombatPlanFile) {
+    const result = await repository.readCombatPlanFile(item.path);
     if (!result.success || result.content === undefined || !result.path) {
       throw new Error(result.error || `无法读取 ${item.path}`);
     }
@@ -62,7 +67,7 @@ export async function readTaskGroupItemFile(
     };
   }
   return {
-    content: await bridge.readFile(item.path),
+    content: await repository.readFile!(item.path),
     path: item.path,
   };
 }

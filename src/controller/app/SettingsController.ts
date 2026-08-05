@@ -5,7 +5,11 @@ import type { LootAutomationPlan } from '../../shared/lootPlans.js';
 import { ApiClient } from '../../model/ApiClient';
 import { Logger } from '../../utils/Logger';
 import { showAlert, showConfirm } from '../../view/shared/DialogHelper';
-import { applyTheme } from './theme';
+import { applyTheme } from '../../view/theme';
+import {
+  getSettingsGateway,
+  type SettingsGateway,
+} from '../../adapter/IpcAdapter.js';
 
 export interface SettingsControllerHost {
   readonly configView: ConfigView;
@@ -21,143 +25,79 @@ export interface SettingsControllerHost {
 export class SettingsController {
   private shipLibraryUpdating = false;
 
-  constructor(private readonly host: SettingsControllerHost) {}
+  constructor(
+    private readonly host: SettingsControllerHost,
+    private readonly gateway: SettingsGateway | undefined =
+      getSettingsGateway(),
+  ) {}
 
   bindActions(): void {
     const { configView } = this.host;
-    window.electronBridge?.onShipLibraryUpdateProgress?.((progress) => {
+    this.gateway?.onShipLibraryUpdateProgress((progress) => {
       if (this.shipLibraryUpdating) {
         configView.setShipLibraryStatus(progress.message, 'unknown');
       }
     });
 
-    document.getElementById('btn-save-config')?.addEventListener(
-      'click',
-      () => void this.host.saveConfig(),
-    );
-    document.getElementById('btn-open-config-dir')?.addEventListener(
-      'click',
-      () => this.openFolder(this.host.getConfigDir()),
-    );
-    document.getElementById('btn-browse-emu')?.addEventListener(
-      'click',
-      () => void this.browseDirectory(
+    configView.bindActions({
+      onSave: () => void this.host.saveConfig(),
+      onOpenConfigDir: () => this.openFolder(this.host.getConfigDir()),
+      onBrowseEmulator: () => void this.browseDirectory(
         '选择模拟器安装目录',
         path => configView.setEmulatorPath(path),
       ),
-    );
-    document.getElementById('btn-browse-python')?.addEventListener(
-      'click',
-      () => void this.browsePython(),
-    );
-    document.getElementById('btn-browse-backend-repo')?.addEventListener(
-      'click',
-      () => void this.browseDirectory(
+      onBrowsePython: () => void this.browsePython(),
+      onBrowseBackendRepo: () => void this.browseDirectory(
         '选择本地后端仓库目录',
         path => configView.setBackendRepoPath(path),
       ),
-    );
-    document.getElementById('btn-browse-cuda')?.addEventListener(
-      'click',
-      () => void this.browseDirectory(
+      onBrowseCuda: () => void this.browseDirectory(
         '选择 CUDA Toolkit 根目录/bin 或 PyTorch torch\\lib 目录',
         path => configView.setCudaPath(path),
       ),
-    );
-    document.getElementById('btn-browse-log-root')?.addEventListener(
-      'click',
-      () => void this.browseDirectory(
+      onBrowseLogRoot: () => void this.browseDirectory(
         '选择后端日志目录',
         path => configView.setLogRoot(path),
       ),
-    );
-    document.getElementById('btn-browse-plan-root')?.addEventListener(
-      'click',
-      () => void this.browseDirectory(
+      onBrowsePlanRoot: () => void this.browseDirectory(
         '选择后端作战方案根目录',
         path => configView.setPlanRoot(path),
       ),
-    );
-    document.getElementById('btn-add-normal-fight-task')?.addEventListener(
-      'click',
-      () => void this.selectAutomationPlan(),
-    );
-    document.getElementById('btn-load-loot-plans')?.addEventListener(
-      'click',
-      () => void this.selectLootAutomationPlans(),
-    );
-    document.getElementById('btn-check-backend')?.addEventListener(
-      'click',
-      () => void this.checkBackend(),
-    );
-    document.getElementById('btn-validate-cuda')?.addEventListener(
-      'click',
-      () => void this.validateCuda(),
-    );
-    document.getElementById('btn-validate-python')?.addEventListener(
-      'click',
-      () => void this.validatePython(),
-    );
-    document.getElementById('btn-check-updates')?.addEventListener(
-      'click',
-      () => void this.checkUpdatesManually(),
-    );
-    document.getElementById('btn-update-ship-library')?.addEventListener(
-      'click',
-      () => void this.updateShipLibrary(),
-    );
-    document.getElementById('btn-connect-adb')?.addEventListener(
-      'click',
-      () => void this.changeAdbConnection('connect'),
-    );
-    document.getElementById('btn-disconnect-adb')?.addEventListener(
-      'click',
-      () => void this.changeAdbConnection('disconnect'),
-    );
-    document.getElementById('btn-check-adb')?.addEventListener(
-      'click',
-      () => void this.checkAdbDevices(),
-    );
-    document.getElementById('btn-reset-accent')?.addEventListener(
-      'click',
-      () => {
+      onAddNormalFightTask: () => void this.selectAutomationPlan(),
+      onLoadLootPlans: () => void this.selectLootAutomationPlans(),
+      onCheckBackend: () => void this.checkBackend(),
+      onValidateCuda: () => void this.validateCuda(),
+      onValidatePython: () => void this.validatePython(),
+      onCheckUpdates: () => void this.checkUpdatesManually(),
+      onUpdateShipLibrary: () => void this.updateShipLibrary(),
+      onConnectAdb: () => void this.changeAdbConnection('connect'),
+      onDisconnectAdb: () => void this.changeAdbConnection('disconnect'),
+      onCheckAdb: () => void this.checkAdbDevices(),
+      onResetAccent: () => {
         configView.resetAccentColor('#0f7dff');
         localStorage.setItem('accentColor', '#0f7dff');
         applyTheme();
       },
-    );
-    document.getElementById('cfg-theme-mode')?.addEventListener(
-      'change',
-      (event) => {
-        localStorage.setItem(
-          'themeMode',
-          (event.target as HTMLSelectElement).value,
-        );
+      onThemeModeChange: (mode) => {
+        localStorage.setItem('themeMode', mode);
         applyTheme();
       },
-    );
-    document.getElementById('cfg-accent-color')?.addEventListener(
-      'input',
-      (event) => {
-        localStorage.setItem(
-          'accentColor',
-          (event.target as HTMLInputElement).value,
-        );
+      onAccentColorInput: (color) => {
+        localStorage.setItem('accentColor', color);
         applyTheme();
       },
-    );
+    });
   }
 
   async refreshAdbStatus(): Promise<void> {
     const { configView } = this.host;
     configView.setAdbStatus('检测中…', 'unknown');
-    const bridge = window.electronBridge;
-    if (!bridge?.checkAdbDevices) {
+    if (!this.gateway) {
       configView.setAdbStatus('ADB 功能不可用', 'offline');
       return;
     }
     try {
-      const devices = await bridge.checkAdbDevices();
+      const devices = await this.gateway.checkAdbDevices();
       const online = devices.filter(device => device.status === 'device');
       const configuredSerial = configView.getEmulatorSerial();
       if (
@@ -183,10 +123,9 @@ export class SettingsController {
 
   async refreshShipLibraryStatus(): Promise<void> {
     if (this.shipLibraryUpdating) return;
-    const bridge = window.electronBridge;
-    if (!bridge?.getShipLibraryStatus) return;
+    if (!this.gateway) return;
     try {
-      const status = await bridge.getShipLibraryStatus();
+      const status = await this.gateway.getShipLibraryStatus();
       if (status.error) {
         this.host.configView.setShipLibraryStatus(status.error, 'error');
       } else if (!status.exists) {
@@ -224,14 +163,13 @@ export class SettingsController {
     title: string,
     applyPath: (path: string) => void,
   ): Promise<void> {
-    const path = await window.electronBridge?.openDirectoryDialog(title);
+    const path = await this.gateway?.openDirectoryDialog(title);
     if (path) applyPath(path);
   }
 
   private async browsePython(): Promise<void> {
-    const bridge = window.electronBridge;
-    if (!bridge) return;
-    const result = await bridge.openFileDialog([
+    if (!this.gateway) return;
+    const result = await this.gateway.openFileDialog([
       { name: 'Python', extensions: ['exe'] },
     ]);
     if (result) this.host.configView.setPythonPath(result.path);
@@ -241,7 +179,7 @@ export class SettingsController {
     const selected = await this.host.pickAutomationPlan();
     if (!selected) return;
     try {
-      const result = await window.electronBridge?.readManagedCombatPlan(
+      const result = await this.gateway?.readManagedCombatPlan(
         selected.plan.source,
         selected.plan.file,
       );
@@ -275,13 +213,8 @@ export class SettingsController {
   }
 
   private async checkBackend(): Promise<void> {
-    const button = document.getElementById(
-      'btn-check-backend',
-    ) as HTMLButtonElement | null;
-    if (!button) return;
     const port = this.host.configView.getBackendPort();
-    button.disabled = true;
-    button.textContent = '检测中…';
+    this.host.configView.setBackendCheckLoading(true);
     this.host.configView.setBackendStatus('正在连接', 'unknown');
     try {
       const result = await new ApiClient(
@@ -296,14 +229,12 @@ export class SettingsController {
     } catch {
       this.host.configView.setBackendStatus('无法连接', 'error');
     } finally {
-      button.disabled = false;
-      button.textContent = '检测';
+      this.host.configView.setBackendCheckLoading(false);
     }
   }
 
   private async validateCuda(): Promise<void> {
-    const bridge = window.electronBridge;
-    if (!bridge?.validateCudaPath) return;
+    if (!this.gateway) return;
     const { configView } = this.host;
     const cudaPath = configView.getCudaPath();
     configView.setCudaValidateLoading(true);
@@ -313,7 +244,7 @@ export class SettingsController {
       '正在检测 PyTorch、CUDA 和显卡',
     );
     try {
-      const result = await bridge.validateCudaPath(cudaPath);
+      const result = await this.gateway.validateCudaPath(cudaPath);
       if (result.valid) {
         if (result.path) configView.setCudaPath(result.path);
         const details = [
@@ -348,8 +279,7 @@ export class SettingsController {
   }
 
   private async validatePython(): Promise<void> {
-    const bridge = window.electronBridge;
-    if (!bridge?.validatePython) return;
+    if (!this.gateway) return;
     const { configView } = this.host;
     const pythonPath = configView.getPythonPath();
     if (!pythonPath) {
@@ -358,7 +288,7 @@ export class SettingsController {
     }
     configView.setPythonValidateLoading(true);
     try {
-      const result = await bridge.validatePython(pythonPath);
+      const result = await this.gateway.validatePython(pythonPath);
       configView.setPythonStatus(
         result.valid ? `✓ ${result.version}` : (result.error ?? '不兼容'),
         result.valid ? 'ok' : 'error',
@@ -371,16 +301,10 @@ export class SettingsController {
   }
 
   private async checkAdbDevices(): Promise<void> {
-    const bridge = window.electronBridge;
-    if (!bridge?.checkAdbDevices) return;
-    const button = document.getElementById(
-      'btn-check-adb',
-    ) as HTMLButtonElement | null;
-    if (!button) return;
-    button.disabled = true;
-    button.textContent = '检测中…';
+    if (!this.gateway) return;
+    this.host.configView.setAdbCheckLoading(true);
     try {
-      const devices = await bridge.checkAdbDevices();
+      const devices = await this.gateway.checkAdbDevices();
       const online = devices.filter(device => device.status === 'device');
       if (online.length === 0) {
         await showAlert(
@@ -414,19 +338,14 @@ export class SettingsController {
         error instanceof Error ? error.message : String(error),
       );
     } finally {
-      button.disabled = false;
-      button.textContent = '检测 ADB';
+      this.host.configView.setAdbCheckLoading(false);
     }
   }
 
   private async changeAdbConnection(
     action: 'connect' | 'disconnect',
   ): Promise<void> {
-    const bridge = window.electronBridge;
-    const method = action === 'connect'
-      ? bridge?.connectAdbDevice
-      : bridge?.disconnectAdbDevice;
-    if (!method) return;
+    if (!this.gateway) return;
 
     const serial = this.host.configView.getEmulatorSerial();
     if (!serial) {
@@ -437,24 +356,16 @@ export class SettingsController {
       return;
     }
 
-    const buttonId = action === 'connect'
-      ? 'btn-connect-adb'
-      : 'btn-disconnect-adb';
-    const button = document.getElementById(
-      buttonId,
-    ) as HTMLButtonElement | null;
-    const originalText = button?.textContent ?? '';
-    if (button) {
-      button.disabled = true;
-      button.textContent = action === 'connect' ? '连接中…' : '断开中…';
-    }
+    this.host.configView.setAdbConnectionLoading(action, true);
     this.host.configView.setAdbStatus(
       action === 'connect' ? '正在连接' : '正在断开',
       'unknown',
     );
 
     try {
-      const result = await method(serial);
+      const result = action === 'connect'
+        ? await this.gateway.connectAdbDevice(serial)
+        : await this.gateway.disconnectAdbDevice(serial);
       if (result.success) {
         const connected = action === 'connect';
         this.host.configView.setAdbStatus(
@@ -479,16 +390,12 @@ export class SettingsController {
         error instanceof Error ? error.message : String(error),
       );
     } finally {
-      if (button) {
-        button.disabled = false;
-        button.textContent = originalText;
-      }
+      this.host.configView.setAdbConnectionLoading(action, false);
     }
   }
 
   private async updateShipLibrary(): Promise<void> {
-    const bridge = window.electronBridge;
-    if (!bridge?.updateShipLibrary || this.shipLibraryUpdating) return;
+    if (!this.gateway || this.shipLibraryUpdating) return;
     this.shipLibraryUpdating = true;
     this.host.configView.setShipLibraryUpdateLoading(true);
     this.host.configView.setShipLibraryStatus(
@@ -496,7 +403,7 @@ export class SettingsController {
       'unknown',
     );
     try {
-      const result = await bridge.updateShipLibrary();
+      const result = await this.gateway.updateShipLibrary();
       if (!result.success) {
         const message = result.error || result.failures?.[0] || '未知错误';
         this.host.configView.setShipLibraryStatus(
@@ -532,27 +439,20 @@ export class SettingsController {
   }
 
   private async checkUpdatesManually(): Promise<void> {
-    const bridge = window.electronBridge;
-    if (!bridge) return;
-    const updateMode = bridge.getUpdateMode?.() ?? 'auto';
-    const button = document.getElementById(
-      'btn-check-updates',
-    ) as HTMLButtonElement | null;
-    if (button) {
-      button.disabled = true;
-      button.textContent = '检查中…';
-    }
+    if (!this.gateway) return;
+    const updateMode = this.gateway.getUpdateMode();
+    this.host.configView.setUpdateCheckLoading(true);
 
     try {
       Logger.info('已跳过后端源码更新检查（测试接口已停用）');
       try {
-        const guiUpdate = await bridge.checkGuiUpdates?.();
-        if (guiUpdate?.status === 'error') {
+        const guiUpdate = await this.gateway.checkGuiUpdates();
+        if (guiUpdate.status === 'error') {
           Logger.warn(`GUI 更新检查失败: ${guiUpdate.message}`);
           return;
         }
         if (updateMode === 'auto') {
-          if (guiUpdate?.status === 'available') {
+          if (guiUpdate.status === 'available') {
             Logger.info(
               `检测到 GUI 新版本 v${guiUpdate.version}，自动模式下将自动下载`,
             );
@@ -561,14 +461,14 @@ export class SettingsController {
           }
           return;
         }
-        if (guiUpdate?.status === 'available') {
+        if (guiUpdate.status === 'available') {
           const confirmed = await showConfirm(
             'GUI 更新',
             `发现 GUI 新版本 v${guiUpdate.version}，是否立即下载？`,
           );
           if (confirmed) {
-            const result = await bridge.downloadGuiUpdate?.();
-            if (result?.success) {
+            const result = await this.gateway.downloadGuiUpdate();
+            if (result.success) {
               Logger.info(`GUI 更新下载开始: v${guiUpdate.version}`);
             } else {
               Logger.warn(
@@ -585,15 +485,12 @@ export class SettingsController {
         Logger.warn('GUI 更新检查失败');
       }
     } finally {
-      if (button) {
-        button.disabled = false;
-        button.textContent = '立即检查更新';
-      }
+      this.host.configView.setUpdateCheckLoading(false);
     }
   }
 
   private openFolder(folderPath: string): void {
-    if (!folderPath) return;
-    window.electronBridge?.openFolder?.(folderPath);
+    if (!folderPath || !this.gateway) return;
+    void this.gateway.openFolder(folderPath);
   }
 }

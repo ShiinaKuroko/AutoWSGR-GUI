@@ -15,7 +15,7 @@ import { TeamPlanRepository } from './TeamPlanRepository';
 import {
   TaskPresetCodec,
   type TaskPresetType,
-} from './TaskPresetCodec';
+} from '../../src/shared/taskPreset';
 
 export type ManagedBattleResult = 'D' | 'C' | 'B' | 'A' | 'S' | 'SS';
 

@@ -9,8 +9,13 @@ import { loadMapData, loadEventMapData } from '../../model/MapDataLoader';
 import type { MapData } from '../../model/MapDataLoader';
 import type { TaskPreset } from '../../types/model.js';
 import type { PlanPresetSource } from '../../types/ipc.js';
+import { taskPresetCodec } from '../../shared/taskPreset';
 import { Logger } from '../../utils/Logger';
-import { yamlCodec } from '../../adapter';
+import { parseYamlRecord } from '../../adapter';
+import {
+  getTaskGroupRepository,
+  type TaskGroupRepository,
+} from '../../adapter/IpcAdapter';
 
 export interface ContextMenuTarget {
   source: 'taskgroup' | 'queue';
@@ -26,24 +31,11 @@ export interface ContextMenuHost {
   openManagedPlan(file: string, source: PlanPresetSource): Promise<boolean>;
 }
 
-export function showContextMenuForItem(
+export function createContextMenuTarget(
   source: 'taskgroup' | 'queue',
   id: number | string,
-  x: number,
-  y: number,
 ): ContextMenuTarget {
-  const menu = document.getElementById('context-menu');
-  if (menu) {
-    menu.style.left = `${x}px`;
-    menu.style.top = `${y}px`;
-    menu.style.display = '';
-  }
   return { source, id };
-}
-
-export function hideContextMenu(): void {
-  const menu = document.getElementById('context-menu');
-  if (menu) menu.style.display = 'none';
 }
 
 export async function handleContextMenuEdit(
@@ -51,7 +43,6 @@ export async function handleContextMenuEdit(
   taskGroupModel: TaskGroupModel,
   host: ContextMenuHost,
 ): Promise<void> {
-  hideContextMenu();
   if (!target) return;
 
   if (target.source === 'taskgroup') {
@@ -102,17 +93,23 @@ export async function openItemForEdit(
   filePath: string,
   kind: 'plan' | 'preset',
   host: ContextMenuHost,
+  repository: TaskGroupRepository | undefined =
+    getTaskGroupRepository(),
 ): Promise<void> {
-  const bridge = window.electronBridge;
-  if (!bridge) return;
+  if (!repository) return;
 
   try {
-    const content = await bridge.readFile(filePath);
-    const parsed = yamlCodec.parse<Record<string, unknown>>(content);
-    if (!parsed || typeof parsed !== 'object') return;
+    const content = await repository.readFile!(filePath);
+    const parsed = parseYamlRecord(content, '任务文件');
 
-    if (kind === 'preset' || ('task_type' in parsed && !('map' in parsed))) {
-      host.importTaskPreset(parsed as unknown as TaskPreset, filePath);
+    if (
+      kind === 'preset'
+      || taskPresetCodec.isStandalone(parsed)
+    ) {
+      host.importTaskPreset(
+        taskPresetCodec.normalize(parsed),
+        filePath,
+      );
     } else {
       const plan = PlanModel.fromYaml(content, filePath);
       const { chapter, map } = plan.data;

@@ -8,6 +8,42 @@ import {
   type PythonEnvironment,
 } from './environment';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object'
+    && value !== null
+    && !Array.isArray(value)
+  );
+}
+
+function nestedVersion(
+  root: Record<string, unknown>,
+  key: string,
+): string | null {
+  const section = root[key];
+  if (!isRecord(section)) return null;
+  const version = section.version;
+  return typeof version === 'string' && version.trim()
+    ? version.trim()
+    : null;
+}
+
+/** 读取 CUDA version.json；无效或缺失时由调用方执行目录名回退。 */
+export function readCudaVersionFile(cudaRoot: string): string | null {
+  try {
+    const versionJson = path.join(cudaRoot, 'version.json');
+    if (!fs.existsSync(versionJson)) return null;
+    const parsed: unknown = JSON.parse(
+      fs.readFileSync(versionJson, 'utf-8').replace(/^\uFEFF/, ''),
+    );
+    if (!isRecord(parsed)) return null;
+    return nestedVersion(parsed, 'cuda')
+      ?? nestedVersion(parsed, 'cuda_cudart');
+  } catch {
+    return null;
+  }
+}
+
 function normalizeCudaRoot(candidate: string): string {
   const resolved = path.resolve(candidate.trim());
   if (isCudaRuntimeDirectory(resolved)) return resolved;
@@ -70,18 +106,7 @@ export function buildCudaEnvironment(
   }
   env.PATH = [cudaBin, ...withoutDuplicate].join(path.delimiter);
 
-  let version: string | null = null;
-  try {
-    const versionJson = path.join(cudaRoot, 'version.json');
-    if (fs.existsSync(versionJson)) {
-      const raw = JSON.parse(
-        fs.readFileSync(versionJson, 'utf-8').replace(/^\uFEFF/, ''),
-      ) as Record<string, any>;
-      version = raw.cuda?.version ?? raw.cuda_cudart?.version ?? null;
-    }
-  } catch {
-    // 版本文件无效时继续使用目录名。
-  }
+  let version = readCudaVersionFile(cudaRoot);
   version ??= path.basename(cudaRoot).match(/v(\d+(?:\.\d+)?)/i)?.[1]
     ?? null;
   const versionMatch = version?.match(/^(\d+)\.(\d+)/);

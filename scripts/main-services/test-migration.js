@@ -22,6 +22,7 @@ const {
   SecureFileService,
   WindowService,
   UserDataMigrationService,
+  MigrationStateStore,
   LegacyPlanMigration,
   MigrationConflictService,
   TeamPlanCodec,
@@ -65,6 +66,7 @@ function createLegacyPlanMigration(
     appPaths,
     atomicFiles,
     userDataMigration,
+    userDataMigration.migrationState,
     {
       yamlFiles: directory => combatRepository.yamlFiles(directory),
       safePlanBaseName: value => combatCodec.safeBaseName(value),
@@ -98,8 +100,33 @@ function createLegacyPlanMigration(
   );
 }
 
+/** 验证迁移账本独立处理损坏回退、完成项合并和版本单调递增。 */
+function testMigrationStateStore() {
+  const root = path.join(temporaryDirectory, 'migration-state-store');
+  const statePath = path.join(root, '.migration-state.json');
+  fs.rmSync(root, { recursive: true, force: true });
+  const store = new MigrationStateStore(
+    () => statePath,
+    new AtomicFileStore(),
+  );
+
+  assert.deepEqual(store.read(), { version: 0, completed: [] });
+  fs.mkdirSync(root, { recursive: true });
+  fs.writeFileSync(statePath, '{invalid', 'utf8');
+  assert.deepEqual(store.read(), { version: 0, completed: [] });
+
+  store.write({ version: 5, completed: ['existing'] });
+  store.completeStage('next', 3);
+  store.mergeCompleted(['third', 'existing'], 6);
+  assert.deepEqual(store.read(), {
+    version: 6,
+    completed: ['existing', 'next', 'third'],
+  });
+}
+
 /** 验证旧配置、旧计划和任务组引用迁移保持幂等。 */
 function testUserDataMigration() {
+  testMigrationStateStore();
   const migrationRoot = path.join(temporaryDirectory, 'migration');
   const projectRoot = path.join(migrationRoot, 'project');
   const moduleDirectory = path.join(projectRoot, 'dist', 'electron');
@@ -356,8 +383,8 @@ function testUserDataMigration() {
     0,
   );
 
-  const migratedState = userDataMigration.readState();
-  userDataMigration.writeState({
+  const migratedState = userDataMigration.migrationState.read();
+  userDataMigration.migrationState.write({
     version: 2,
     completed: [
       ...migratedState.completed,
@@ -384,6 +411,7 @@ function testUserDataMigration() {
     appPaths,
     atomicFiles,
     userDataMigration,
+    userDataMigration.migrationState,
     {
       yamlFiles: directory => combatRepository.yamlFiles(directory),
       safePlanBaseName: value => combatCodec.safeBaseName(value),
@@ -418,7 +446,7 @@ function testUserDataMigration() {
     },
   );
   assert.equal(userDataMigration.migratePresetInventory().failed, 0);
-  assert.equal(userDataMigration.readState().version, 6);
+  assert.equal(userDataMigration.migrationState.read().version, 6);
   const planResult = legacyMigration.migrate();
   assert.deepEqual(
     {
@@ -559,9 +587,9 @@ function testUserDataMigration() {
     'campaign',
   );
   assert.equal(taskGroups.groups[0].items[2].managedFile, undefined);
-  assert.equal(userDataMigration.readState().version, 7);
+  assert.equal(userDataMigration.migrationState.read().version, 7);
   assert.equal(
-    userDataMigration.readState().version,
+    userDataMigration.migrationState.read().version,
     7,
     'v6 库存升级后必须继续执行 v7 日常任务分类迁移',
   );
@@ -982,7 +1010,10 @@ function testPresetInventoryMigration() {
       realAtomicFiles.write(file, content);
     },
   });
-  migration.writeState({ version: 5, completed: ['v5-complete'] });
+  migration.migrationState.write({
+    version: 5,
+    completed: ['v5-complete'],
+  });
 
   const originalConsoleError = console.error;
   let firstResult;
@@ -994,7 +1025,7 @@ function testPresetInventoryMigration() {
   }
   assert.equal(firstResult.failed, 1);
   assert.equal(firstResult.failedFiles.includes(taskGroups), true);
-  assert.equal(migration.readState().version, 5);
+  assert.equal(migration.migrationState.read().version, 5);
   assert.equal(
     fs.readFileSync(e1LegacyTarget, 'utf8'),
     fs.readFileSync(e1Source, 'utf8'),
@@ -1010,8 +1041,11 @@ function testPresetInventoryMigration() {
     },
     { total: 1, succeeded: 1, failed: 0 },
   );
-  assert.equal(migration.readState().version, 6);
-  assert.equal(migration.readState().completed.includes('v5-complete'), true);
+  assert.equal(migration.migrationState.read().version, 6);
+  assert.equal(
+    migration.migrationState.read().completed.includes('v5-complete'),
+    true,
+  );
 
   const migratedGroups = JSON.parse(fs.readFileSync(taskGroups, 'utf8'));
   const [eventItem, weeklyItem, currentItem] = (
@@ -1250,7 +1284,10 @@ function testMigrationStageOrderingAndRecursivePlans() {
     oldStatePaths,
     realAtomicFiles,
   );
-  oldStateMigration.writeState({ version: 7, completed: [] });
+  oldStateMigration.migrationState.write({
+    version: 7,
+    completed: [],
+  });
   assert.equal(oldStateMigration.migratePresetInventory().failed, 0);
   assert.equal(
     JSON.parse(fs.readFileSync(oldStateSettings, 'utf8'))
@@ -1259,7 +1296,7 @@ function testMigrationStageOrderingAndRecursivePlans() {
     '旧 version=7 状态缺少 v6 完成键时仍必须执行 v6',
   );
   assert.equal(
-    oldStateMigration.isStageComplete(
+    oldStateMigration.migrationState.isStageComplete(
       'migration:v6:preset-inventory:complete',
     ),
     true,
@@ -1351,6 +1388,7 @@ function testLegacyPlanConflictRetry() {
     appPaths,
     atomicFiles,
     userDataMigration,
+    userDataMigration.migrationState,
     {
       yamlFiles: directory => combatRepository.yamlFiles(directory),
       safePlanBaseName: value => combatCodec.safeBaseName(value),
@@ -1425,9 +1463,9 @@ function testLegacyPlanConflictRetry() {
   assert.equal(fs.readFileSync(target, 'utf8'), 'chapter: 9\nmap: 9\n');
   assert.equal(fs.existsSync(source), true);
   assert.equal(yaml.load(fs.readFileSync(legacyTarget, 'utf8')).chapter, 1);
-  assert.equal(userDataMigration.readState().version, 7);
+  assert.equal(userDataMigration.migrationState.read().version, 7);
   assert.equal(
-    userDataMigration.readState().completed.some(
+    userDataMigration.migrationState.read().completed.some(
       value => value.startsWith('plan-output-v7:'),
     ),
     true,
@@ -1560,7 +1598,7 @@ function testInitializedUserDataBlocksLegacyInstall() {
     }),
     'utf8',
   );
-  userDataMigration.writeState({
+  userDataMigration.migrationState.write({
     version: 3,
     completed: ['existing-install-complete'],
   });
@@ -1586,6 +1624,7 @@ function testInitializedUserDataBlocksLegacyInstall() {
     appPaths,
     atomicFiles,
     userDataMigration,
+    userDataMigration.migrationState,
     {
       yamlFiles: directory => combatRepository.yamlFiles(directory),
       safePlanBaseName: value => combatCodec.safeBaseName(value),
@@ -1616,7 +1655,7 @@ function testInitializedUserDataBlocksLegacyInstall() {
     },
   );
   userDataMigration.migratePresetInventory();
-  assert.equal(userDataMigration.readState().version, 6);
+  assert.equal(userDataMigration.migrationState.read().version, 6);
   migration.migrate();
 
   taskGroups = JSON.parse(fs.readFileSync(targetTaskGroups, 'utf8'));
@@ -1628,7 +1667,7 @@ function testInitializedUserDataBlocksLegacyInstall() {
     fs.readFileSync(existingTeam.path, 'utf8'),
     existingTeam.content,
   );
-  assert.equal(userDataMigration.readState().version, 7);
+  assert.equal(userDataMigration.migrationState.read().version, 7);
 
   userDataMigration.migrateLegacyUserDataFiles();
   migration.migrate();

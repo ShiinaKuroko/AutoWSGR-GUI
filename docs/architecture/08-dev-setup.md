@@ -41,6 +41,7 @@ npm run dev
 | `npm run test:api-contract` | 构建后验证 GUI 与 AutoWSGR API 契约 fixture |
 | `npm run test:fleet-domain` | 验证舰队草稿、候选槽位和持久化 DTO 往返 |
 | `npm run test:scheduler-domain` | 验证逻辑任务身份、后触发、取消和排序 |
+| `npm run test:ocr-log-analyzer` | 验证独立 OCR 日志提取、复核和纠错规则生成工具 |
 | `npm run test:python-environment` | 验证 managed/external Python、CUDA 和后端环境一致性 |
 | `npm run test:task-group-migration` | 构建后验证任务组迁移和往返兼容 |
 | `npm start` | 等同于 `build` + `electron .`（含 chcp 65001） |
@@ -123,8 +124,12 @@ flowchart LR
 - `dist/` — 编译后的 JS
 - `src/view/` — HTML/CSS
 - `resource/` — 内置方案、模板、地图、舰船资料库种子和只读迁移快照
+- `tools/ship_library/` — 仅打包资料库更新器白名单文件
 - `python/` — 便携版 Python
 - `adb/` — ADB 工具
+
+`tools/ocr_log_analyzer.py` 仅属于源码仓库开发者工具，不在 GUI、后端或安装包
+运行链路中。
 
 ### NSIS 自定义
 
@@ -157,14 +162,15 @@ flowchart LR
 旧字段覆盖同名当前字段，当前版本独有字段继续保留。不同内容的同名任务组、
 计划、舰队和模板以“（旧版）”保留，不会覆盖现有文件。迁移按旧来源路径和
 内容哈希记录完成状态及实际输出文件名，状态保存在
-`userData/.migration-state.json`。源文件不会删除；本次实际执行迁移后会
-弹窗展示总数、成功数、失败数，失败项在下次启动继续尝试。
+`userData/.migration-state.json`，并由 `MigrationStateStore` 独占读写。源文件
+不会删除；本次实际执行迁移后会弹窗展示总数、成功数、失败数，失败项在下次
+启动继续尝试。
 
-迁移状态当前为 **v6**。旧计划和舰队的结构迁移由
-`LegacyPlanMigration` 维护 v5 完成项；v6 由 `UserDataMigrationService`
-升级系统预设库存、将已删除但仍被引用的系统计划保存为个人副本，并把旧胖次
-数字索引迁移为稳定计划标识。只有 v6 操作全部成功才写入版本 6；失败项不会
-写成完成状态，下一次启动继续重试。安装目录和迁移资源始终只读。
+迁移状态最高版本当前为 **v7**。`UserDataMigrationService` 维护旧来源和 v6
+库存迁移，升级系统预设库存、保存仍被引用的已删除系统计划，并把旧胖次数字
+索引迁移为稳定计划标识；`LegacyPlanMigration` 负责 v7 计划分类迁移。每一阶段
+只有全部成功才写入完成键并推进版本，失败项下一次启动继续重试。安装目录和
+迁移资源始终只读。
 
 GUI 发布严格使用三个版本规范和更新频道：
 

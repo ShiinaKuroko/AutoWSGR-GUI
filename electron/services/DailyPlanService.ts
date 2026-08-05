@@ -13,8 +13,10 @@ import { CombatPlanCodec } from './CombatPlanCodec';
 import {
   TaskPresetCodec,
   type TaskPresetDocument,
-} from './TaskPresetCodec';
-import type { DecisivePlanSettings } from './GuiConfigurationService';
+} from '../../src/shared/taskPreset';
+import type {
+  DecisivePlanSettings,
+} from '../../src/shared/decisivePlan';
 
 export type DailyPlanSource = 'system' | 'user';
 export type DailyPlanType = 'exercise' | 'campaign' | 'decisive';

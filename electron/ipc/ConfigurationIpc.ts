@@ -4,7 +4,6 @@
 import type { CudaEnvironmentService } from '../services/CudaEnvironmentService';
 import type {
   BackendStartupMode,
-  DecisivePlanSettings,
   GuiAutomationSettings,
   GuiConfigurationService,
   OcrGpuMode,
@@ -18,6 +17,14 @@ import type {
 import type {
   LegacyDecisiveAutomationSettings,
 } from '../../src/shared/legacyDecisiveAutomation';
+import type {
+  DecisivePlanSettings,
+} from '../../src/shared/decisivePlan';
+import type {
+  GuiSettingsCommitRequest,
+  GuiSettingsCommitResult,
+} from '../../src/types/ipc';
+import type { SecureFileService } from '../services/SecureFileService';
 import type { IpcRegistrar } from './IpcRegistrar';
 
 export interface ConfigurationIpcDependencies {
@@ -26,6 +33,7 @@ export interface ConfigurationIpcDependencies {
   configuration: GuiConfigurationService;
   cudaEnvironment: CudaEnvironmentService;
   pythonEnvironment: PythonEnvironmentService;
+  secureFiles: SecureFileService;
   windows: WindowService;
 }
 
@@ -83,6 +91,60 @@ export function registerConfigurationIpc(
     'set-gui-automation-settings',
     (_event, settings: GuiAutomationSettings) => {
       return configuration.setAutomation(settings);
+    },
+  );
+
+  ipc.handle(
+    'commit-gui-settings',
+    (
+      _event,
+      settings: GuiSettingsCommitRequest,
+    ): GuiSettingsCommitResult => {
+      if (
+        !settings
+        || typeof settings !== 'object'
+        || typeof settings.usersettingsYaml !== 'string'
+      ) {
+        throw new Error('设置提交内容无效');
+      }
+      const preparedWindow = dependencies.windows.preparePreferences(
+        settings.windowPreferences,
+      );
+      const yamlSnapshot = dependencies.secureFiles.snapshot(
+        'usersettings.yaml',
+      );
+      dependencies.secureFiles.save(
+        'usersettings.yaml',
+        settings.usersettingsYaml,
+      );
+      try {
+        const automation = configuration.commitSettings(
+          settings,
+          preparedWindow.settingsPatch,
+        );
+        return {
+          automation,
+          windowPreferences: preparedWindow.preferences,
+        };
+      } catch (error) {
+        try {
+          dependencies.secureFiles.restore(
+            'usersettings.yaml',
+            yamlSnapshot,
+          );
+        } catch (rollbackError) {
+          throw new Error(
+            `设置提交失败，且 usersettings.yaml 恢复失败: ${
+              rollbackError instanceof Error
+                ? rollbackError.message
+                : String(rollbackError)
+            }；原始错误: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+        throw error;
+      }
     },
   );
 

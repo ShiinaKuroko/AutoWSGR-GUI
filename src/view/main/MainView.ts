@@ -7,7 +7,10 @@
 import type { MainViewObject, LogEntryVO } from '../../types/view.js';
 import { LogView } from './LogView';
 import { TaskQueueView } from './TaskQueueView';
-import { StatusBar } from './StatusBar';
+import {
+  StatusBar,
+  type OperationName,
+} from './StatusBar';
 import { FleetPreviewView } from './FleetPreviewView';
 
 export class MainView {
@@ -15,12 +18,16 @@ export class MainView {
   private taskQueueView: TaskQueueView;
   private statusBar: StatusBar;
   private fleetPreviewView: FleetPreviewView;
+  private beforeUnloadHandler?: () => void;
 
   constructor() {
     this.logView = new LogView();
     this.taskQueueView = new TaskQueueView();
     this.statusBar = new StatusBar();
     this.fleetPreviewView = new FleetPreviewView();
+    window.addEventListener('beforeunload', () => {
+      this.beforeUnloadHandler?.();
+    });
   }
 
   /* ── 回调转发（Controller 直接赋值） ── */
@@ -36,6 +43,26 @@ export class MainView {
   }
   set onEditQueueItem(fn: ((taskId: string, x: number, y: number) => void) | undefined) {
     this.taskQueueView.onEditQueueItem = fn;
+  }
+  set onStopTask(fn: (() => void) | undefined) {
+    this.taskQueueView.onStopTask = fn;
+  }
+  set onClearQueue(fn: (() => void) | undefined) {
+    this.taskQueueView.onClearQueue = fn;
+  }
+  set onImportPlan(fn: (() => void) | undefined) {
+    this.taskQueueView.onImportPlan = fn;
+  }
+  set onStartQueue(fn: (() => void) | undefined) {
+    this.taskQueueView.onStartQueue = fn;
+  }
+  set onOperation(
+    fn: ((operation: OperationName) => void) | undefined
+  ) {
+    this.statusBar.onOperation = fn;
+  }
+  set onBeforeUnload(fn: (() => void) | undefined) {
+    this.beforeUnloadHandler = fn;
   }
 
   /* ── 渲染 ── */
@@ -66,6 +93,17 @@ export class MainView {
 
   setOpsStatus(text: string): void {
     this.statusBar.setOpsStatus(text);
+  }
+
+  setOperationLoading(
+    operation: OperationName,
+    loading: boolean,
+  ): void {
+    this.statusBar.setOperationLoading(operation, loading);
+  }
+
+  setExpeditionTimer(text: string): void {
+    this.statusBar.setExpeditionTimer(text);
   }
 
   setVersion(v: string): void {

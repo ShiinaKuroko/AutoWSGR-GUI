@@ -17,7 +17,7 @@
 | 6 | [后端通信](06-backend-communication.md) | IPC Bridge、ApiClient、REST API、WebSocket 事件 |
 | 7 | [环境管理](07-environment-management.md) | pythonEnv/ 子模块(12 文件)、Python/CUDA/ADB 服务、后端进程生命周期 |
 | 8 | [开发环境搭建](08-dev-setup.md) | 依赖安装、开发/构建/打包命令、SCSS 架构、调试技巧 |
-| 9 | [`src` TypeScript 模块目录](09-src-typescript-catalog.md) | 当前 107 个 TS 文件及其职责索引 |
+| 9 | [`src` TypeScript 模块目录](09-src-typescript-catalog.md) | 当前 `src` 模块及其职责索引；文件数量以该文档为准 |
 | 10 | [当前运行时边界 ADR](10-runtime-boundaries-adr.md) | 存储、IPC 权限、迁移、调度身份和更新安装决策 |
 
 ## 阅读建议

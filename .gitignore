@@ -16,6 +16,7 @@ dist/
 logs/
 log/
 *.log
+/ocr-log-report/
 
 # 系统文件
 .DS_Store

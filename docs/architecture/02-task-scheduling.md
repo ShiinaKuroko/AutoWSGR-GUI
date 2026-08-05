@@ -256,7 +256,7 @@ graph LR
 
 ## 与其他系统的关系
 
-- **Controller 层**：`SchedulerBinder`（`controller/app/SchedulerBinder.ts`）封装 Scheduler/CronScheduler 的回调绑定，管理待完成任务的 ID 跟踪
+- **Controller 层**：`SchedulerBinder` 绑定 Scheduler/CronScheduler 回调并管理待完成任务 ID；`SchedulerRuntimeTracker` 持有日志派生的主页运行状态；`ScheduledTaskLoader` 负责读取自动化计划并入队
 - **配置系统**：开关类后端设置来自 `usersettings.yaml.daily_automation`；远征间隔、战役次数、自动决战和胖次设置来自 `gui_settings.json.automation`
 - **模板与任务组**：任务组通过 `loadGroupToQueue()`（`controller/taskGroup/queueLoader.ts`）批量向 `Scheduler` 添加任务
 - **出击计划**：方案解析后构建 `TaskRequest`，通过 `Scheduler.addTask()` 入队

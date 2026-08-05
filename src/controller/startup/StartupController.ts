@@ -3,7 +3,10 @@
  * StartupController —— 应用启动流程控制器（精简版）。
  * 环境检查 → envAndUpdates.ts，后端连接 → connection.ts。
  */
-import type { ElectronBridge } from '../../types/ipc.js';
+import {
+  getStartupGateway,
+  type StartupGateway,
+} from '../../adapter/IpcAdapter.js';
 import { Logger } from '../../utils/Logger';
 import { checkAndPrepareEnv, runSetupScript, checkForUpdates } from './envAndUpdates';
 import { waitForBackendAndConnect } from './connection';
@@ -16,11 +19,15 @@ import type { StartupHost } from '../contracts.js';
 export class StartupController {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(private readonly host: StartupHost) {}
+  constructor(
+    private readonly host: StartupHost,
+    private readonly gateway: StartupGateway | undefined =
+      getStartupGateway(),
+  ) {}
 
   /** 完整的异步启动流程 */
   async run(): Promise<void> {
-    const bridge = window.electronBridge;
+    const bridge = this.gateway;
     if (!bridge) return;
 
     // 获取目录
@@ -77,12 +84,14 @@ export class StartupController {
   }
 
   /** 代理: 环境检查 */
-  async checkAndPrepareEnv(bridge: ElectronBridge): Promise<boolean> {
+  async checkAndPrepareEnv(
+    bridge: StartupGateway,
+  ): Promise<boolean> {
     return checkAndPrepareEnv(bridge);
   }
 
   /** 代理: 运行 setup.bat */
-  async runSetupScript(bridge: ElectronBridge): Promise<boolean> {
+  async runSetupScript(bridge: StartupGateway): Promise<boolean> {
     return runSetupScript(bridge);
   }
 
@@ -110,7 +119,7 @@ export class StartupController {
 
       Logger.error('后端连续 3 次心跳失败，尝试自动重启…');
       this.stopHeartbeat();
-      const bridge = window.electronBridge;
+      const bridge = this.gateway;
       if (bridge?.startBackend) {
         await bridge.startBackend();
         this.waitForBackendAndConnect();

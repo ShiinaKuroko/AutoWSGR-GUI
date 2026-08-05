@@ -134,7 +134,10 @@ function testSecureFileService() {
       : userData,
     getResourcesPath: () => resources,
   });
-  const service = new SecureFileService(new SafePathService(appPaths));
+  const service = new SecureFileService(
+    new SafePathService(appPaths),
+    new AtomicFileStore(),
+  );
 
   service.save(path.join('nested', 'settings.txt'), 'first');
   assert.equal(
@@ -296,6 +299,13 @@ function testAtomicFileStore() {
   assert.equal(fs.readFileSync(target, 'utf8'), 'first');
   store.write(target, 'second');
   assert.equal(fs.readFileSync(target, 'utf8'), 'second');
+  const binaryTarget = path.join(temporaryDirectory, 'atomic.bin');
+  const binaryContent = Uint8Array.from([0, 1, 2, 127, 128, 255]);
+  store.write(binaryTarget, binaryContent);
+  assert.deepEqual(
+    fs.readFileSync(binaryTarget),
+    Buffer.from(binaryContent),
+  );
 
   if (process.platform === 'win32') {
     const retryTarget = path.join(temporaryDirectory, 'atomic-retry.txt');

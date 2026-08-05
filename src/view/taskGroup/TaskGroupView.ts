@@ -33,6 +33,7 @@ export class TaskGroupView {
   onDropToQueue?: (index: number) => void;
   /** 右键编辑 */
   onEditItem?: (index: number, x: number, y: number) => void;
+  onContextMenuEdit?: () => void;
 
   constructor() {
     this.nameInput = document.getElementById(
@@ -62,6 +63,24 @@ export class TaskGroupView {
       'click',
       () => this.onAddDailyPlan?.(),
     );
+    document.addEventListener('click', () => this.hideContextMenu());
+    document.getElementById('ctx-edit')?.addEventListener('click', () => {
+      this.hideContextMenu();
+      this.onContextMenuEdit?.();
+    });
+  }
+
+  showContextMenu(x: number, y: number): void {
+    const menu = document.getElementById('context-menu');
+    if (!menu) return;
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+    menu.style.display = '';
+  }
+
+  hideContextMenu(): void {
+    const menu = document.getElementById('context-menu');
+    if (menu) menu.style.display = 'none';
   }
 
   render(vo: TaskGroupViewObject): void {

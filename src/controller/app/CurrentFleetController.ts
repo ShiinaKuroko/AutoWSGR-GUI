@@ -3,11 +3,13 @@ import {
   fleetPlannerRepository,
   type FleetPlannerRepository,
 } from '../../adapter/IpcAdapter.js';
-import type { TaskRequest } from '../../types/api.js';
 import type {
   ShipLibraryManifest,
   ShipLibraryShip,
 } from '../../types/ipc.js';
+import type {
+  SchedulerTaskRequest,
+} from '../../types/scheduler.js';
 import type { CurrentFleetShipVO } from '../../types/view.js';
 
 export type CurrentFleetRepository = Pick<
@@ -46,7 +48,9 @@ function firstCandidateShip(rule: unknown): RequestedFleetShip | null {
   return fleetRuleShip(candidates[0]);
 }
 
-function requestedFleet(request: TaskRequest): RequestedFleetShip[] {
+function requestedFleet(
+  request: SchedulerTaskRequest,
+): RequestedFleetShip[] {
   if (request.type !== 'normal_fight' && request.type !== 'event_fight') {
     return [];
   }
@@ -123,7 +127,7 @@ export class CurrentFleetController {
     return this.loading;
   }
 
-  resolve(request: TaskRequest): CurrentFleetShipVO[] {
+  resolve(request: SchedulerTaskRequest): CurrentFleetShipVO[] {
     return requestedFleet(request).map(preview => {
       const ship = findShip(this.manifest, preview);
       return {

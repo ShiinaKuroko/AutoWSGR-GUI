@@ -32,6 +32,9 @@ const {
   UserDataMigrationService,
 } = require('../../dist/electron/services/UserDataMigrationService.js');
 const {
+  MigrationStateStore,
+} = require('../../dist/electron/services/MigrationStateStore.js');
+const {
   LegacyPlanMigration,
 } = require('../../dist/electron/services/LegacyPlanMigration.js');
 const {
@@ -60,7 +63,7 @@ const {
 } = require('../../dist/electron/services/PlanManagementService.js');
 const {
   TaskPresetCodec,
-} = require('../../dist/electron/services/TaskPresetCodec.js');
+} = require('../../dist/src/shared/taskPreset.js');
 const {
   ShipLibraryService,
 } = require('../../dist/electron/services/ShipLibraryService.js');
@@ -99,6 +102,7 @@ module.exports = {
   SecureFileService,
   WindowService,
   UserDataMigrationService,
+  MigrationStateStore,
   LegacyPlanMigration,
   MigrationConflictService,
   TeamPlanCodec,

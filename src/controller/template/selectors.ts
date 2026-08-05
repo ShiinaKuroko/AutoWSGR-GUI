@@ -14,6 +14,10 @@ import { shipSlotLabel } from '../../model/fleet/ShipMatcher';
 import { Logger } from '../../utils/Logger';
 import { addPlanToTaskList } from './useTemplate';
 import { yamlCodec } from '../../adapter';
+import {
+  getTemplateRepository,
+  type TemplateRepository,
+} from '../../adapter/IpcAdapter.js';
 
 const CAMPAIGN_OPTIONS: string[] = [
   '困难潜艇', '困难航母', '困难驱逐', '困难巡洋', '困难战列',
@@ -58,6 +62,7 @@ export async function showPlanSelector(
   wizardView: TemplateWizardView,
   taskGroupModel: TaskGroupModel,
   renderTaskGroup: () => void,
+  repository: TemplateRepository | undefined = getTemplateRepository(),
 ): Promise<void> {
   const options: SelectorOption[] = paths.map(p => ({
     icon: '📄',
@@ -73,10 +78,9 @@ export async function showPlanSelector(
 
   let parsedPlan: Partial<PlanData> | undefined;
 
-  const bridge = window.electronBridge;
-  if (bridge) {
+  if (repository) {
     try {
-      const content = await bridge.readFile(planPath);
+      const content = await repository.readFile(planPath);
       parsedPlan = yamlCodec.parse<Partial<PlanData>>(content);
       const rawPresets = Array.isArray(parsedPlan?.fleet_presets)
         ? parsedPlan.fleet_presets

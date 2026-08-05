@@ -15,16 +15,19 @@ import type { TaskPreset } from '../../types/model.js';
 import { resolveFleetPreset } from '../../model/fleet/ShipMatcher';
 import { resolveFleetPresetRules } from '../../model/fleet/FleetRuleMapper';
 import { toBackendName } from '../../shared/shipNameNormalizer';
+import { taskPresetCodec } from '../../shared/taskPreset';
 import { Logger } from '../../utils/Logger';
 import { normalizeSelectedNodesForBackend } from '../plan/selectedNodes';
 import type { TaskGroupHost } from '../contracts.js';
 import { readTaskGroupItemFile } from './managedPlanReader';
-import { yamlCodec } from '../../adapter';
+import { parseYamlRecord } from '../../adapter';
+import { getTaskGroupRepository } from '../../adapter/IpcAdapter';
 
 export function buildPlanQueueRequest(
   item: TaskGroupItem,
   plan: PlanModel,
   planId: string,
+  shipNameAliases: Readonly<Record<string, string>> = {},
 ): {
   req: NormalFightReq | EventFightReq;
   selectedFleetId: number | undefined;
@@ -58,7 +61,7 @@ export function buildPlanQueueRequest(
       throw new Error(`选择的使用舰队不存在（索引 ${presetIndex}）`);
     }
     const resolved = resolveFleetPreset(preset.ships);
-    const rules = resolveFleetPresetRules(preset.ships);
+    const rules = resolveFleetPresetRules(preset.ships, shipNameAliases);
     if (resolved.length === 0 || rules.length === 0) {
       throw new Error(`使用舰队「${preset.name}」没有可用舰船`);
     }
@@ -76,6 +79,7 @@ export function buildPlanQueueRequest(
 
 interface PlanQueueHost {
   readonly scheduler: Scheduler;
+  getShipNameAliases(): Readonly<Record<string, string>>;
   renderMain(): void;
 }
 
@@ -83,10 +87,15 @@ function addPlanTaskToQueue(
   item: TaskGroupItem,
   plan: PlanModel,
   planId: string,
-  scheduler: Scheduler,
+  host: PlanQueueHost,
 ): void {
-  const { req, selectedFleetId } = buildPlanQueueRequest(item, plan, planId);
-  scheduler.addTask(
+  const { req, selectedFleetId } = buildPlanQueueRequest(
+    item,
+    plan,
+    planId,
+    host.getShipNameAliases(),
+  );
+  host.scheduler.addTask(
     plan.mapName,
     plan.isEvent ? 'event_fight' : 'normal_fight',
     req,
@@ -174,19 +183,19 @@ export async function loadManagedPlanToQueue(
     fleetPresetIndex: selection.fleetPresetIndex,
   };
   const { content, path } = await readTaskGroupItemFile(item);
-  const parsed = yamlCodec.parse<Record<string, unknown>>(content);
+  const parsed = parseYamlRecord(content, '任务文件');
   if (
     item.kind === 'preset'
-    || ('task_type' in parsed && !('map' in parsed))
+    || taskPresetCodec.isStandalone(parsed)
   ) {
     addPresetTaskToQueue(
       item,
-      parsed as unknown as TaskPreset,
+      taskPresetCodec.normalize(parsed),
       host.scheduler,
     );
   } else {
     const plan = PlanModel.fromYaml(content, path);
-    addPlanTaskToQueue(item, plan, path, host.scheduler);
+    addPlanTaskToQueue(item, plan, path, host);
   }
   Logger.info(`已将「${selection.plan.name}」加入任务队列`);
   host.renderMain();
@@ -212,7 +221,9 @@ export async function loadDailyPlanToQueue(
       : undefined,
   };
   const { content } = await readTaskGroupItemFile(item);
-  const preset = yamlCodec.parse<TaskPreset>(content);
+  const preset = taskPresetCodec.normalize(
+    parseYamlRecord(content, '日常任务'),
+  );
   addPresetTaskToQueue(item, preset, host.scheduler);
   Logger.info(`已将日常任务「${selection.plan.name}」加入任务队列`);
   host.renderMain();
@@ -226,8 +237,8 @@ export async function loadGroupToQueue(
 ): Promise<void> {
   const group = taskGroupModel.getActiveGroup();
   if (!group || group.items.length === 0) { Logger.warn('当前任务组为空'); return; }
-  const bridge = window.electronBridge;
-  if (!bridge) return;
+  const repository = getTaskGroupRepository();
+  if (!repository) return;
 
   let loadedCount = 0;
   for (const item of group.items) {
@@ -237,19 +248,24 @@ export async function loadGroupToQueue(
         continue;
       }
 
-      const { content, path } = await readTaskGroupItemFile(item);
-      const parsed = yamlCodec.parse<Record<string, unknown>>(content);
-      if (!parsed || typeof parsed !== 'object') continue;
+      const { content, path } = await readTaskGroupItemFile(
+        item,
+        repository,
+      );
+      const parsed = parseYamlRecord(content, '任务文件');
 
-      if (item.kind === 'preset' || ('task_type' in parsed && !('map' in parsed))) {
+      if (
+        item.kind === 'preset'
+        || taskPresetCodec.isStandalone(parsed)
+      ) {
         addPresetTaskToQueue(
           item,
-          parsed as unknown as TaskPreset,
+          taskPresetCodec.normalize(parsed),
           host.scheduler,
         );
       } else {
         const plan = PlanModel.fromYaml(content, path);
-        addPlanTaskToQueue(item, plan, plan.fileName, host.scheduler);
+        addPlanTaskToQueue(item, plan, plan.fileName, host);
       }
       loadedCount++;
     } catch (e) {
@@ -325,23 +341,28 @@ export async function loadSingleItemToQueue(
     return;
   }
 
-  const bridge = window.electronBridge;
-  if (!bridge) return;
+  const repository = getTaskGroupRepository();
+  if (!repository) return;
 
   try {
-    const { content, path } = await readTaskGroupItemFile(item);
-    const parsed = yamlCodec.parse<Record<string, unknown>>(content);
-    if (!parsed || typeof parsed !== 'object') return;
+    const { content, path } = await readTaskGroupItemFile(
+      item,
+      repository,
+    );
+    const parsed = parseYamlRecord(content, '任务文件');
 
-    if (item.kind === 'preset' || ('task_type' in parsed && !('map' in parsed))) {
+    if (
+      item.kind === 'preset'
+      || taskPresetCodec.isStandalone(parsed)
+    ) {
       addPresetTaskToQueue(
         item,
-        parsed as unknown as TaskPreset,
+        taskPresetCodec.normalize(parsed),
         host.scheduler,
       );
     } else {
       const plan = PlanModel.fromYaml(content, path);
-      addPlanTaskToQueue(item, plan, plan.fileName, host.scheduler);
+      addPlanTaskToQueue(item, plan, plan.fileName, host);
     }
 
     Logger.info(`已将「${item.label}」加入队列`);

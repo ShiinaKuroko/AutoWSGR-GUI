@@ -23,6 +23,7 @@ import type {
   ManagedBattlePlanSelection,
   PlanPresetSource,
 } from '../../types/ipc.js';
+import { taskPresetCodec } from '../../shared/taskPreset';
 import { BattlePlanLoaderView } from '../../view/plan/BattlePlanLoaderView';
 import { Logger } from '../../utils/Logger';
 import {
@@ -31,7 +32,11 @@ import {
   showSaveSuccess,
 } from '../../view/shared/DialogHelper';
 import { importTaskPresetFlow, closePresetDetailFlow, executePresetFlow, type PresetState } from './presetFlow';
-import { yamlCodec, jsonCodec } from '../../adapter';
+import { jsonCodec, parseYamlRecord } from '../../adapter';
+import {
+  getManagedCombatPlanRepository,
+  type ManagedCombatPlanRepository,
+} from '../../adapter/IpcAdapter';
 import { saveNodeEditorValues } from './nodeEditor';
 import { buildPlanPreviewVO } from './rendering';
 import { BattlePlanLoaderController } from './BattlePlanLoaderController';
@@ -61,6 +66,8 @@ export class PlanController {
     private readonly planView: PlanPreviewView,
     readonly host: PlanHost,
     fleetPresetRepository?: PlanFleetPresetRepository,
+    private readonly managedPlans: ManagedCombatPlanRepository | undefined =
+      getManagedCombatPlanRepository(),
   ) {
     this.fleetPresetController = new PlanFleetPresetController(
       fleetPresetRepository,
@@ -76,6 +83,7 @@ export class PlanController {
           this.openManagedPlan(file, source)
         ),
       },
+      this.managedPlans,
     );
   }
 
@@ -143,18 +151,9 @@ export class PlanController {
   // ════════════════════════════════════════
 
   bindActions(): void {
-    document.getElementById('btn-new-battle-plan')?.addEventListener(
-      'click',
-      () => void this.newPlan(),
-    );
-    document.getElementById('btn-load-battle-plan')?.addEventListener(
-      'click',
-      () => void this.loadPlan(),
-    );
-    document.getElementById('btn-save-plan')?.addEventListener(
-      'click',
-      () => void this.savePlan(),
-    );
+    this.planView.onNewPlan = () => void this.newPlan();
+    this.planView.onLoadPlan = () => void this.loadPlan();
+    this.planView.onSavePlan = () => void this.savePlan();
     this.battlePlanLoader.bindActions();
 
     // 节点编辑
@@ -186,17 +185,17 @@ export class PlanController {
       }, mapNight);
     };
 
-    document.getElementById('btn-node-editor-close')?.addEventListener('click', () => {
+    this.planView.onCloseNodeEditor = () => {
       this.editingNodeId = null;
       this.planView.hideNodeEditor();
-    });
+    };
 
-    document.getElementById('btn-node-edit-save')?.addEventListener('click', () => {
+    this.planView.onSaveNodeEditor = () => {
       if (saveNodeEditorValues(this.planView, this.currentPlan, this.editingNodeId)) {
         this.editingNodeId = null;
         this.renderPlanPreview();
       }
-    });
+    };
 
     this.planView.onMapChange = (chapter, map) => {
       void this.changeMap(chapter, map);
@@ -300,25 +299,25 @@ export class PlanController {
     ) {
       return false;
     }
-    const bridge = window.electronBridge;
-    if (!bridge?.readManagedCombatPlan) {
+    if (!this.managedPlans?.readManagedCombatPlan) {
       await showAlert('加载失败', '请完整重启 GUI 后再操作');
       return false;
     }
     try {
-      const result = await bridge.readManagedCombatPlan(source, file);
+      const result = await this.managedPlans.readManagedCombatPlan(
+        source,
+        file,
+      );
       if (!result.success || !result.path || result.content === undefined) {
         await showAlert('加载失败', result.error || '无法读取出征计划');
         return false;
       }
-      const parsed = yamlCodec.parse<unknown>(result.content);
-      if (
-        parsed
-        && typeof parsed === 'object'
-        && 'task_type' in parsed
-        && !('map' in parsed)
-      ) {
-        this.importTaskPreset(parsed as TaskPreset, result.path);
+      const parsed = parseYamlRecord(result.content, '任务文件');
+      if (taskPresetCodec.isStandalone(parsed)) {
+        this.importTaskPreset(
+          taskPresetCodec.normalize(parsed),
+          result.path,
+        );
         return true;
       }
       const plan = PlanModel.fromYaml(result.content, result.path);
@@ -409,8 +408,7 @@ export class PlanController {
 
   private async savePlan(): Promise<void> {
     if (!this.currentPlan) return;
-    const bridge = window.electronBridge;
-    if (!bridge?.saveManagedCombatPlan) {
+    if (!this.managedPlans?.saveManagedCombatPlan) {
       await showAlert('保存失败', '当前环境不支持保存出征规划');
       return;
     }
@@ -426,7 +424,7 @@ export class PlanController {
       const currentFile = copiedFromSystem
         ? undefined
         : this.currentManagedPlanFile ?? undefined;
-      let result = await bridge.saveManagedCombatPlan(
+      let result = await this.managedPlans.saveManagedCombatPlan(
         name,
         content,
         false,
@@ -441,7 +439,7 @@ export class PlanController {
           `存在同名配置，是否覆盖？${conflictDetails}`,
         );
         if (!overwrite) return;
-        result = await bridge.saveManagedCombatPlan(
+        result = await this.managedPlans.saveManagedCombatPlan(
           name,
           content,
           true,

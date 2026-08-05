@@ -48,6 +48,11 @@ export class TaskQueue {
   /** 延迟任务重试定时器 */
   private deferredRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
+  constructor(
+    private readonly getShipNameAliases:
+      () => Readonly<Record<string, string>> = () => ({}),
+  ) {}
+
   // ── 队列读取 ──
 
   get items(): ReadonlyArray<SchedulerTask> {
@@ -248,7 +253,10 @@ export class TaskQueue {
     if (req.type === 'normal_fight' || req.type === 'event_fight') {
       const resolved = resolveFleetPreset(preset.ships);
       const fleet = resolved.map(toBackendName);
-      const fleetRules = resolveFleetPresetRules(preset.ships);
+      const fleetRules = resolveFleetPresetRules(
+        preset.ships,
+        this.getShipNameAliases(),
+      );
       if (req.plan) {
         if (fleet.length > 0) req.plan.fleet = fleet;
         if (fleetRules.length > 0) req.plan.fleet_rules = fleetRules;

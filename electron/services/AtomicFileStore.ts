@@ -8,12 +8,16 @@ const WINDOWS_TRANSIENT_CODES = new Set(['EACCES', 'EBUSY', 'EPERM']);
 
 /** 为需要失败回滚的持久化模块提供统一写入能力。 */
 export class AtomicFileStore {
-  /** 把 UTF-8 文本写入目标文件，并在失败时保留原文件。 */
-  write(filePath: string, content: string): void {
+  /** 把文本或二进制内容写入目标文件，并在失败时保留原文件。 */
+  write(filePath: string, content: string | Uint8Array): void {
     const temporary = `${filePath}.${process.pid}.${Date.now()}.tmp`;
     try {
       this.retryWindowsFileLock(() => {
-        fs.writeFileSync(temporary, content, 'utf-8');
+        if (typeof content === 'string') {
+          fs.writeFileSync(temporary, content, 'utf-8');
+        } else {
+          fs.writeFileSync(temporary, content);
+        }
       });
       this.retryWindowsFileLock(() => {
         fs.renameSync(temporary, filePath);

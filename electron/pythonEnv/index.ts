@@ -27,6 +27,7 @@ export {
 } from './environment';
 
 export {
+  readCudaVersionFile,
   resolveConfiguredCudaRoot,
   buildCudaEnvironment,
   buildBackendRuntimeEnvironment,

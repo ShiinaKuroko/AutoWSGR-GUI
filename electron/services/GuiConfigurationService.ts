@@ -19,6 +19,13 @@ import {
   normalizeDecisiveAutomationSource,
   type DecisiveAutomationSource,
 } from '../../src/shared/decisiveAutomation';
+import {
+  DEFAULT_DECISIVE_PLAN_SETTINGS,
+  type DecisivePlanSettings,
+} from '../../src/shared/decisivePlan';
+import type {
+  GuiSettingsCommitRequest,
+} from '../../src/types/ipc';
 
 export type BackendStartupMode = 'managed' | 'external';
 export type OcrGpuMode = 'auto' | 'cpu' | 'cuda';
@@ -34,13 +41,6 @@ export interface GuiAutomationSettings {
   lootPlanId: string;
   lootPlans: LootAutomationPlan[];
   lootStopCount: number;
-}
-
-export interface DecisivePlanSettings {
-  chapter: number;
-  useQuickRepair: boolean;
-  level1: string[];
-  level2: string[];
 }
 
 export interface GuiConfigurationDependencies {
@@ -60,42 +60,6 @@ function finiteNumber(value: unknown): number | null {
   }
   return null;
 }
-
-const DEFAULT_DECISIVE_PLAN: DecisivePlanSettings = {
-  chapter: 6,
-  useQuickRepair: true,
-  level1: [
-    'U-47',
-    'U-1405',
-    'U-1206',
-    'U-2540',
-    'U-81',
-    'U-96',
-  ],
-  level2: [
-    'U-505',
-    '射水鱼',
-    '大青花鱼',
-    'M-296',
-    '鹦鹉螺',
-    'S-49',
-    'IIIA',
-    'K-21',
-    'U-441',
-    '潜甲',
-    '潜乙',
-    '伊-201',
-    '伊-25',
-    '鲃鱼',
-    '伊-400',
-    '激流',
-    'U-4501',
-    'U-459',
-    'U-14',
-    'U-35',
-    'K1',
-  ],
-};
 
 /** 解释 GUI 设置字段并执行原有归一化和迁移规则。 */
 export class GuiConfigurationService {
@@ -370,6 +334,74 @@ export class GuiConfigurationService {
   setAutomation(
     settings: GuiAutomationSettings,
   ): GuiAutomationSettings {
+    const normalized = this.normalizeAutomation(settings);
+    this.store.write({
+      automation: this.mergeAutomationSettings(normalized),
+    });
+    return normalized;
+  }
+
+  /**
+   * 归一化设置页的全部 GUI 设置并合并为一次原子 JSON 写入。
+   * usersettings.yaml 由 IPC 层在调用本方法前写入并负责失败恢复。
+   */
+  commitSettings(
+    settings: GuiSettingsCommitRequest,
+    additionalPatch: Record<string, unknown>,
+  ): GuiAutomationSettings {
+    if (
+      typeof settings.backendPort !== 'number'
+      || !Number.isFinite(settings.backendPort)
+      || settings.backendPort < 1
+      || settings.backendPort > 65535
+    ) {
+      throw new Error('后端端口必须是 1 到 65535 的整数');
+    }
+    if (
+      settings.backendStartupMode === 'external'
+      && !settings.backendRepoPath?.trim()
+    ) {
+      throw new Error('使用本地后端时必须配置仓库路径');
+    }
+    const normalizedAutomation = this.normalizeAutomation(
+      settings.automation,
+    );
+    const rawCudaPath = typeof settings.cudaPath === 'string'
+      ? settings.cudaPath.trim()
+      : '';
+    const patch: Record<string, unknown> = {
+      ...additionalPatch,
+      update_mode: settings.updateMode === 'manual' ? 'manual' : 'auto',
+      backend_port: Math.trunc(settings.backendPort),
+      backend_startup_mode: settings.backendStartupMode === 'external'
+        ? 'external'
+        : 'managed',
+      backend_repo_path: typeof settings.backendRepoPath === 'string'
+        ? settings.backendRepoPath.trim()
+        : '',
+      ocr_gpu_mode: (
+        settings.ocrGpuMode === 'cpu'
+        || settings.ocrGpuMode === 'cuda'
+      )
+        ? settings.ocrGpuMode
+        : 'auto',
+      cuda_path: rawCudaPath
+        ? this.dependencies.normalizeCudaPath(rawCudaPath)
+        : '',
+      save_backend_screenshots:
+        settings.saveBackendScreenshots === true,
+      python_path: settings.pythonPath ?? '',
+      automation: this.mergeAutomationSettings(normalizedAutomation),
+    };
+    this.dependencies.clearPythonCache();
+    this.store.write(patch);
+    return normalizedAutomation;
+  }
+
+  /** 归一化 GUI 自动化设置，但不执行持久化。 */
+  private normalizeAutomation(
+    settings: GuiAutomationSettings,
+  ): GuiAutomationSettings {
     const lootPlans = normalizeLootAutomationPlans(settings?.lootPlans);
     const requestedSource: LootPlanSource = (
       settings?.lootPlanSource === 'user' ? 'user' : 'system'
@@ -409,6 +441,13 @@ export class GuiConfigurationService {
         ),
       ),
     };
+    return normalized;
+  }
+
+  /** 保留 automation 中尚未建模的字段并覆盖已归一化字段。 */
+  private mergeAutomationSettings(
+    normalized: GuiAutomationSettings,
+  ): Record<string, unknown> {
     const raw = this.store.read().automation;
     const output: Record<string, unknown> = (
       raw && typeof raw === 'object' && !Array.isArray(raw)
@@ -416,8 +455,7 @@ export class GuiConfigurationService {
       : { ...normalized }
     );
     delete output.lootPlanIndex;
-    this.store.write({ automation: output });
-    return normalized;
+    return output;
   }
 
   /** 读取已经保留到 GUI JSON 的旧版决战自动化原值。 */
@@ -568,12 +606,12 @@ export class GuiConfigurationService {
     const chapter = Math.trunc(Number(raw.chapter));
     const requestedMainShips = this.normalizeDecisiveShips(
       raw.level1,
-      DEFAULT_DECISIVE_PLAN.level1,
+      DEFAULT_DECISIVE_PLAN_SETTINGS.level1,
     );
     const mainShips = requestedMainShips.slice(0, 6);
     const requestedBackupShips = this.normalizeDecisiveShips(
       raw.level2,
-      DEFAULT_DECISIVE_PLAN.level2,
+      DEFAULT_DECISIVE_PLAN_SETTINGS.level2,
     );
     const legacyLevel3 = Array.isArray(raw.level3)
       ? this.normalizeDecisiveShips(raw.level3, [])
@@ -596,12 +634,12 @@ export class GuiConfigurationService {
     return {
       chapter: Number.isFinite(chapter)
         ? Math.max(1, Math.min(6, chapter))
-        : DEFAULT_DECISIVE_PLAN.chapter,
+        : DEFAULT_DECISIVE_PLAN_SETTINGS.chapter,
       useQuickRepair: typeof raw.use_quick_repair === 'boolean'
         ? raw.use_quick_repair
         : typeof raw.useQuickRepair === 'boolean'
           ? raw.useQuickRepair
-          : DEFAULT_DECISIVE_PLAN.useQuickRepair,
+          : DEFAULT_DECISIVE_PLAN_SETTINGS.useQuickRepair,
       level1: mainShips,
       level2: backupShips,
     };

@@ -12,8 +12,15 @@ import type {
 import type {
   DecisiveAutomationSource,
 } from '../src/shared/decisiveAutomation';
+import type {
+  DecisivePlanSettings,
+  ElectronBridge,
+  GuiSettingsCommitRequest,
+  GuiSettingsCommitResult,
+  GuiUpdateStatus,
+} from '../src/types/ipc';
 
-contextBridge.exposeInMainWorld('electronBridge', {
+const electronBridge = {
   getAppVersion: () => {
     return ipcRenderer.sendSync('get-app-version-sync') as string;
   },
@@ -76,6 +83,12 @@ contextBridge.exposeInMainWorld('electronBridge', {
     return ipcRenderer.invoke('set-gui-automation-settings', settings);
   },
 
+  commitGuiSettings: (
+    settings: GuiSettingsCommitRequest,
+  ): Promise<GuiSettingsCommitResult> => {
+    return ipcRenderer.invoke('commit-gui-settings', settings);
+  },
+
   migrateLegacyDecisiveAutomation: (
     settings: LegacyDecisiveAutomationSettings,
   ) => {
@@ -89,12 +102,7 @@ contextBridge.exposeInMainWorld('electronBridge', {
     return ipcRenderer.invoke('get-decisive-plan-settings');
   },
 
-  setDecisivePlanSettings: (settings: {
-    chapter: number;
-    useQuickRepair: boolean;
-    level1: string[];
-    level2: string[];
-  }) => {
+  setDecisivePlanSettings: (settings: DecisivePlanSettings) => {
     return ipcRenderer.invoke('set-decisive-plan-settings', settings);
   },
 
@@ -199,12 +207,7 @@ contextBridge.exposeInMainWorld('electronBridge', {
     );
   },
 
-  saveDailyDecisivePlan: (settings: {
-    chapter: number;
-    useQuickRepair: boolean;
-    level1: string[];
-    level2: string[];
-  }) => {
+  saveDailyDecisivePlan: (settings: DecisivePlanSettings) => {
     return ipcRenderer.invoke('save-daily-decisive-plan', settings);
   },
 
@@ -403,7 +406,7 @@ contextBridge.exposeInMainWorld('electronBridge', {
     return ipcRenderer.invoke('install-gui-update');
   },
 
-  onUpdateStatus: (callback: (status: any) => void) => {
+  onUpdateStatus: (callback: (status: GuiUpdateStatus) => void) => {
     ipcRenderer.on('update-status', (_event, status) => callback(status));
   },
 
@@ -414,4 +417,6 @@ contextBridge.exposeInMainWorld('electronBridge', {
   onSetupLog: (callback: (text: string) => void) => {
     ipcRenderer.on('setup-log', (_event, text: string) => callback(text));
   },
-});
+} satisfies ElectronBridge;
+
+contextBridge.exposeInMainWorld('electronBridge', electronBridge);

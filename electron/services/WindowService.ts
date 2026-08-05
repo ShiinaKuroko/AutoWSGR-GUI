@@ -16,6 +16,11 @@ export interface WindowPreferences {
   rememberBounds: boolean;
 }
 
+export interface PreparedWindowPreferences {
+  preferences: WindowPreferences;
+  settingsPatch: Record<string, unknown>;
+}
+
 interface WindowBounds {
   x: number;
   y: number;
@@ -61,6 +66,34 @@ export class WindowService {
     return this.mainWindow;
   }
 
+  /** 仅在主窗口及其页面仍可用时向 Renderer 发送消息。 */
+  sendToRenderer(channel: string, ...args: unknown[]): boolean {
+    const win = this.mainWindow;
+    if (
+      !win
+      || win.isDestroyed()
+      || win.webContents.isDestroyed()
+    ) {
+      return false;
+    }
+    try {
+      win.webContents.send(channel, ...args);
+      return true;
+    } catch (error) {
+      if (
+        win.isDestroyed()
+        || win.webContents.isDestroyed()
+        || (
+          error instanceof Error
+          && error.message === 'Object has been destroyed'
+        )
+      ) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
   /** 读取并归一化默认窗口大小和边界记忆开关。 */
   getPreferences(): WindowPreferences {
     const settings = this.settings.read();
@@ -83,21 +116,37 @@ export class WindowService {
   setPreferences(
     preferences: Partial<WindowPreferences>,
   ): WindowPreferences {
+    const prepared = this.preparePreferences(preferences);
+    this.settings.write(prepared.settingsPatch);
+    return prepared.preferences;
+  }
+
+  /** 归一化窗口偏好并生成可参与批量配置提交的存储 patch。 */
+  preparePreferences(
+    preferences: Partial<WindowPreferences>,
+  ): PreparedWindowPreferences {
     const current = this.getPreferences();
-    this.settings.write({
-      default_window_width: this.normalizeWindowSize(
+    const normalized: WindowPreferences = {
+      defaultWidth: this.normalizeWindowSize(
         preferences?.defaultWidth,
         MIN_WINDOW_WIDTH,
         current.defaultWidth,
       ),
-      default_window_height: this.normalizeWindowSize(
+      defaultHeight: this.normalizeWindowSize(
         preferences?.defaultHeight,
         MIN_WINDOW_HEIGHT,
         current.defaultHeight,
       ),
-      remember_window_bounds: preferences?.rememberBounds === true,
-    });
-    return this.getPreferences();
+      rememberBounds: preferences?.rememberBounds === true,
+    };
+    return {
+      preferences: normalized,
+      settingsPatch: {
+        default_window_width: normalized.defaultWidth,
+        default_window_height: normalized.defaultHeight,
+        remember_window_bounds: normalized.rememberBounds,
+      },
+    };
   }
 
   /** 缓存最后一次正常窗口边界，供窗口销毁后的退出阶段使用。 */

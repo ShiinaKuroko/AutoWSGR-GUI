@@ -22,7 +22,9 @@ import { GuiSettingsStore } from './services/GuiSettingsStore';
 import { SafePathService } from './services/SafePathService';
 import { SecureFileService } from './services/SecureFileService';
 import { WindowService } from './services/WindowService';
+import { SingleInstanceService } from './services/SingleInstanceService';
 import { UserDataMigrationService } from './services/UserDataMigrationService';
+import { MigrationStateStore } from './services/MigrationStateStore';
 import {
   LEGACY_PLAN_MIGRATION_STAGE,
   LegacyPlanMigration,
@@ -31,6 +33,7 @@ import {
   MigrationConflictService,
 } from './services/MigrationConflictService';
 import {
+  emptyLegacyMigrationSummary,
   mergeLegacyMigrationSummaries,
 } from './services/LegacyMigrationSummary';
 import {
@@ -47,7 +50,7 @@ import { CombatPlanRepository } from './services/CombatPlanRepository';
 import { RuntimePlanService } from './services/RuntimePlanService';
 import { PlanManagementService } from './services/PlanManagementService';
 import { PlanExportService } from './services/PlanExportService';
-import { TaskPresetCodec } from './services/TaskPresetCodec';
+import { TaskPresetCodec } from '../src/shared/taskPreset';
 import { DailyPlanService } from './services/DailyPlanService';
 import { ShipLibraryService } from './services/ShipLibraryService';
 import { ShipLibraryUpdater } from './services/ShipLibraryUpdater';
@@ -79,6 +82,9 @@ function ignoreBrokenPipe(stream: NodeJS.WriteStream): void {
 ignoreBrokenPipe(process.stdout);
 ignoreBrokenPipe(process.stderr);
 
+const singleInstanceService = new SingleInstanceService(app);
+const isPrimaryInstance = singleInstanceService.acquire();
+
 const appPaths = new AppPaths({
   moduleDirectory: __dirname,
   isPackaged: () => app.isPackaged,
@@ -86,22 +92,31 @@ const appPaths = new AppPaths({
   getResourcesPath: () => process.resourcesPath,
 });
 const atomicFileStore = new AtomicFileStore();
+const migrationStateStore = new MigrationStateStore(
+  () => path.join(appPaths.userDataRoot(), '.migration-state.json'),
+  atomicFileStore,
+);
 const userDataMigrationService = new UserDataMigrationService(
   appPaths,
   atomicFileStore,
+  migrationStateStore,
 );
 const migrationConflictService = new MigrationConflictService(
   appPaths,
   atomicFileStore,
 );
-const legacyUserDataMigration = (
-  userDataMigrationService.migrateLegacyUserDataFiles()
-);
+const legacyUserDataMigration = isPrimaryInstance
+  ? userDataMigrationService.migrateLegacyUserDataFiles()
+  : emptyLegacyMigrationSummary();
 const guiSettingsStore = new GuiSettingsStore(
   () => path.join(appPaths.userDataRoot(), 'gui_settings.json'),
+  atomicFileStore,
 );
 const safePathService = new SafePathService(appPaths);
-const secureFileService = new SecureFileService(safePathService);
+const secureFileService = new SecureFileService(
+  safePathService,
+  atomicFileStore,
+);
 const teamPlanCodec = new TeamPlanCodec();
 const teamPlanRepository = new TeamPlanRepository(
   appPaths,
@@ -147,6 +162,7 @@ const planManagementService = new PlanManagementService(
 const planExportService = new PlanExportService(
   combatPlanRepository,
   teamPlanRepository,
+  atomicFileStore,
 );
 const shipLibraryService = new ShipLibraryService(appPaths, {
   processId: process.pid,
@@ -187,13 +203,16 @@ const windowService = new WindowService(guiSettingsStore, {
     void dialog.showMessageBox(options);
   },
 });
+singleInstanceService.setMainWindowProvider(
+  () => windowService.getMainWindow(),
+);
 const shipLibraryUpdater = new ShipLibraryUpdater(
   shipLibraryService,
   {
     findPython,
     appRoot,
     sendProgress: message => {
-      windowService.getMainWindow()?.webContents.send(
+      windowService.sendToRenderer(
         'ship-library-update-progress',
         { message },
       );
@@ -237,6 +256,7 @@ registerConfigurationIpc(ipcMain, {
   configuration: guiConfigurationService,
   cudaEnvironment: cudaEnvironmentService,
   pythonEnvironment: pythonEnvironmentService,
+  secureFiles: secureFileService,
   windows: windowService,
 });
 registerDailyPlanIpc(ipcMain, {
@@ -270,6 +290,7 @@ const legacyPlanMigration = new LegacyPlanMigration<UserTeamPlan>(
   appPaths,
   atomicFileStore,
   userDataMigrationService,
+  migrationStateStore,
   {
     yamlFiles: directory => combatPlanRepository.yamlFiles(directory),
     safePlanBaseName: value => combatPlanCodec.safeBaseName(value),
@@ -306,109 +327,117 @@ const legacyPlanMigration = new LegacyPlanMigration<UserTeamPlan>(
 
 /** 向渲染进程发送环境检查进度。 */
 function sendProgress(msg: string): void {
-  windowService.getMainWindow()?.webContents.send('backend-log', msg);
+  windowService.sendToRenderer('backend-log', msg);
 }
 
 // 应用生命周期
 
-app.whenReady().then(() => {
-  initPythonEnv({
-    appRoot,
-    sendProgress,
-    getConfiguredPythonPath: () => (
-      guiConfigurationService.configuredPythonPath()
-    ),
-    getUpdateMode: () => guiConfigurationService.updateMode(),
-    getBackendStartupMode: () => (
-      guiConfigurationService.backendStartupMode()
-    ),
-    getBackendRepoPath: () => (
-      guiConfigurationService.backendRepoPath()
-    ),
-    getTempDir: () => app.getPath('temp'),
-  });
-  initBackend({
-    appRoot,
-    userDataRoot,
-    resourceRoot,
-    BACKEND_PORT,
-    getMainWindow: () => windowService.getMainWindow(),
-  });
-  combatPlanRepository.initializeUserDirectory();
-  shipLibraryService.initialize();
-  teamPlanRepository.initializeUserDirectory();
-  const presetInventoryResult = (
-    userDataMigrationService.migratePresetInventory()
-  );
-  const legacyPlanResult = legacyPlanMigration.migrate();
-  const legacyMigrationResult = mergeLegacyMigrationSummaries(
-    legacyUserDataMigration,
-    legacyPlanResult,
-    presetInventoryResult,
-  );
-  userDataMigrationService.writeMigrationReport(
-    legacyMigrationResult,
-  );
-  if (
-    legacyMigrationResult.failed === 0
-    && userDataMigrationService.isStageComplete(
-      LEGACY_PLAN_MIGRATION_STAGE,
-    )
-  ) {
-    userDataMigrationService.completeLegacySourceMigration();
-  }
-  migrationConflictService.prepareAfterMigration(
-    legacyMigrationResult.total > 0,
-  );
-  registerUpdaterIpc(ipcMain, {
-    getMainWindow: () => windowService.getMainWindow(),
-    getAppVersion: () => app.getVersion(),
-    stopBackend,
-  });
-  windowService.createWindow();
-  const migrationNotice = buildLegacyMigrationNotice(
-    legacyMigrationResult,
-  );
-  const mainWindow = windowService.getMainWindow();
-  if (migrationNotice && mainWindow) {
-    void dialog.showMessageBox(mainWindow, migrationNotice);
-  }
+if (isPrimaryInstance) initializeApplicationLifecycle();
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      windowService.createWindow();
+function initializeApplicationLifecycle(): void {
+  app.whenReady().then(() => {
+    initPythonEnv({
+      appRoot,
+      sendProgress,
+      getConfiguredPythonPath: () => (
+        guiConfigurationService.configuredPythonPath()
+      ),
+      getUpdateMode: () => guiConfigurationService.updateMode(),
+      getBackendStartupMode: () => (
+        guiConfigurationService.backendStartupMode()
+      ),
+      getBackendRepoPath: () => (
+        guiConfigurationService.backendRepoPath()
+      ),
+      getTempDir: () => app.getPath('temp'),
+    });
+    initBackend({
+      appRoot,
+      userDataRoot,
+      resourceRoot,
+      BACKEND_PORT,
+      sendToRenderer: (channel, ...args) => (
+        windowService.sendToRenderer(channel, ...args)
+      ),
+    });
+    combatPlanRepository.initializeUserDirectory();
+    shipLibraryService.initialize();
+    teamPlanRepository.initializeUserDirectory();
+    const presetInventoryResult = (
+      userDataMigrationService.migratePresetInventory()
+    );
+    const legacyPlanResult = legacyPlanMigration.migrate();
+    const legacyMigrationResult = mergeLegacyMigrationSummaries(
+      legacyUserDataMigration,
+      legacyPlanResult,
+      presetInventoryResult,
+    );
+    userDataMigrationService.writeMigrationReport(
+      legacyMigrationResult,
+    );
+    if (
+      legacyMigrationResult.failed === 0
+      && migrationStateStore.isStageComplete(
+        LEGACY_PLAN_MIGRATION_STAGE,
+      )
+    ) {
+      userDataMigrationService.completeLegacySourceMigration();
+    }
+    migrationConflictService.prepareAfterMigration(
+      legacyMigrationResult.total > 0,
+    );
+    registerUpdaterIpc(ipcMain, {
+      sendToRenderer: (channel, ...args) => (
+        windowService.sendToRenderer(channel, ...args)
+      ),
+      getAppVersion: () => app.getVersion(),
+      stopBackend,
+    });
+    windowService.createWindow();
+    const migrationNotice = buildLegacyMigrationNotice(
+      legacyMigrationResult,
+    );
+    const mainWindow = windowService.getMainWindow();
+    if (migrationNotice && mainWindow) {
+      void dialog.showMessageBox(mainWindow, migrationNotice);
+    }
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        windowService.createWindow();
+      }
+    });
+  });
+
+  let backendShutdownInProgress = false;
+
+  app.on('before-quit', (event) => {
+    windowService.captureWindowBounds();
+    windowService.persistWindowBounds();
+    if (backendShutdownInProgress) return;
+    if (getBackendProcess()) {
+      backendShutdownInProgress = true;
+      event.preventDefault();
+      void stopBackend().then(() => {
+        backendShutdownInProgress = false;
+        app.quit();
+      }).catch(error => {
+        backendShutdownInProgress = false;
+        const message = error instanceof Error
+          ? error.message
+          : String(error);
+        console.error('[Backend] 无法安全退出:', message);
+        dialog.showErrorBox(
+          '无法安全退出',
+          `后端进程仍在运行，应用没有退出：${message}`,
+        );
+      });
     }
   });
-});
 
-let backendShutdownInProgress = false;
-
-app.on('before-quit', (event) => {
-  windowService.captureWindowBounds();
-  windowService.persistWindowBounds();
-  if (backendShutdownInProgress) return;
-  if (getBackendProcess()) {
-    backendShutdownInProgress = true;
-    event.preventDefault();
-    void stopBackend().then(() => {
-      backendShutdownInProgress = false;
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
       app.quit();
-    }).catch(error => {
-      backendShutdownInProgress = false;
-      const message = error instanceof Error
-        ? error.message
-        : String(error);
-      console.error('[Backend] 无法安全退出:', message);
-      dialog.showErrorBox(
-        '无法安全退出',
-        `后端进程仍在运行，应用没有退出：${message}`,
-      );
-    });
-  }
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
+    }
+  });
+}

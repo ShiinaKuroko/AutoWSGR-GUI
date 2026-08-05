@@ -1,6 +1,7 @@
 /** 处理主页面导航、标签切换和当前页面状态。 */
 import { FleetPlannerController } from '../plan/FleetPlannerController';
 import { PlanController } from '../plan/PlanController';
+import { NavigationView } from '../../view/main/NavigationView';
 
 export interface NavigationControllerHost {
   readonly fleetPlannerController: FleetPlannerController;
@@ -10,59 +11,21 @@ export interface NavigationControllerHost {
 }
 
 export class NavigationController {
-  private navTabs: HTMLElement | null = null;
-  private navIndicator: HTMLElement | null = null;
-  private navResizeObserver: ResizeObserver | null = null;
-
-  constructor(private readonly host: NavigationControllerHost) {}
+  constructor(
+    private readonly host: NavigationControllerHost,
+    private readonly view = new NavigationView(),
+  ) {}
 
   bindNavigation(): void {
-    this.navTabs = document.querySelector<HTMLElement>('.nav-tabs');
-    this.navIndicator = this.navTabs?.querySelector<HTMLElement>(
-      '.nav-tab-indicator',
-    ) ?? null;
-
-    document.querySelectorAll<HTMLElement>('.nav-tab').forEach((tab) => {
-      tab.addEventListener('click', () => {
-        const pageId = tab.dataset['page'];
-        if (pageId) this.switchPage(pageId);
-      });
-    });
-
-    this.updateNavigationIndicator();
-    requestAnimationFrame(() => {
-      this.navIndicator?.classList.add('is-ready');
-    });
-
-    if (this.navTabs) {
-      this.navResizeObserver?.disconnect();
-      this.navResizeObserver = new ResizeObserver(
-        () => this.updateNavigationIndicator(),
-      );
-      this.navResizeObserver.observe(this.navTabs);
-    }
+    this.view.onPageSelected = pageId => this.switchPage(pageId);
   }
 
   bindPlanNavigation(): void {
-    document.querySelectorAll<HTMLElement>('[data-plan-tab]').forEach((tab) => {
-      tab.addEventListener('click', () => {
-        const tabId = tab.dataset['planTab'];
-        if (tabId) this.showPlanTab(tabId);
-      });
-    });
+    this.view.onPlanTabSelected = tabId => this.showPlanTab(tabId);
   }
 
   showPlanTab(tabId: string): void {
-    document.querySelectorAll<HTMLElement>('[data-plan-tab]').forEach((tab) => {
-      const active = tab.dataset['planTab'] === tabId;
-      tab.classList.toggle('active', active);
-      tab.setAttribute('aria-selected', String(active));
-    });
-    document.querySelectorAll<HTMLElement>('[data-plan-panel]').forEach((panel) => {
-      const active = panel.dataset['planPanel'] === tabId;
-      panel.classList.toggle('active', active);
-      panel.hidden = !active;
-    });
+    this.view.showPlanTab(tabId);
     if (tabId === 'fleet') {
       void this.host.fleetPlannerController.load();
     } else if (tabId === 'scheme') {
@@ -73,15 +36,10 @@ export class NavigationController {
   }
 
   switchPage(pageId: string, planTab?: string): void {
-    document.querySelectorAll('.nav-tab').forEach((t) => t.classList.remove('active'));
-    document.querySelector(`.nav-tab[data-page="${pageId}"]`)?.classList.add('active');
-    this.updateNavigationIndicator();
-    document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
-    document.getElementById(`page-${pageId}`)?.classList.add('active');
+    this.view.showPage(pageId);
     if (pageId === 'plan') {
       if (planTab) this.showPlanTab(planTab);
-      const activeTab = document.querySelector<HTMLElement>('[data-plan-tab].active')
-        ?.dataset['planTab'] ?? 'fleet';
+      const activeTab = this.view.getActivePlanTab();
       if (activeTab === 'fleet') {
         void this.host.fleetPlannerController.load();
       }
@@ -90,15 +48,5 @@ export class NavigationController {
       void this.host.refreshAdbStatus();
       void this.host.refreshShipLibraryStatus();
     }
-  }
-
-  private updateNavigationIndicator(): void {
-    const activeTab = this.navTabs?.querySelector<HTMLElement>('.nav-tab.active');
-    if (!activeTab || !this.navIndicator) return;
-
-    this.navIndicator.style.width = `${activeTab.offsetWidth}px`;
-    this.navIndicator.style.transform = (
-      `translate3d(${activeTab.offsetLeft}px, 0, 0)`
-    );
   }
 }

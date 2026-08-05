@@ -12,6 +12,7 @@ const result = esbuild.buildSync({
       "export { PlanFleetPresetController } from './src/controller/plan/PlanFleetPresetController.ts';",
       "export { PlanManagementController } from './src/controller/plan/PlanManagementController.ts';",
       "export { buildPlanManagementViewObject } from './src/controller/plan/planManagementViewObjects.ts';",
+      "export * from './src/view/plan/GalleryShipCollection.ts';",
     ].join('\n'),
     loader: 'ts',
     resolveDir: process.cwd(),
@@ -27,8 +28,10 @@ const module = { exports: {} };
 new Function('require', 'module', 'exports', result.outputFiles[0].text)(require, module, module.exports);
 const {
   applyFleetDraftEdit,
+  calculateGalleryBatchSize,
   CurrentFleetController,
   DecisiveFleetDraft,
+  filterAndSortGalleryShips,
   PlanFleetPresetController,
   PlanManagementController,
   buildPlanManagementViewObject,
@@ -44,6 +47,7 @@ const {
   insertFleetPrimary,
   isFleetSlotEmpty,
   moveFleetPrimary,
+  normalizeGallerySearch,
   removeFleetPrimary,
   resolveFleetSlotPosition,
   resolveGalleryFormationAssignment,
@@ -53,7 +57,17 @@ const {
   toBackendName,
 } = module.exports;
 
-assert.equal(toBackendName('岛风(岛风型驱逐舰)·改'), '岛风');
+let passedScenarioCount = 0;
+async function runScenario(name, run) {
+  try {
+    await run();
+    passedScenarioCount += 1;
+    console.log(`PASSED: ${name}`);
+  } catch (error) {
+    console.error(`FAILED: ${name}`);
+    throw error;
+  }
+}
 
 const testShip = (id, name) => ({
   id,
@@ -61,6 +75,88 @@ const testShip = (id, name) => ({
   search_name: name,
   ship_type: 'dd',
 });
+const galleryShip = (
+  id,
+  name,
+  searchName,
+  variant,
+  shipType,
+  country,
+) => ({
+  id,
+  name,
+  search_name: searchName,
+  variant,
+  rarity: 1,
+  ship_type: shipType,
+  size_class: 'small',
+  role_class: 'surface',
+  country,
+  portraitUrl: '',
+  backgroundUrl: '',
+  frameUrl: '',
+  typeIconUrl: '',
+});
+
+await runScenario('舰名归一化与图库筛选保持普通和决战语义', () => {
+assert.equal(toBackendName('岛风(岛风型驱逐舰)·改'), '岛风');
+assert.equal(normalizeGallerySearch(' U.47·狼群 '), 'u47狼群');
+
+const galleryShips = [
+  galleryShip(3, '夕张', '夕张', 'normal', 'cl', 'jp'),
+  galleryShip(1, 'U-47', 'U-47', 'normal', 'ss', 'de'),
+  galleryShip(2, 'U-47·狼群', 'U-47', 'refit', 'ss', 'de'),
+  galleryShip(4, 'T-23', 'T-23', 'special', 'dd', 'de'),
+];
+const galleryTypeLabels = {
+  cl: '轻巡洋舰',
+  dd: '驱逐舰',
+  ss: '潜艇',
+};
+const refitGalleryShips = filterAndSortGalleryShips(galleryShips, {
+  searchText: 'U.47',
+  typeFilters: new Set(['ss']),
+  countryFilters: new Set(['de']),
+  refitOnly: true,
+  sortField: 'id',
+  descending: false,
+  shipTypeLabels: galleryTypeLabels,
+  isExcluded: () => false,
+});
+assert.deepEqual(refitGalleryShips.map(ship => ship.id), [2]);
+
+const decisiveVisibleShips = filterAndSortGalleryShips(galleryShips, {
+  searchText: '',
+  typeFilters: new Set(),
+  countryFilters: new Set(),
+  refitOnly: false,
+  sortField: 'id',
+  descending: true,
+  shipTypeLabels: galleryTypeLabels,
+  isExcluded: ship => ship.search_name === 'U-47',
+});
+assert.deepEqual(
+  decisiveVisibleShips.map(ship => ship.id),
+  [4, 3],
+);
+assert.deepEqual(galleryShips.map(ship => ship.id), [3, 1, 2, 4]);
+
+const typeSearchShips = filterAndSortGalleryShips(galleryShips, {
+  searchText: '潜艇',
+  typeFilters: new Set(),
+  countryFilters: new Set(),
+  refitOnly: false,
+  sortField: 'id',
+  descending: false,
+  shipTypeLabels: galleryTypeLabels,
+  isExcluded: ship => ship.id === 2,
+});
+assert.deepEqual(typeSearchShips.map(ship => ship.id), [1]);
+
+assert.equal(calculateGalleryBatchSize(0, 0), 12);
+assert.equal(calculateGalleryBatchSize(664, 612), 25);
+});
+
 const createFollowModeDraft = () => {
   const draft = createFleetDraft();
   draft.slots[0].primary = testShip(1, '主选A');
@@ -74,6 +170,7 @@ const createFollowModeDraft = () => {
   return draft;
 };
 
+await runScenario('主选分配删除和插入保持槽位与焦点规则', () => {
 const duplicatePrimaryDraft = createFollowModeDraft();
 assert.equal(
   hasOtherPrimaryShip(
@@ -245,7 +342,9 @@ assert.equal(
 assert.deepEqual(insertedCandidates.slice(0, 2), leftCandidates);
 assert.equal(insertedCandidates[2], insertedCandidate);
 assert.deepEqual(insertedCandidates.slice(3, 6), shiftedCandidates);
+});
 
+await runScenario('主选拖拽遵守舰船或位置备选跟随模式', () => {
 const dragFocusDraft = createFollowModeDraft();
 dragFocusDraft.slots[2].primary = testShip(44, '保持焦点');
 const dragFocusedSlot = dragFocusDraft.slots[2];
@@ -424,7 +523,9 @@ assert.equal(
   candidateOnlyMoveToEndDraft.slots[2],
   candidateOnlyMoveSlots[0],
 );
+});
 
+await runScenario('统一编辑入口处理赋值规则拖拽复制与清空', () => {
 const editorAssignmentDraft = createFleetDraft();
 const editorPrimary = testShip(120, '编辑器主选');
 const primaryAssignment = applyFleetDraftEdit(editorAssignmentDraft, {
@@ -597,7 +698,9 @@ assert.equal(
   editorCopyDraft.slots.every(slot => isFleetSlotEmpty(slot)),
   true,
 );
+});
 
+await runScenario('舰队方案往返持久化并拒绝非法规则', () => {
 const persistedDraft = createFleetDraft();
 persistedDraft.slots[0].primary = testShip(201, '主选持久化');
 persistedDraft.slots[0].shipTypes = ['cl'];
@@ -701,7 +804,9 @@ assert.throws(
   () => fleetDraftToTeamPlan(reversedLevelDraft, '反向等级'),
   /最大等级不能小于最小等级/,
 );
+});
 
+await runScenario('舰队规则解析保留纯候选与舰名别名', () => {
 const candidateOnly = resolveFleetPresetRules([{
   candidates: [{ name: '海伦娜' }, { name: '克利夫兰' }],
   ship_type: ['cl'],
@@ -715,10 +820,43 @@ assert.deepEqual(candidateOnly[0].ship_type, ['cl']);
 assert.equal(candidateOnly[0].min_level, 10);
 assert.equal(candidateOnly[0].max_level, 80);
 
+const aliasedRules = resolveFleetPresetRules([
+  '85工程',
+  {
+    name: 'Z28',
+    candidates: [
+      { name: '吕贝克' },
+      { name: 'Z46', search_name: '计划内Z46' },
+    ],
+  },
+  { name: '吕贝克', search_name: '计划内吕贝克' },
+], {
+  契卡洛夫: '85工程',
+  自定义Z28: 'Z28',
+  自定义吕贝克: '吕贝克',
+});
+assert.deepEqual(aliasedRules[0], {
+  name: '85工程',
+  search_name: '契卡洛夫',
+});
+assert.deepEqual(aliasedRules[1], {
+  name: 'Z28',
+  search_name: '自定义Z28',
+  candidates: [
+    { name: '吕贝克', search_name: '自定义吕贝克' },
+    { name: 'Z46', search_name: '计划内Z46' },
+  ],
+});
+assert.deepEqual(aliasedRules[2], {
+  name: '吕贝克',
+  search_name: '计划内吕贝克',
+});
+
 const resolved = resolveFleetPreset(['海伦娜', { ship_type: ['cl'] }]);
 assert.equal(resolved[0], '海伦娜');
 assert.equal(resolved.length, 2);
 assert.notEqual(resolved[1], '海伦娜');
+});
 
 const existingFleetPresets = [{
   name: '已有编队',
@@ -734,6 +872,8 @@ const existingFleetPresets = [{
     },
   ],
 }];
+
+await runScenario('舰队预设身份区分名称顺序与等级条件', () => {
 const sameRulesDifferentName = {
   name: '不同名称但内容相同',
   ships: [
@@ -797,6 +937,7 @@ assert.notEqual(
     ],
   }),
 );
+});
 
 const manifest = {
   schemaVersion: 1,
@@ -873,6 +1014,8 @@ const catalogPlans = [
     }],
   },
 ];
+
+await runScenario('舰队预设目录加载隔离副本并报告损坏计划', async () => {
 const presetController = new PlanFleetPresetController({
   async getShipLibraryManifest() {
     return manifest;
@@ -956,7 +1099,9 @@ await failedPresetController.load();
 const failedCatalog = failedPresetController.toViewObject([]);
 assert.equal(failedCatalog.status, 'error');
 assert.equal(failedCatalog.message, '目录读取失败');
+});
 
+await runScenario('当前舰队解析复用资料库缓存并容忍加载失败', async () => {
 let currentFleetManifestLoads = 0;
 const currentFleetController = new CurrentFleetController({
   async getShipLibraryManifest() {
@@ -1004,7 +1149,9 @@ assert.equal(
   failedCurrentFleetController.resolve(currentFleetRequest)[0].ship,
   undefined,
 );
+});
 
+await runScenario('方案管理标记引用关系并执行用户操作', async () => {
 const managementResult = {
   bindings: [
     {
@@ -1283,7 +1430,9 @@ assert.match(
   /仍会匹配另一份同名舰队方案/,
 );
 assert.equal(managementLoads >= 4, true);
+});
 
+await runScenario('决战舰队草稿维护队列顺序与脏状态', () => {
 const decisive = new DecisiveFleetDraft({
   chapter: 6,
   useQuickRepair: true,
@@ -1301,5 +1450,6 @@ assert.equal(decisive.remove('level2', 0), true);
 assert.deepEqual(decisive.queue('level2'), ['U-47']);
 decisive.load(decisive.toSettings());
 assert.equal(decisive.dirty, false);
+});
 
-console.log('fleet domain tests passed');
+console.log(`fleet domain tests passed: ${passedScenarioCount} scenarios`);

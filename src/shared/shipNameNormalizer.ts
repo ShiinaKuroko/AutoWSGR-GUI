@@ -5,3 +5,20 @@ export function toBackendName(displayName: string): string {
     : displayName;
   return noRefit.replace(/\s*[（(][^（）()]*[)）]\s*$/, '').trim();
 }
+
+export function resolveConfiguredShipSearchName(
+  name: string,
+  aliases: Readonly<Record<string, string>>,
+): string {
+  const normalizedName = toBackendName(name);
+  for (const [alias, standardName] of Object.entries(aliases)) {
+    const normalizedAlias = alias.trim();
+    if (
+      normalizedAlias
+      && toBackendName(standardName) === normalizedName
+    ) {
+      return normalizedAlias;
+    }
+  }
+  return name.trim();
+}

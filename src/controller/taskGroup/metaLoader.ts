@@ -7,6 +7,10 @@ import type { TemplateModel } from '../../model/TemplateModel';
 import type { TaskGroupItemMeta } from '../../types/view.js';
 import { readTaskGroupItemFile } from './managedPlanReader';
 import { yamlCodec } from '../../adapter';
+import {
+  getTaskGroupRepository,
+  type TaskGroupRepository,
+} from '../../adapter/IpcAdapter';
 
 const REPAIR: Record<number, string> = { 1: '中破就修', 2: '大破才修' };
 const TYPE_LABELS: Record<string, string> = {
@@ -17,9 +21,10 @@ const TYPE_LABELS: Record<string, string> = {
 export async function loadItemMetas(
   items: ReadonlyArray<TaskGroupItem>,
   templateModel: TemplateModel,
+  repository: TaskGroupRepository | undefined =
+    getTaskGroupRepository(),
 ): Promise<(TaskGroupItemMeta | null)[]> {
-  const bridge = window.electronBridge;
-  if (!bridge) return items.map(() => null);
+  if (!repository) return items.map(() => null);
 
   return Promise.all(items.map(async (item): Promise<TaskGroupItemMeta | null> => {
     try {
@@ -37,7 +42,7 @@ export async function loadItemMetas(
         return meta;
       }
 
-      const { content } = await readTaskGroupItemFile(item);
+      const { content } = await readTaskGroupItemFile(item, repository);
       const parsed = yamlCodec.parse<Record<string, unknown>>(content);
       if (!parsed || typeof parsed !== 'object') return null;
 

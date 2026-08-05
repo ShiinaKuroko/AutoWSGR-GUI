@@ -17,11 +17,14 @@
     "test:task-group-migration": "npm run build && node scripts/test-task-group-migration.js",
     "test:api-contract": "npm run check:fleet-types && npm run build && node scripts/test-api-contract.js",
     "test:fleet-domain": "npm run build && node scripts/test-fleet-domain.mjs",
+    "test:plan-management-delete": "node scripts/test-plan-management-delete-scope.mjs",
     "test:scheduler-domain": "npm run build && node scripts/test-scheduler-domain.mjs",
     "test:daily-sortie-stats": "node scripts/test-daily-sortie-stats.mjs",
     "test:ship-library-updater": "node scripts/test-ship-library-updater.js",
+    "test:ocr-log-analyzer": "node scripts/test-ocr-log-analyzer.js",
     "test:event-resources": "node scripts/test-event-20260730-resources.js && node scripts/test-event-map-loader.js",
     "test:settings": "npm run build && electron scripts/test-settings-persistence.js",
+    "test:controller-boundaries": "node scripts/test-controller-boundaries.js",
     "test:main-services": "npm run build && node scripts/test-main-services.js",
     "test:main-ipc": "npm run build && node scripts/test-main-ipc.js",
     "test:python-environment": "npm run build && node scripts/test-python-environment.js",
@@ -34,6 +37,7 @@
     "dist": "npm run clean:release && npm run prepare-python && npm run prepare-adb && npm run build && electron-builder --publish never"
   },
   "devDependencies": {
+    "@electron/asar": "^3.4.1",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
     "electron": "^33.0.0",
@@ -54,7 +58,9 @@
       "output": "release"
     },
     "files": [
-      "dist/**/*",
+      "dist/electron/**/*",
+      "dist/src/shared/**/*",
+      "dist/renderer.bundle.js",
       "src/view/index.html",
       "src/view/styles/styles.css",
       "!node_modules/.cache"

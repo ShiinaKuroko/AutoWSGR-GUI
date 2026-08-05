@@ -3,7 +3,7 @@
  * ConfigController —— 配置管理子控制器。
  * 负责 loadConfig / saveConfig / renderConfig / detectAndApplyEmulator / showSetupWizard
  */
-import type { ConfigModel } from '../../model/ConfigModel';
+import { ConfigModel } from '../../model/ConfigModel';
 import type { ConfigView } from '../../view/config/ConfigView';
 import type { SetupWizardView } from '../../view/setup/SetupWizardView';
 import type { MainView } from '../../view/main/MainView';
@@ -20,9 +20,20 @@ import type {
 import {
   normalizeDecisiveAutomationSource,
 } from '../../shared/decisiveAutomation.js';
-import { yamlCodec } from '../../adapter/YamlAdapter';
+import {
+  formatStringMap,
+  parseStringMap,
+} from '../../adapter/YamlAdapter';
+import {
+  getConfigurationGateway,
+  type ConfigurationGateway,
+} from '../../adapter/IpcAdapter';
 import { Logger } from '../../utils/Logger';
-import { getThemeMode, getAccentColor, applyTheme } from './theme';
+import {
+  applyTheme,
+  getAccentColor,
+  getThemeMode,
+} from '../../view/theme';
 import { showAlert, showSaveSuccess } from '../../view/shared/DialogHelper';
 
 const GUI_AUTOMATION_FIELDS = [
@@ -60,7 +71,11 @@ export interface ConfigControllerHost {
 }
 
 export class ConfigController {
-  constructor(private readonly host: ConfigControllerHost) {}
+  constructor(
+    private readonly host: ConfigControllerHost,
+    private readonly gateway: ConfigurationGateway | undefined =
+      getConfigurationGateway(),
+  ) {}
 
   setConfigDir(configDir: string): void {
     this.host.configDir = configDir;
@@ -72,7 +87,7 @@ export class ConfigController {
 
   /** 从磁盘加载 usersettings.yaml */
   async loadConfig(): Promise<void> {
-    const bridge = window.electronBridge;
+    const bridge = this.gateway;
     if (!bridge) return;
     try {
       const yamlStr = await bridge.readFile('usersettings.yaml');
@@ -202,7 +217,7 @@ export class ConfigController {
       return false;
     }
 
-    const bridge = window.electronBridge;
+    const bridge = this.gateway;
     if (
       typeof bridge?.migrateLegacyDecisiveAutomation !== 'function'
     ) {
@@ -285,7 +300,7 @@ export class ConfigController {
   renderConfig(): void {
     const cfg = this.host.configModel.current;
     const gui = this.host.configModel.currentGuiAutomation;
-    const windowPreferences = window.electronBridge?.getWindowPreferences?.() ?? {
+    const windowPreferences = this.gateway?.getWindowPreferences() ?? {
       defaultWidth: 1280,
       defaultHeight: 720,
       rememberBounds: false,
@@ -295,7 +310,7 @@ export class ConfigController {
       emulatorPath: cfg.emulator.path || '',
       emulatorSerial: cfg.emulator.serial || '',
       gameApp: cfg.account.game_app,
-      updateMode: window.electronBridge?.getUpdateMode?.()
+      updateMode: this.gateway?.getUpdateMode()
         ?? (localStorage.getItem('updateMode') === 'manual' ? 'manual' : 'auto'),
       autoExpedition: cfg.daily_automation.auto_expedition,
       expeditionInterval: gui.expeditionInterval,
@@ -318,22 +333,24 @@ export class ConfigController {
       themeMode: getThemeMode(),
       accentColor: getAccentColor(),
       debugMode: localStorage.getItem('debugMode') === 'true',
-      backendPort: window.electronBridge?.getBackendPort?.() ?? 8438,
-      backendStartupMode: window.electronBridge?.getBackendStartupMode?.() ?? 'managed',
-      backendRepoPath: window.electronBridge?.getBackendRepoPath?.() ?? '',
-      ocrGpuMode: window.electronBridge?.getOcrGpuMode?.() ?? 'auto',
+      backendPort: this.gateway?.getBackendPort() ?? 8438,
+      backendStartupMode:
+        this.gateway?.getBackendStartupMode() ?? 'managed',
+      backendRepoPath: this.gateway?.getBackendRepoPath() ?? '',
+      ocrGpuMode: this.gateway?.getOcrGpuMode() ?? 'auto',
       ocrGpu: cfg.ocr.gpu,
       ocrMirror: cfg.ocr.mirror,
       ocrConfidence: cfg.ocr.ship_name_match_confidence,
-      shipNameAliasesText: this.formatStringMap(
+      shipNameAliasesText: formatStringMap(
         cfg.ocr.ship_name_aliases,
       ),
-      shipNameCorrectionsText: this.formatStringMap(
+      shipNameCorrectionsText: formatStringMap(
         cfg.ocr.ship_name_corrections,
       ),
-      cudaPath: window.electronBridge?.getCudaPath?.() ?? '',
-      saveBackendScreenshots: window.electronBridge?.getSaveBackendScreenshots?.() ?? false,
-      pythonPath: window.electronBridge?.getPythonPath?.() ?? '',
+      cudaPath: this.gateway?.getCudaPath() ?? '',
+      saveBackendScreenshots:
+        this.gateway?.getSaveBackendScreenshots() ?? false,
+      pythonPath: this.gateway?.getPythonPath() ?? '',
       defaultWindowWidth: windowPreferences.defaultWidth,
       defaultWindowHeight: windowPreferences.defaultHeight,
       rememberWindowBounds: windowPreferences.rememberBounds,
@@ -357,11 +374,11 @@ export class ConfigController {
     let shipNameCorrections: Record<string, string>;
     try {
       collected = this.host.configView.collect();
-      shipNameAliases = this.parseStringMap(
+      shipNameAliases = parseStringMap(
         collected.shipNameAliasesText,
         '自定义舰名映射',
       );
-      shipNameCorrections = this.parseStringMap(
+      shipNameCorrections = parseStringMap(
         collected.shipNameCorrectionsText,
         '识别纠错规则',
       );
@@ -372,21 +389,8 @@ export class ConfigController {
       );
       return;
     }
-    const bridge = window.electronBridge;
-    const saveApis = bridge && [
-      bridge.saveFile,
-      bridge.setUpdateMode,
-      bridge.setBackendPort,
-      bridge.setBackendStartupMode,
-      bridge.setBackendRepoPath,
-      bridge.setOcrGpuMode,
-      bridge.setCudaPath,
-      bridge.setSaveBackendScreenshots,
-      bridge.setPythonPath,
-      bridge.setWindowPreferences,
-      bridge.setGuiAutomationSettings,
-    ];
-    if (!bridge || !saveApis || saveApis.some(api => typeof api !== 'function')) {
+    const bridge = this.gateway;
+    if (!bridge || typeof bridge.commitGuiSettings !== 'function') {
       await showAlert(
         '保存失败',
         '设置保存接口不完整，请完整重启 GUI 后再操作。',
@@ -400,145 +404,73 @@ export class ConfigController {
     }
 
     try {
-    // 界面设置 → localStorage
-    localStorage.setItem('themeMode', collected.themeMode);
-    localStorage.setItem('accentColor', collected.accentColor);
-    localStorage.setItem('debugMode', String(collected.debugMode));
-    localStorage.setItem('updateMode', collected.updateMode);
-    this.host.mainView.setDebugMode(collected.debugMode);
-    applyTheme();
-
-    if (bridge?.setUpdateMode) {
-      await bridge.setUpdateMode(collected.updateMode);
-    }
-
-    // 后端端口 / Python 路径（修改后需重启）
-    if (bridge?.setBackendPort) {
-      await bridge.setBackendPort(collected.backendPort);
-    }
-    if (bridge?.setBackendStartupMode) {
-      await bridge.setBackendStartupMode(collected.backendStartupMode);
-    }
-    if (bridge?.setBackendRepoPath) {
-      await bridge.setBackendRepoPath(collected.backendRepoPath || null);
-    }
-    if (bridge?.setOcrGpuMode) {
-      await bridge.setOcrGpuMode(collected.ocrGpuMode);
-    }
-    if (bridge?.setCudaPath) {
-      await bridge.setCudaPath(collected.cudaPath || null);
-    }
-    if (bridge?.setSaveBackendScreenshots) {
-      await bridge.setSaveBackendScreenshots(collected.saveBackendScreenshots);
-    }
-    if (bridge?.setPythonPath) {
-      await bridge.setPythonPath(collected.pythonPath || null);
-    }
-    if (bridge?.setWindowPreferences) {
-      await bridge.setWindowPreferences({
-        defaultWidth: collected.defaultWindowWidth,
-        defaultHeight: collected.defaultWindowHeight,
-        rememberBounds: collected.rememberWindowBounds,
-      });
-    }
-
-    this.host.configModel.update({
-      emulator: {
-        type: collected.emulatorType,
-        path: collected.emulatorPath || undefined,
-        serial: collected.emulatorSerial || undefined,
-      },
-      account: { game_app: collected.gameApp },
-      ocr: {
-        ...this.host.configModel.current.ocr,
-        gpu: collected.ocrGpu,
-        mirror: collected.ocrMirror,
-        ship_name_match_confidence: collected.ocrConfidence,
-        ship_name_aliases: shipNameAliases,
-        ship_name_corrections: shipNameCorrections,
-      },
-      log: {
-        ...this.host.configModel.current.log,
-        level: collected.logLevel,
-        root: collected.logRoot,
-      },
-      daily_automation: {
-        ...this.host.configModel.current.daily_automation,
-        auto_expedition: collected.autoExpedition,
-        auto_battle: collected.autoBattle,
-        battle_type: collected.battleType,
-        auto_exercise: collected.autoExercise,
-        exercise_fleet_id: collected.exerciseFleetId,
-        auto_normal_fight: collected.autoNormalFight,
-        normal_fight_tasks: collected.normalFightTasks,
-      },
-      operation_delay_min: collected.operationDelayMin,
-      operation_delay_max: collected.operationDelayMax,
-      dock_full_destroy: collected.dockFullDestroy,
-      repair_manually: collected.repairManually,
-      bathroom_count: collected.bathroomCount,
-      destroy_ship_work_mode: collected.destroyShipWorkMode,
-      destroy_ship_types: collected.destroyShipTypes,
-      remove_equipment_mode: collected.removeEquipmentMode,
-      plan_root: collected.planRoot || undefined,
-    });
-
-    this.host.configModel.updateGuiAutomation({
-      expeditionInterval: collected.expeditionInterval,
-      battleTimes: collected.battleTimes,
-      autoDecisive: collected.autoDecisive,
-      decisiveTemplateId: collected.decisiveTemplateId,
-      autoLoot: collected.autoLoot,
-      lootPlanSource: collected.lootPlanSource,
-      lootPlanId: collected.lootPlanId,
-      lootPlans: collected.lootPlans,
-      lootStopCount: collected.lootStopCount,
-    });
-    const savedGuiAutomation = await bridge.setGuiAutomationSettings(
-      this.host.configModel.currentGuiAutomation,
-    );
-    for (const field of GUI_AUTOMATION_FIELDS) {
-      if (!guiAutomationFieldMatches(
-        savedGuiAutomation,
+      const candidateModel = new ConfigModel();
+      candidateModel.loadFromYaml(this.host.configModel.toYaml());
+      candidateModel.replaceGuiAutomation(
         this.host.configModel.currentGuiAutomation,
-        field,
-      )) {
-        throw new Error(`GUI 自动化配置回读字段不一致: ${field}`);
-      }
-    }
-    this.host.configModel.replaceGuiAutomation(savedGuiAutomation);
-    this.host.configModel.markLegacyGuiAutomationMigrated();
+      );
+      this.applyCollectedConfig(
+        candidateModel,
+        collected,
+        shipNameAliases,
+        shipNameCorrections,
+      );
+      candidateModel.markLegacyGuiAutomationMigrated();
 
-    // 同步 CronScheduler
-    const da = this.host.configModel.current.daily_automation;
-    const gui = this.host.configModel.currentGuiAutomation;
-    this.host.cronScheduler.updateConfig({
-      autoExercise: da.auto_exercise,
-      exerciseFleetId: da.exercise_fleet_id ?? 1,
-      autoBattle: da.auto_battle,
-      battleType: da.battle_type,
-      battleTimes: gui.battleTimes,
-      autoNormalFight: da.auto_normal_fight,
-      autoDecisive: gui.autoDecisive,
-      decisiveTemplateId: gui.decisiveTemplateId,
-      autoLoot: gui.autoLoot,
-      lootPlanSource: gui.lootPlanSource,
-      lootPlanId: gui.lootPlanId,
-      lootStopCount: gui.lootStopCount,
-    });
+      const committed = await bridge.commitGuiSettings({
+        updateMode: collected.updateMode,
+        backendPort: collected.backendPort,
+        backendStartupMode: collected.backendStartupMode,
+        backendRepoPath: collected.backendRepoPath || null,
+        ocrGpuMode: collected.ocrGpuMode,
+        cudaPath: collected.cudaPath || null,
+        saveBackendScreenshots: collected.saveBackendScreenshots,
+        pythonPath: collected.pythonPath || null,
+        windowPreferences: {
+          defaultWidth: collected.defaultWindowWidth,
+          defaultHeight: collected.defaultWindowHeight,
+          rememberBounds: collected.rememberWindowBounds,
+        },
+        automation: candidateModel.currentGuiAutomation,
+        usersettingsYaml: candidateModel.toYaml(),
+      });
 
-    // 自动远征开关与检查间隔
-    this.host.scheduler.setAutoExpedition(da.auto_expedition);
-    this.host.scheduler.setExpeditionInterval(gui.expeditionInterval);
+      this.applyCollectedConfig(
+        this.host.configModel,
+        collected,
+        shipNameAliases,
+        shipNameCorrections,
+      );
+      this.host.configModel.replaceGuiAutomation(committed.automation);
+      this.host.configModel.markLegacyGuiAutomationMigrated();
 
-    const yamlStr = this.host.configModel.toYaml();
-    if (collected.debugMode) {
-      Logger.debug(`保存配置:\n${yamlStr}`, 'config');
-    }
+      localStorage.setItem('themeMode', collected.themeMode);
+      localStorage.setItem('accentColor', collected.accentColor);
+      localStorage.setItem('debugMode', String(collected.debugMode));
+      localStorage.setItem('updateMode', collected.updateMode);
+      this.host.mainView.setDebugMode(collected.debugMode);
+      applyTheme();
 
-    await bridge.saveFile('usersettings.yaml', yamlStr);
+      const da = this.host.configModel.current.daily_automation;
+      const gui = this.host.configModel.currentGuiAutomation;
+      this.host.cronScheduler.updateConfig({
+        autoExercise: da.auto_exercise,
+        exerciseFleetId: da.exercise_fleet_id ?? 1,
+        autoBattle: da.auto_battle,
+        battleType: da.battle_type,
+        battleTimes: gui.battleTimes,
+        autoNormalFight: da.auto_normal_fight,
+        autoDecisive: gui.autoDecisive,
+        decisiveTemplateId: gui.decisiveTemplateId,
+        autoLoot: gui.autoLoot,
+        lootPlanSource: gui.lootPlanSource,
+        lootPlanId: gui.lootPlanId,
+        lootStopCount: gui.lootStopCount,
+      });
+      this.host.scheduler.setAutoExpedition(da.auto_expedition);
+      this.host.scheduler.setExpeditionInterval(gui.expeditionInterval);
 
-    Logger.info('设置已保存，后端启动项将在重启后生效');
+      Logger.info('设置已保存，后端启动项将在重启后生效');
     } catch (error) {
       await showAlert(
         '保存失败',
@@ -560,9 +492,69 @@ export class ConfigController {
     }
   }
 
+  /** 把设置页输入应用到指定模型，供候选配置和正式提交复用。 */
+  private applyCollectedConfig(
+    model: ConfigModel,
+    collected: ConfigViewObject,
+    shipNameAliases: Record<string, string>,
+    shipNameCorrections: Record<string, string>,
+  ): void {
+    model.update({
+      emulator: {
+        type: collected.emulatorType,
+        path: collected.emulatorPath || undefined,
+        serial: collected.emulatorSerial || undefined,
+      },
+      account: { game_app: collected.gameApp },
+      ocr: {
+        ...model.current.ocr,
+        gpu: collected.ocrGpu,
+        mirror: collected.ocrMirror,
+        ship_name_match_confidence: collected.ocrConfidence,
+        ship_name_aliases: shipNameAliases,
+        ship_name_corrections: shipNameCorrections,
+      },
+      log: {
+        ...model.current.log,
+        level: collected.logLevel,
+        root: collected.logRoot,
+      },
+      daily_automation: {
+        ...model.current.daily_automation,
+        auto_expedition: collected.autoExpedition,
+        auto_battle: collected.autoBattle,
+        battle_type: collected.battleType,
+        auto_exercise: collected.autoExercise,
+        exercise_fleet_id: collected.exerciseFleetId,
+        auto_normal_fight: collected.autoNormalFight,
+        normal_fight_tasks: collected.normalFightTasks,
+      },
+      operation_delay_min: collected.operationDelayMin,
+      operation_delay_max: collected.operationDelayMax,
+      dock_full_destroy: collected.dockFullDestroy,
+      repair_manually: collected.repairManually,
+      bathroom_count: collected.bathroomCount,
+      destroy_ship_work_mode: collected.destroyShipWorkMode,
+      destroy_ship_types: collected.destroyShipTypes,
+      remove_equipment_mode: collected.removeEquipmentMode,
+      plan_root: collected.planRoot || undefined,
+    });
+    model.updateGuiAutomation({
+      expeditionInterval: collected.expeditionInterval,
+      battleTimes: collected.battleTimes,
+      autoDecisive: collected.autoDecisive,
+      decisiveTemplateId: collected.decisiveTemplateId,
+      autoLoot: collected.autoLoot,
+      lootPlanSource: collected.lootPlanSource,
+      lootPlanId: collected.lootPlanId,
+      lootPlans: collected.lootPlans,
+      lootStopCount: collected.lootStopCount,
+    });
+  }
+
   /** 自动检测模拟器信息，仅在配置为空时填充 */
   async detectAndApplyEmulator(): Promise<void> {
-    const bridge = window.electronBridge;
+    const bridge = this.gateway;
     if (!bridge?.detectEmulator) return;
 
     const cfg = this.host.configModel.current;
@@ -601,7 +593,7 @@ export class ConfigController {
 
     return new Promise<void>((resolve) => {
       this.host.setupView.onCheckAdb = async () => {
-        const bridge = window.electronBridge;
+        const bridge = this.gateway;
         if (!bridge?.checkAdbDevices) return;
         this.host.setupView.setCheckAdbLoading(true);
         try {
@@ -636,11 +628,11 @@ export class ConfigController {
         });
 
         const pyPath = vals.pythonPath || null;
-        if (window.electronBridge?.setPythonPath) {
-          await window.electronBridge.setPythonPath(pyPath);
+        if (this.gateway?.setPythonPath) {
+          await this.gateway.setPythonPath(pyPath);
         }
 
-        const bridge = window.electronBridge;
+        const bridge = this.gateway;
         if (bridge) {
           await bridge.saveFile('usersettings.yaml', this.host.configModel.toYaml());
         }
@@ -653,39 +645,4 @@ export class ConfigController {
     });
   }
 
-  private formatStringMap(value: Record<string, string>): string {
-    if (Object.keys(value).length === 0) return '';
-    return yamlCodec.stringify(
-      value,
-      { lineWidth: -1, noRefs: true },
-    ).trim();
-  }
-
-  private parseStringMap(
-    source: string,
-    label: string,
-  ): Record<string, string> {
-    if (!source.trim()) return {};
-    let parsed: unknown;
-    try {
-      parsed = yamlCodec.parse<unknown>(source);
-    } catch (error) {
-      throw new Error(
-        `${label}不是合法 YAML: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error(`${label}必须使用“识别名称: 标准名称”的映射格式`);
-    }
-    const output: Record<string, string> = {};
-    for (const [key, value] of Object.entries(parsed)) {
-      if (!key.trim() || typeof value !== 'string' || !value.trim()) {
-        throw new Error(`${label}中的键和值都必须是非空文字`);
-      }
-      output[key.trim()] = value.trim();
-    }
-    return output;
-  }
 }

@@ -19,6 +19,46 @@ AutoWSGR 运行环境整理为可校验、可迁移、可维护的完整流程�
 
 因此 GUI 2.0 的必要性来自数据可靠性、兼容性和维护成本，而不是单纯增加功能。
 
+当前版本可以进入 PR 审查。Controller 的 DOM 和全局 bridge 架构门禁已经整改并
+加入永久自动化检查；真实模拟器业务流程仍须在合并前验收。
+
+### 1.1 代码简洁性审计
+
+“最少代码”不等于文件最少或行数最短。本次审计以“每个可变状态只有一个所有者、
+每条业务规则只有一个实现位置、基础设施只通过窄接口暴露”为最小充分实现标准。
+
+| 指标 | 审计结果 |
+| --- | --- |
+| 运行时 TypeScript 模块 | 183/183 可从 Main、Preload 或 Renderer 入口到达 |
+| 不可达运行时模块 | 0 |
+| `any` / `as any` | 0 |
+| `src` TypeScript 文件 | 70 → 124 |
+| `electron` TypeScript 文件 | 11 → 59 |
+| `AppController.ts` | 607 → 436 行 |
+| `SchedulerBinder.ts` | 409 → 324 行 |
+| `electron/main.ts` | 633 → 443 行 |
+
+文件数增加来自舰队规划、计划管理、迁移、环境管理和安全 IPC 等完整能力，以及
+把组合根中的职责下沉到可测试模块；三个关键聚合模块同时缩小。因此当前实现不是
+追求物理行数最少，而是在现有功能和可靠性约束下减少重复规则和跨层耦合。
+
+已收敛为单一实现位置的规则包括迁移账本、Scheduler 任务加载与运行态、任务列表
+浮窗、决战共享契约，以及普通/决战舰船图库的搜索、筛选、排序和首屏批量计算。
+
+### 1.2 发布内容审计
+
+- 未发现不可达的 TypeScript 运行时模块。
+- 未发现 `.tmp`、`.bak`、`.orig`、补丁残留或随手调试草稿。
+- `debug_deps.bat` 是安装包明确携带的用户诊断工具，报告写入
+  `%APPDATA%\AutoWSGR-GUI\debug_report.txt`，不是临时文件。
+- 生产 `console` 输出集中在后端 stdout/stderr、启动退出、迁移、更新、资料库升级
+  和安全停止失败，均有运行或故障诊断用途。
+- 严格 TypeScript 未使用声明检查已清零。
+
+此前审计发现的 Controller 直接 DOM/全局 bridge `major` 问题已经整改。42 个
+Controller 文件的 DOM、DOM 类型、浏览器事件和 `window.electronBridge` 扫描均为
+0；`npm run test:controller-boundaries` 已把该约束固化为回归门禁。
+
 ## 2. 新增功能
 
 ### 2.1 作战页
@@ -86,10 +126,23 @@ AutoWSGR 运行环境整理为可校验、可迁移、可维护的完整流程�
 
 - 删除无页面入口的出征直接执行链。
 - 删除未使用的 `FleetEditDialog`、修理刷新方法、迁移辅助类型和调试草稿。
-- Scheduler 复用统一的后续任务构造策略。
-- TaskQueue 复用统一的维修等待时间算法。
+- `SchedulerBinder` 只保留回调绑定和任务结算，运行态与自动任务加载分别交给
+  `SchedulerRuntimeTracker` 和 `ScheduledTaskLoader`。
+- 普通舰队与决战舰队图库复用 `GalleryShipCollection` 中的无状态查询规则，
+  仍保留各自不同的槽位、拖拽和保存语义。
+- Scheduler 复用统一的后续任务构造策略，TaskQueue 复用统一的维修等待时间算法。
 - 删除已停用的整块注释代码和重复舰名工具。
-- 严格 TypeScript 未使用声明检查已清零。
+- 舰队领域回归整理为 11 个命名场景，失败时先输出业务场景，再保留断言堆栈。
+
+### 3.4 生命周期与事务一致性
+
+- Electron 单实例锁在迁移、环境检查和依赖安装前获取；重复启动只唤醒主窗口。
+- `WindowService` 独占窗口生命周期，后端输出和更新回调通过 `sendToRenderer()`
+  检查窗口及 `webContents` 是否已销毁。
+- 设置页将 `usersettings.yaml` 与 `gui_settings.json` 作为一次提交处理；JSON
+  提交失败时恢复 YAML 快照，Renderer 只在主进程提交成功后更新正式状态。
+- 字符串和二进制文件统一通过 `AtomicFileStore` 原子替换，并只对明确的 Windows
+  短暂文件锁进行有限重试。
 
 ## 4. 兼容性方案
 
@@ -114,28 +167,57 @@ GUI 2.0 将数据分为三类：
 
 ### 4.2 旧配置自动迁移
 
-完整迁移只在 `userData` 尚未初始化，且旧 EXE 目录存在旧安装特征时启动。
-迁移流程为：
+v5 旧安装导入只在 `userData` 尚未初始化，且旧 EXE 目录存在旧安装特征时启动。
+v6、v7 根据独立阶段标记执行，不依赖“版本号看起来足够新”这一单一条件。
 
 ```mermaid
 flowchart TD
-  A["检测旧安装特征"] --> B{"userData 已初始化?"}
-  B -->|是| Z["不迁移，不重置现有数据"]
-  B -->|否| C["读取设置、任务组、模板和 YAML"]
-  C --> D["只接受 Codec 可识别的有效 YAML"]
-  D --> E["深度合并设置并保留未知字段"]
-  E --> F["分配无冲突目标文件名"]
-  F --> G["写入 userData 并同步任务引用"]
-  G --> H{"全部验证成功?"}
-  H -->|否| I["保留旧源文件，下次启动重试"]
-  H -->|是| J["写入迁移报告和 v5 完成标记"]
-  J --> K["显示成功、失败和失败文件说明"]
+  A["主实例获取单实例锁"] --> B["读取迁移账本"]
+  B --> C{"v5 旧来源导入已完成?"}
+  C -->|否| D["迁移设置、任务组和模板"]
+  C -->|是| E{"v6 预设库存已完成?"}
+  D --> E
+  E -->|否| F["升级系统预设引用和稳定标识"]
+  E -->|是| G{"v7 计划分类已完成?"}
+  F --> G
+  G -->|否| H["演习、战役、决战迁入日常计划目录"]
+  G -->|是| I["检查迁移冲突"]
+  H --> I
+  I --> J{"本阶段全部成功?"}
+  J -->|否| K["保留源文件和未完成标记，下次重试"]
+  J -->|是| L["原子合并完成键和最高版本"]
+  L --> M["输出报告并交由用户处理冲突"]
+
+  classDef start fill:#123A5A,color:#FFFFFF,stroke:#7CC4FF,stroke-width:2px;
+  classDef decision fill:#5A3200,color:#FFFFFF,stroke:#FFC766,stroke-width:2px;
+  classDef action fill:#143F2E,color:#FFFFFF,stroke:#72E0A8,stroke-width:2px;
+  classDef warning fill:#5A1717,color:#FFFFFF,stroke:#FF8A8A,stroke-width:2px;
+  class A,B,L,M start;
+  class C,E,G,J decision;
+  class D,F,H,I action;
+  class K warning;
 ```
+
+| 阶段 | 处理内容 | 完成条件 |
+| --- | --- | --- |
+| v5 | 旧设置、任务组和模板 | 所有输入成功写入并保留扩展字段 |
+| v6 | 下架系统方案、胖次稳定标识和旧系统计划引用 | 预设库存阶段独立完成键写入 |
+| v7 | 旧舰队/出征计划迁移，演习、战役、决战重新分类 | 计划输出和引用全部成功 |
 
 同名不同内容的文件保存为“（旧版）”副本，任务引用同步更新；旧源文件始终保留。
 设置合并顺序为“新版本默认值 → 旧版已有值 → 旧版未知扩展字段”。
 
-### 4.3 旧任务和稳定标识
+### 4.3 迁移账本与失败恢复
+
+- `MigrationStateStore` 独占 `userData/.migration-state.json` 的读取、合并和原子写入。
+- 完成键按阶段和内容生成；旧完成键不会被后续写入覆盖，最高版本只升不降。
+- v6 失败时不允许 v7 提前完成；重启只重试未完成阶段。
+- 所有目标文件先原子写入，成功后才登记完成；账本损坏按未完成处理。
+- 最近一次实际迁移结果写入 `userData/.migration-report.json`。
+- 待用户决定的同名或替代冲突保存在冲突清单中，由 GUI 明确选择保留或删除。
+- 第二次启动时，已完成阶段迁移数量应为 0，用户配置内容保持不变。
+
+### 4.4 旧任务和稳定标识
 
 - 旧 path-form 任务仍可加载，并逐步转换为 `managedSource + managedFile`。
 - “刷胖次”使用稳定计划标识，不再依赖数组下标。
@@ -144,7 +226,7 @@ flowchart TD
 - 旧字符串候选只用于兼容读取，新保存统一输出结构化候选。
 - 系统预设只读；用户修改保存为个人副本。
 
-### 4.4 兼容方案优势
+### 4.5 兼容方案优势
 
 - 更换安装目录不会重置已经初始化的用户数据。
 - 系统资源更新与用户配置互不覆盖。
@@ -152,16 +234,36 @@ flowchart TD
 - 迁移失败可重试，且不修改旧源文件。
 - 同名冲突有明确副本和人工确认，不静默覆盖。
 - 任务引用与文件身份同步迁移，避免只迁移文件不迁移使用关系。
+- 阶段标记允许发布后增加新迁移，而不重跑已完成的旧阶段。
+- 单实例锁避免两个 GUI 进程同时迁移或安装依赖。
 
-### 4.5 兼容方案代价
+### 4.6 兼容方案代价与限制
 
 - 首次迁移需要扫描和验证旧文件，启动时间会增加。
 - 同名冲突可能产生“（旧版）”副本，需要用户检查取舍。
 - 无法通过当前 Codec 的损坏或非计划 YAML 不会自动迁移。
+- 迁移只保证受支持字段和可验证文件，不猜测损坏 YAML 的业务含义。
+- 从 GUI 2.0 回退到旧版时，旧版不能理解 v7 日常计划目录和新的结构化身份；
+  回退方案是继续使用未修改的旧源文件，而不是让旧版覆盖 GUI 2.0 用户目录。
 - `managed` 安装包不预装 `site-packages`，首次环境准备依赖网络。
 - Alpha 频道用于提前验证升级行为，不承诺与稳定版相同的成熟度。
 
 这些代价是显式保留用户数据和避免错误覆盖的结果，不能通过静默猜测消除。
+
+### 4.7 面向用户的预设与恢复资源
+
+| 资源 | 数量 | 用途 |
+| --- | ---: | --- |
+| 系统出征计划 | 10 | 周常地图等可直接复制使用的出征方案 |
+| 系统舰队方案 | 9 | 常用舰队规则和候选配置 |
+| 系统日常计划 | 20 | 演习、战役和决战计划 |
+| 内置任务模板 | 5 | 刷胖次、周常任务、自动演习、战役、决战 |
+| 舰船资料与立绘 | 894 + 894 | 舰名、舰种、国籍、筛选和可视化选船 |
+| v6 迁移快照 | 9 | 保留已下架系统计划，供旧引用转换为个人计划 |
+
+用户还可以使用迁移报告、冲突处理界面、系统方案“另存为个人副本”和
+`debug_deps.bat` 诊断报告定位升级问题。旧源文件不删除，是迁移失败和回退时的
+最后恢复资源。
 
 ## 5. 架构拆分
 
@@ -180,15 +282,23 @@ Controller 流程模块还会反向依赖主 Controller，形成循环依赖。�
 
 ```mermaid
 flowchart LR
-  R["Repository / Model"] --> C["Controller"]
-  C --> VO["只读 ViewObject"]
-  VO --> V["View"]
+  M["Main Service / Repository"] --> A["Adapter / 窄 IPC 能力"]
+  A --> C["Controller 用例编排"]
+  C --> R["Model / 唯一可变状态"]
+  R --> VO["只读 ViewObject"]
+  VO --> V["View / DOM"]
   V --> I["明确用户意图"]
   I --> C
-  C --> R
+
+  classDef infra fill:#123A5A,color:#FFFFFF,stroke:#7CC4FF,stroke-width:2px;
+  classDef logic fill:#143F2E,color:#FFFFFF,stroke:#72E0A8,stroke-width:2px;
+  classDef view fill:#4A245A,color:#FFFFFF,stroke:#DCA6FF,stroke-width:2px;
+  class M,A infra;
+  class C,R,VO logic;
+  class V,I view;
 ```
 
-主要边界：
+已完成的主要边界：
 
 | 模块 | 唯一职责 |
 | --- | --- |
@@ -199,28 +309,62 @@ flowchart LR
 | `planManagementViewObjects` | 纯函数推导计划、舰队和任务组关系 |
 | `CurrentFleetController` | 解析当前任务舰队并读取舰船资料 |
 | `controller/contracts.ts` | 跨流程最小 Host 能力 |
+| `MigrationStateStore` | 独占迁移账本读写和版本单调合并 |
+| `SchedulerRuntimeTracker` | 持有日志派生的运行状态 |
+| `ScheduledTaskLoader` | 读取自动化计划并转换为 Scheduler 任务 |
+| `GalleryShipCollection` | 普通/决战图库共享的无状态查询规则 |
+| `TaskListLoaderView` | 任务列表浮窗的 DOM、拖拽和意图上报 |
+| `NavigationView` | 主导航、计划标签、指示器和 ResizeObserver |
+| `StatusBar` / `TaskQueueView` | 快捷操作与队列按钮意图及 Loading 状态 |
+| `StartupGateway` / `ConfigurationGateway` | 启动与配置所需的最小 Electron 能力 |
+| `view/theme.ts` | 主题 DOM、强调色和系统主题事件 |
 | `View` | 渲染 ViewObject 并上报用户意图 |
 
 结果：
 
-- `src/view` 不直接依赖 Adapter、Model、Controller、Repository 或 Electron bridge。
-- Controller 依赖图无循环。
+- 183 个运行时 TypeScript 模块全部可达，未发现无入口模块。
+- 组合根、Scheduler 聚合器和 AppController 的职责及行数下降。
 - 舰队草稿和计划舰队列表都有唯一状态所有者。
 - 关系推导可使用纯数据进行测试。
 - IPC、Repository 和对话框依赖可以按最小接口注入。
+- 迁移、文件写入、窗口生命周期和单实例都由 Main Service 独占。
 
-### 5.3 后续维护方式
+### 5.3 Controller 边界整改
+
+- Plan、TaskGroup、Template、Settings、Navigation、Operations 和队列交互均由
+  View 绑定 DOM，并通过明确回调上报用户意图。
+- 主题 DOM 和系统主题事件迁入 `view/theme.ts`，偏好读取复用 Storage Adapter。
+- App、Startup、Config 和业务 Controller 通过窄 Gateway/Repository 获取
+  Electron 能力，不再读取全局 bridge。
+- 模板模型和 `kind: "template"` 执行链继续承担旧任务组、自动决战和用户模板
+  兼容，但兼容语义与 UI/IPC 基础设施已分离。
+- 永久门禁扫描全部 42 个 Controller 文件，防止跨层访问回流。
+
+### 5.4 拆分后的维护与升级方式
 
 新增或修改功能时按以下顺序定位：
 
 1. 后端模型或 YAML 契约变化：先更新 `types`、Codec 和契约测试。
-2. 文件或主进程能力变化：更新 `electron/services`，再由最小 IPC 暴露。
-3. 页面业务流程变化：更新对应 Controller 和 ViewObject 转换。
-4. 交互变化：View 只新增用户意图和渲染，不直接访问 Repository。
-5. 共享规则只有跨模块且无状态时才放入 `shared`。
-6. 新模块必须通过 View 边界扫描、依赖无环检查和严格 TypeScript 检查。
+2. 用户数据格式变化：新增独立迁移阶段和完成键，先写目标文件，再更新账本。
+3. 文件或系统能力变化：更新 `electron/services`，再由最小 IPC 和 Adapter 暴露。
+4. 页面业务流程变化：更新对应 Controller、Model 和 ViewObject 转换。
+5. 交互变化：View 新增用户意图和渲染；Controller 不读取或修改 DOM。
+6. Scheduler 变化：任务来源放入 Loader，日志派生状态放入 Tracker，Binder 只编排。
+7. 多页面共享规则：只有无状态且存在两个真实调用方时才抽到 `shared` 或纯函数模块。
+8. 新模块同步更新架构目录，并通过边界扫描、依赖图、严格 TypeScript 和领域测试。
 
 这使维护者能够按职责找到唯一修改位置，减少重复实现和跨层联动。
+
+推荐的回归范围与改动边界对应：
+
+| 修改范围 | 最低验证 |
+| --- | --- |
+| Codec / DTO | 契约测试、真实计划导入、TypeScript 编译 |
+| Main Service / IPC | main services、main IPC、失败回滚测试 |
+| 迁移 | v5/v6/v7 首次迁移、中断重试、二次启动 0 迁移 |
+| Scheduler | Scheduler 领域测试和日志派生状态测试 |
+| 舰队 / 图库 | 11 个舰队命名场景和舰种漂移检查 |
+| 安装资源 | `npm run dist`、发布包结构检查和安装包人工验证 |
 
 ## 6. 发布资源
 
@@ -237,7 +381,9 @@ GUI 2.0.0-alpha 安装包应包含：
 | 系统出征计划 | 内置 10 份 YAML |
 | 系统舰队方案 | 内置 9 份 YAML |
 | 系统日常计划 | 内置 20 份 YAML |
-| 舰船资料库 | 内置 manifest、标签和 932 个资源文件 |
+| 内置任务模板 | 内置 5 份 |
+| 舰船资料库 | 内置 894 条记录、894 张立绘及舰种/稀有度素材 |
+| 迁移快照 | 内置 9 份 v6 只读旧计划 |
 | 用户配置 | 不打包，由 `userData` 持久化 |
 
 AutoWSGR 锁定提交为：
@@ -261,21 +407,23 @@ b0f473fb1ec5318c2c4cff4795a804a3d2dd25bd
 
 已通过：
 
-- 严格 TypeScript 编译和未使用声明检查。
-- Fleet 领域测试。
-- Scheduler 领域测试。
-- View 跨层依赖扫描。
-- TypeScript 依赖图循环检查。
-- SCSS 构建。
-- `git diff --check`。
+- `npm run build`、SCSS 构建和严格 TypeScript 未使用声明检查。
+- 舰种漂移、地图同步、API 契约和 60/60 真实计划导入。
+- Main services、Main IPC、设置持久化和 Python 环境测试。
+- v5/v6/v7 旧配置、计划、任务组迁移及失败重试测试。
+- Fleet 11 个命名场景、Scheduler、日常统计和删除作用域测试。
+- OCR 报告、活动资源、地图加载和舰船资料库升级测试。
+- 183/183 TypeScript 运行时依赖图、Controller 边界门禁和 `git diff --check`。
+
+PR 合并前仍必须处理：
+
+- 真实模拟器业务流程验证；自动化测试不能替代模拟器验收。
 
 发布前仍必须通过：
 
-- Electron main services、main IPC 和更新安全测试。
-- 旧配置、旧计划和旧任务组迁移测试。
-- 设置持久化和 Python 环境测试。
 - `npm run dist`。
 - `npm run test:release-package`。
 - `AutoWSGR-GUI-Setup-2.0.0-alpha.exe`、`alpha.yml` 和解包资源人工复核。
+- 安装包首次迁移、二次启动 0 迁移、重复启动单实例和强制关闭窗口验证。
 
-未通过全部门禁前，PR 可以审查，但不应标记为可发布。
+未完成真实模拟器验收前不应合并；未通过安装包门禁前不应标记为可发布。

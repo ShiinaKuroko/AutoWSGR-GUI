@@ -42,6 +42,9 @@ export class NodeEditorView {
   private disabledDrafts = new Map<string, NodeEditorValues>();
   private resizeAnimation: Animation | null = null;
 
+  onClose?: () => void;
+  onSave?: () => void;
+
   constructor() {
     this.editorEl = document.getElementById('node-editor')!;
     this.editorIdEl = document.getElementById('node-editor-id')!;
@@ -59,6 +62,14 @@ export class NodeEditorView {
     });
     (document.getElementById('node-edit-endpoint') as HTMLInputElement)
       .addEventListener('change', () => this.updateEndpointResultVisibility());
+    document.getElementById('btn-node-editor-close')?.addEventListener(
+      'click',
+      () => this.onClose?.(),
+    );
+    document.getElementById('btn-node-edit-save')?.addEventListener(
+      'click',
+      () => this.onSave?.(),
+    );
   }
 
   show(

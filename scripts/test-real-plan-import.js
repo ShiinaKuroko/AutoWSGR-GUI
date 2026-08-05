@@ -34,7 +34,7 @@ const {
 } = require('../dist/electron/services/RuntimePlanService.js');
 const {
   TaskPresetCodec,
-} = require('../dist/electron/services/TaskPresetCodec.js');
+} = require('../dist/src/shared/taskPreset.js');
 const {
   TeamPlanCodec,
 } = require('../dist/electron/services/TeamPlanCodec.js');
@@ -132,7 +132,10 @@ function createServices(userData, tempRoot) {
     combatRepository,
     runtimePlans,
     teamRepository,
-    new GuiSettingsStore(() => path.join(userData, 'gui_settings.json')),
+    new GuiSettingsStore(
+      () => path.join(userData, 'gui_settings.json'),
+      atomicFiles,
+    ),
     new TaskPresetCodec(),
   );
   return {
@@ -140,7 +143,11 @@ function createServices(userData, tempRoot) {
     combatRepository,
     management,
     teamRepository,
-    exports: new PlanExportService(combatRepository, teamRepository),
+    exports: new PlanExportService(
+      combatRepository,
+      teamRepository,
+      atomicFiles,
+    ),
   };
 }
 

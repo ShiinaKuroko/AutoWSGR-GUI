@@ -1,5 +1,5 @@
 /**
- * 迁移旧用户配置并维护迁移状态。
+ * 迁移旧用户配置并向独立账本登记完成阶段。
  */
 import * as crypto from 'crypto';
 import * as fs from 'fs';
@@ -21,12 +21,7 @@ import {
   emptyLegacyMigrationSummary,
   type LegacyMigrationSummary,
 } from './LegacyMigrationSummary';
-
-/** 当前用户数据迁移状态格式。 */
-export interface UserDataMigrationState {
-  version: number;
-  completed: string[];
-}
+import { MigrationStateStore } from './MigrationStateStore';
 
 /** 持久化保存的最近一次迁移结果。 */
 export interface UserDataMigrationReport {
@@ -83,55 +78,23 @@ const OBSOLETE_SYSTEM_PLAN_ALIASES: Readonly<Record<string, string>> = {
   '周常6章-6-3.yaml': 'bettle-周常-6-3-v1.yaml',
 };
 
-/** 管理迁移状态、旧配置复制和任务组路径更新。 */
+/** 管理旧配置复制、库存升级和任务组路径更新。 */
 export class UserDataMigrationService {
   private legacyMigrationAllowed: boolean | null = null;
+  readonly migrationState: MigrationStateStore;
 
   constructor(
     private readonly appPaths: AppPaths,
     private readonly atomicFiles: AtomicFileStore,
-  ) {}
-
-  /** 读取当前迁移状态；无效文件按未迁移处理。 */
-  readState(): UserDataMigrationState {
-    try {
-      const raw = JSON.parse(
-        fs.readFileSync(this.statePath(), 'utf-8'),
-      ) as Partial<UserDataMigrationState>;
-      return {
-        version: typeof raw.version === 'number' ? raw.version : 0,
-        completed: Array.isArray(raw.completed)
-          ? raw.completed.filter(value => typeof value === 'string')
-          : [],
-      };
-    } catch {
-      return { version: 0, completed: [] };
-    }
-  }
-
-  /** 原子写入当前迁移状态。 */
-  writeState(state: UserDataMigrationState): void {
-    fs.mkdirSync(this.appPaths.userDataRoot(), { recursive: true });
-    this.atomicFiles.write(
-      this.statePath(),
-      JSON.stringify(state, null, 2),
+    migrationState?: MigrationStateStore,
+  ) {
+    this.migrationState = migrationState ?? new MigrationStateStore(
+      () => path.join(
+        this.appPaths.userDataRoot(),
+        '.migration-state.json',
+      ),
+      atomicFiles,
     );
-  }
-
-  /** 判断一个独立迁移阶段是否已经完整成功。 */
-  isStageComplete(stage: string): boolean {
-    return this.readState().completed.includes(stage);
-  }
-
-  /** 原子合并阶段完成键，并保留旧迁移记录。 */
-  completeStage(stage: string, version: number): void {
-    const state = this.readState();
-    const completed = new Set(state.completed);
-    completed.add(stage);
-    this.writeState({
-      version: Math.max(state.version, version),
-      completed: [...completed].sort(),
-    });
   }
 
   /** 判断 EXE 目录是否包含旧版用户数据。 */
@@ -165,7 +128,7 @@ export class UserDataMigrationService {
       return false;
     }
 
-    const state = this.readState();
+    const state = this.migrationState.read();
     const started = state.completed.includes(
       this.legacySourceStage('started'),
     );
@@ -181,7 +144,7 @@ export class UserDataMigrationService {
 
   /** 旧设置、任务组和模板阶段是否已经完整成功。 */
   isLegacyConfigurationMigrationComplete(): boolean {
-    return this.isStageComplete(
+    return this.migrationState.isStageComplete(
       this.legacySourceStage('configuration-complete'),
     );
   }
@@ -194,13 +157,10 @@ export class UserDataMigrationService {
     ) {
       return;
     }
-    const state = this.readState();
-    const completed = new Set(state.completed);
-    completed.add(this.legacySourceStage('complete'));
-    this.writeState({
-      version: state.version,
-      completed: [...completed].sort(),
-    });
+    this.migrationState.completeStage(
+      this.legacySourceStage('complete'),
+      0,
+    );
   }
 
   /** 原子写入最近一次实际迁移报告。 */
@@ -228,7 +188,10 @@ export class UserDataMigrationService {
     const summary = emptyLegacyMigrationSummary(allowed);
     if (!allowed) return summary;
 
-    this.completeStage(this.legacySourceStage('started'), 0);
+    this.migrationState.completeStage(
+      this.legacySourceStage('started'),
+      0,
+    );
 
     const legacyRoot = this.appPaths.appRoot();
     const targetRoot = this.appPaths.userDataRoot();
@@ -279,7 +242,7 @@ export class UserDataMigrationService {
       }
     }
     if (summary.failed === 0) {
-      this.completeStage(
+      this.migrationState.completeStage(
         this.legacySourceStage('configuration-complete'),
         0,
       );
@@ -294,7 +257,11 @@ export class UserDataMigrationService {
    * 映射到当前主库计划。迁移只修改 userData，安装资源始终只读。
    */
   migratePresetInventory(): LegacyMigrationSummary {
-    if (this.isStageComplete(PRESET_INVENTORY_MIGRATION_STAGE)) {
+    if (
+      this.migrationState.isStageComplete(
+        PRESET_INVENTORY_MIGRATION_STAGE,
+      )
+    ) {
       return emptyLegacyMigrationSummary();
     }
 
@@ -340,7 +307,7 @@ export class UserDataMigrationService {
     }
     summary.detected = summary.total > 0;
     if (summary.failed === 0) {
-      this.completeStage(
+      this.migrationState.completeStage(
         PRESET_INVENTORY_MIGRATION_STAGE,
         USER_DATA_MIGRATION_VERSION,
       );
@@ -433,10 +400,8 @@ export class UserDataMigrationService {
     }
     const sourceContent = fs.readFileSync(source, 'utf-8');
     this.parseTaskGroups(sourceContent, '旧任务组');
-    const state = this.readState();
-    const completed = new Set(state.completed);
     const key = this.taskGroupMigrationKey(source, sourceContent);
-    if (completed.has(key)) return false;
+    if (this.migrationState.isStageComplete(key)) return false;
 
     fs.mkdirSync(path.dirname(target), { recursive: true });
     if (!fs.existsSync(target)) {
@@ -444,11 +409,7 @@ export class UserDataMigrationService {
     } else {
       this.mergeTaskGroupFiles(sourceContent, target);
     }
-    completed.add(key);
-    this.writeState({
-      version: state.version,
-      completed: [...completed].sort(),
-    });
+    this.migrationState.completeStage(key, 0);
     return true;
   }
 
@@ -566,13 +527,6 @@ export class UserDataMigrationService {
     return isDeepStrictEqual(left, right);
   }
 
-  private statePath(): string {
-    return path.join(
-      this.appPaths.userDataRoot(),
-      '.migration-state.json',
-    );
-  }
-
   private reportPath(): string {
     return path.join(
       this.appPaths.userDataRoot(),
@@ -595,7 +549,7 @@ export class UserDataMigrationService {
   private userDataInitialized(): boolean {
     const root = this.appPaths.userDataRoot();
     return [
-      this.statePath(),
+      this.migrationState.filePath(),
       path.join(root, 'usersettings.yaml'),
       path.join(root, 'gui_settings.json'),
       path.join(root, 'task_groups.json'),
@@ -773,10 +727,8 @@ export class UserDataMigrationService {
       return false;
     }
     const sourceContent = fs.readFileSync(source, 'utf-8');
-    const state = this.readState();
-    const completed = new Set(state.completed);
     const key = this.contentMigrationKey(format, source, sourceContent);
-    if (completed.has(key)) return false;
+    if (this.migrationState.isStageComplete(key)) return false;
 
     const legacy = this.parseStructuredContent(
       sourceContent,
@@ -804,11 +756,7 @@ export class UserDataMigrationService {
       : JSON.stringify(merged, null, 2);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     this.atomicFiles.write(target, content);
-    completed.add(key);
-    this.writeState({
-      version: state.version,
-      completed: [...completed].sort(),
-    });
+    this.migrationState.completeStage(key, 0);
     return true;
   }
 
@@ -946,14 +894,12 @@ export class UserDataMigrationService {
 
   private migrateTemplate(source: string, target: string): boolean {
     const content = fs.readFileSync(source);
-    const state = this.readState();
-    const completed = new Set(state.completed);
     const key = this.contentMigrationKey(
       'template',
       source,
       content,
     );
-    if (completed.has(key)) return false;
+    if (this.migrationState.isStageComplete(key)) return false;
 
     let destination = target;
     if (
@@ -966,11 +912,7 @@ export class UserDataMigrationService {
       fs.mkdirSync(path.dirname(destination), { recursive: true });
       this.atomicFiles.write(destination, content.toString('utf-8'));
     }
-    completed.add(key);
-    this.writeState({
-      version: state.version,
-      completed: [...completed].sort(),
-    });
+    this.migrationState.completeStage(key, 0);
     return true;
   }
 

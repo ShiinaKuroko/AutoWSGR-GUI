@@ -4,6 +4,9 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { PlanModel } = require('../dist/src/model/PlanModel.js');
 const { TaskQueue } = require('../dist/src/model/scheduler/TaskQueue.js');
+const {
+  buildPlanQueueRequest,
+} = require('../dist/src/controller/taskGroup/queueLoader.js');
 const { ALL_SHIPS } = require('../dist/src/shared/shipCatalog.js');
 const {
   FLEET_SHIP_TYPE_CODES,
@@ -156,6 +159,44 @@ assert.equal(
   Object.prototype.hasOwnProperty.call(request, 'fleet_id'),
   false,
 );
+
+const aliasPlan = PlanModel.fromYaml([
+  'chapter: 4',
+  'map: 1',
+  'fleet_presets:',
+  '  - name: 周常4-1',
+  '    ships:',
+  '      - name: 85工程',
+  '',
+].join('\n'), 'weekly-4-1.yaml');
+const shipNameAliases = { 契卡洛夫: '85工程' };
+const { req: aliasPlanRequest } = buildPlanQueueRequest(
+  { fleetPresetIndex: 0 },
+  aliasPlan,
+  'weekly-4-1.yaml',
+  shipNameAliases,
+);
+assert.deepEqual(aliasPlanRequest.plan.fleet_rules[0], {
+  name: '85工程',
+  search_name: '契卡洛夫',
+});
+
+const rotatedAliasRequest = {
+  type: 'normal_fight',
+  times: 1,
+  plan: {},
+};
+new TaskQueue(() => shipNameAliases).switchTaskPreset({
+  request: rotatedAliasRequest,
+  fleetId: 1,
+  fleetPresets: aliasPlan.data.fleet_presets,
+  currentPresetIndex: -1,
+}, 0);
+assert.deepEqual(rotatedAliasRequest.plan.fleet_rules[0], {
+  name: '85工程',
+  search_name: '契卡洛夫',
+});
+
 assert.equal(request.plan.node_defaults.long_missile_support, true);
 assert.deepEqual(request.plan.node_defaults.proceed_stop, [1, 2]);
 assert.equal(TYPE_LABELS.kp, '导巡');

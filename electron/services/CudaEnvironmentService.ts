@@ -7,6 +7,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import {
   buildBackendRuntimeEnvironment,
+  readCudaVersionFile,
   resolvePythonEnvironment,
 } from '../pythonEnv';
 
@@ -40,6 +41,39 @@ export interface CudaEnvironmentDependencies {
     args: string[],
     options: CudaCommandOptions,
   ): Promise<{ stdout: unknown }>;
+}
+
+interface CudaDetectionPayload {
+  available: boolean;
+  torchVersion: string | null;
+  cudaVersion: string | null;
+  device: string | null;
+  error: string | null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object'
+    && value !== null
+    && !Array.isArray(value)
+  );
+}
+
+function optionalText(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+function parseCudaDetectionPayload(value: unknown): CudaDetectionPayload {
+  if (!isRecord(value)) {
+    throw new Error('Python 返回的检测结果不是对象');
+  }
+  return {
+    available: value.available === true,
+    torchVersion: optionalText(value.torch_version),
+    cudaVersion: optionalText(value.cuda_version),
+    device: optionalText(value.device),
+    error: optionalText(value.error),
+  };
 }
 
 /** 校验 CUDA 目录并检测当前 PyTorch 的实际 CUDA 能力。 */
@@ -117,21 +151,7 @@ export class CudaEnvironmentService {
       };
     }
 
-    let version: string | null = null;
-    try {
-      const versionJson = path.join(cudaRoot, 'version.json');
-      if (fs.existsSync(versionJson)) {
-        const raw = JSON.parse(
-          fs.readFileSync(versionJson, 'utf-8')
-            .replace(/^\uFEFF/, ''),
-        ) as Record<string, any>;
-        version = raw.cuda?.version
-          ?? raw.cuda_cudart?.version
-          ?? null;
-      }
-    } catch {
-      // 版本文件无效时回退到目录名。
-    }
+    let version = readCudaVersionFile(cudaRoot);
     version ??= path.basename(cudaRoot)
       .match(/v\d+(?:\.\d+)?/i)?.[0]
       ?? null;
@@ -224,14 +244,9 @@ export class CudaEnvironmentService {
         .filter(Boolean)
         .at(-1);
       if (!output) throw new Error('Python 未返回检测结果');
-      const detected = JSON.parse(output) as {
-        available?: boolean;
-        torch_version?: string;
-        cuda_version?: string | null;
-        device?: string | null;
-        error?: string;
-      };
-      const version = detected.cuda_version
+      const parsed: unknown = JSON.parse(output);
+      const detected = parseCudaDetectionPayload(parsed);
+      const version = detected.cudaVersion
         ?? pathResult?.version
         ?? null;
       if (!detected.available) {
@@ -240,12 +255,12 @@ export class CudaEnvironmentService {
           path: pathResult?.path ?? '',
           version,
           kind: pathResult?.kind,
-          torchVersion: detected.torch_version ?? null,
+          torchVersion: detected.torchVersion,
           device: null,
           error: detected.error
             ? `PyTorch 检测失败：${detected.error}`
             : `PyTorch ${
-              detected.torch_version ?? ''
+              detected.torchVersion ?? ''
             } 未检测到可用 CUDA`
               .replace(/\s+/g, ' ')
               .trim(),
@@ -256,8 +271,8 @@ export class CudaEnvironmentService {
         path: pathResult?.path ?? '',
         version,
         kind: pathResult?.kind,
-        torchVersion: detected.torch_version ?? null,
-        device: detected.device ?? null,
+        torchVersion: detected.torchVersion,
+        device: detected.device,
       };
     } catch (error) {
       return {

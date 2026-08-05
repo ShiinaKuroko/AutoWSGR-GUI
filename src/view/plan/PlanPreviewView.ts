@@ -59,6 +59,13 @@ export class PlanPreviewView {
   private nodeEditor: NodeEditorView;
   private fleetPresetView: FleetPresetView;
 
+  onNewPlan?: () => void;
+  onLoadPlan?: () => void;
+  onSavePlan?: () => void;
+  onAddCurrentPlanToGroup?: () => void;
+  onClosePreset?: () => void;
+  onExecutePreset?: () => void;
+  onAddPresetToGroup?: () => void;
   onNodeClick?: (nodeId: string) => void;
   onMapChange?: (chapter: string, map: number | string) => void;
   onPresetNameChange?: (name: string) => void;
@@ -74,6 +81,14 @@ export class PlanPreviewView {
     fn: ((index: number) => void) | undefined,
   ) {
     this.fleetPresetView.onRemoveFleetPreset = fn;
+  }
+
+  set onCloseNodeEditor(fn: (() => void) | undefined) {
+    this.nodeEditor.onClose = fn;
+  }
+
+  set onSaveNodeEditor(fn: (() => void) | undefined) {
+    this.nodeEditor.onSave = fn;
   }
 
   constructor() {
@@ -97,6 +112,43 @@ export class PlanPreviewView {
     this.nodeEditor = new NodeEditorView();
     this.fleetPresetView = new FleetPresetView();
 
+    document.getElementById('btn-new-battle-plan')?.addEventListener(
+      'click',
+      () => this.onNewPlan?.(),
+    );
+    document.getElementById('btn-load-battle-plan')?.addEventListener(
+      'click',
+      () => this.onLoadPlan?.(),
+    );
+    document.getElementById('btn-save-plan')?.addEventListener(
+      'click',
+      () => this.onSavePlan?.(),
+    );
+    document.getElementById('btn-add-to-group')?.addEventListener(
+      'click',
+      () => this.onAddCurrentPlanToGroup?.(),
+    );
+    document.getElementById('btn-close-preset')?.addEventListener(
+      'click',
+      () => this.onClosePreset?.(),
+    );
+    document.getElementById('btn-tp-add-queue')?.addEventListener(
+      'click',
+      () => this.onExecutePreset?.(),
+    );
+    document.getElementById('btn-tp-add-group')?.addEventListener(
+      'click',
+      () => this.onAddPresetToGroup?.(),
+    );
+    const exerciseFleetToggle = document.getElementById(
+      'tp-fleet-enable-ex',
+    ) as HTMLInputElement | null;
+    exerciseFleetToggle?.addEventListener('change', () => {
+      const grid = document.getElementById('tp-fleet-grid-ex');
+      if (grid) {
+        grid.style.display = exerciseFleetToggle.checked ? '' : 'none';
+      }
+    });
     this.mapView.onNodeClick = (nodeId) => this.onNodeClick?.(nodeId);
 
     this.chapterSelect.addEventListener('change', () => {

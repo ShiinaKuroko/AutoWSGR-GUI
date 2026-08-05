@@ -2,10 +2,10 @@
 /**
  * envAndUpdates —— 环境检查、依赖安装、更新检查逻辑。
  */
-import type { ElectronBridge } from '../../types/ipc.js';
+import type { StartupGateway } from '../../adapter/IpcAdapter.js';
 import { Logger } from '../../utils/Logger';
 
-function getUpdateMode(bridge?: ElectronBridge): 'auto' | 'manual' {
+function getUpdateMode(bridge?: StartupGateway): 'auto' | 'manual' {
   const fromBridge = bridge?.getUpdateMode?.();
   if (fromBridge === 'manual') return 'manual';
   if (fromBridge === 'auto') return 'auto';
@@ -17,7 +17,9 @@ function getUpdateMode(bridge?: ElectronBridge): 'auto' | 'manual' {
 }
 
 /** 检查 Python 环境, 缺失时自动安装本地便携版 */
-export async function checkAndPrepareEnv(bridge: ElectronBridge): Promise<boolean> {
+export async function checkAndPrepareEnv(
+  bridge: StartupGateway,
+): Promise<boolean> {
   Logger.info('正在检查运行环境…');
 
   let env = await bridge.checkEnvironment();
@@ -61,7 +63,9 @@ export async function checkAndPrepareEnv(bridge: ElectronBridge): Promise<boolea
 }
 
 /** 运行 setup.bat 安装环境 */
-export async function runSetupScript(bridge: ElectronBridge): Promise<boolean> {
+export async function runSetupScript(
+  bridge: StartupGateway,
+): Promise<boolean> {
   if (!bridge.runSetup) return false;
 
   if (bridge.onSetupLog) {
@@ -85,7 +89,9 @@ export async function runSetupScript(bridge: ElectronBridge): Promise<boolean> {
 }
 
 /** 检查更新 (非阻塞, 仅日志提示) */
-export async function checkForUpdates(bridge: ElectronBridge): Promise<void> {
+export async function checkForUpdates(
+  bridge: StartupGateway,
+): Promise<void> {
   const updateMode = getUpdateMode(bridge);
 
   initGuiAutoUpdate(bridge);
@@ -96,7 +102,7 @@ export async function checkForUpdates(bridge: ElectronBridge): Promise<void> {
 }
 
 /** 初始化 GUI 自动更新监听 + 首次检查 */
-function initGuiAutoUpdate(bridge: ElectronBridge): void {
+function initGuiAutoUpdate(bridge: StartupGateway): void {
   if (!bridge.onUpdateStatus) return;
 
   bridge.onUpdateStatus((status) => {

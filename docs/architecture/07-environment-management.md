@@ -280,45 +280,55 @@ sequenceDiagram
 
 ## 启动时序（完整视角）
 
+主进程先获取 Electron 单实例锁。只有持锁进程会迁移旧配置、创建窗口并进入下列
+环境流程；重复启动只会唤醒已有窗口，不会并发执行 pip。
+
 ```mermaid
 sequenceDiagram
+  participant Main as Electron 主进程
   participant App as AppController
   participant IPC as IPC Bridge
   participant PyEnv as pythonEnv/
   participant Back as BackendService
   participant Py as Python 后端
 
-  App->>IPC: checkEnvironment()
-  IPC->>PyEnv: checkEnvironment()
-  
-  alt .env_ready 有效
-    PyEnv-->>App: {allReady: true}
-  else 环境缺失
-    PyEnv-->>App: {allReady: false}
-    App->>IPC: installPortablePython()
-    IPC->>PyEnv: 安装便携版 Python + pip
-    App->>IPC: installDeps()
-    IPC->>PyEnv: pip install autowsgr
-    App->>IPC: checkEnvironment() (重试)
-    PyEnv-->>App: {allReady: true}
-  end
+  Main->>Main: requestSingleInstanceLock()
+  alt 重复启动
+    Main->>Main: 退出次实例并聚焦已有窗口
+  else 主实例
+    Main->>Main: 迁移旧配置并创建窗口
+    App->>IPC: checkEnvironment()
+    IPC->>PyEnv: checkEnvironment()
 
-  App->>IPC: startBackend()
-  IPC->>Back: startBackend()
-  Back->>Back: resolvePythonEnvironment()
-  Back->>Back: ADB connect
-  Back->>Py: spawn 子进程
-  
-  App->>App: waitForBackendAndConnect()
-  loop 轮询直到就绪
-    App->>Py: GET /api/health
+    alt .env_ready 有效
+      PyEnv-->>App: {allReady: true}
+    else 环境缺失
+      PyEnv-->>App: {allReady: false}
+      App->>IPC: installPortablePython()
+      IPC->>PyEnv: 安装便携版 Python + pip
+      App->>IPC: installDeps()
+      IPC->>PyEnv: pip install autowsgr
+      App->>IPC: checkEnvironment() (重试)
+      PyEnv-->>App: {allReady: true}
+    end
+
+    App->>IPC: startBackend()
+    IPC->>Back: startBackend()
+    Back->>Back: resolvePythonEnvironment()
+    Back->>Back: ADB connect
+    Back->>Py: spawn 子进程
+
+    App->>App: waitForBackendAndConnect()
+    loop 轮询直到就绪
+      App->>Py: GET /api/health
+    end
+
+    App->>Py: POST /api/system/start
+    Note over App,Py: 连接模拟器 + 启动游戏
+
+    App->>App: scheduler.start()
+    App->>App: cronScheduler.start()
   end
-  
-  App->>Py: POST /api/system/start
-  Note over App,Py: 连接模拟器 + 启动游戏
-  
-  App->>App: scheduler.start()
-  App->>App: cronScheduler.start()
 ```
 
 ---

@@ -37,6 +37,7 @@ View 只看到 ViewObject 和不透明计划 ID。`DecisivePlanController` 以�
 |------|--------|
 | 普通文件能力 | `SafePathService`、`SecureFileService` |
 | GUI 设置 | `GuiSettingsStore`、`GuiConfigurationService` |
+| 迁移状态账本 | `MigrationStateStore` |
 | 作战计划 | `CombatPlanCodec`、`CombatPlanRepository`、计划 Service |
 | 编队计划 | `TeamPlanCodec`、`TeamPlanRepository`、`TeamPlanService` |
 | 舰船资料库 | `ShipLibraryService`、`ShipLibraryUpdater` |
@@ -67,15 +68,15 @@ View 只看到 ViewObject 和不透明计划 ID。`DecisivePlanController` 以�
 
 ### 4. 迁移是可重试的版本状态机
 
-`LegacyPlanMigration` 维护计划结构迁移 v5 完成项；当前
-`USER_DATA_MIGRATION_VERSION` 为 6。v6 负责系统预设库存、已删除系统计划引用
-和旧胖次数字索引升级。迁移遵循：
+`MigrationStateStore` 独占 `.migration-state.json` 的解析、合并和原子写入。
+`UserDataMigrationService` 负责旧来源和 v6 库存迁移，
+`LegacyPlanMigration` 负责 v7 计划分类迁移。迁移遵循：
 
 1. 源文件不修改、不删除。
 2. 同名不同内容保存为“（旧版）”副本，并同步受管引用。
 3. 设置按字段深度合并，未知扩展字段保留。
 4. 完成项包含来源和内容摘要，重复启动不重复迁移。
-5. 全部 v6 操作成功后才写入版本 6；失败项下次启动重试。
+5. 每一阶段全部成功后才写入完成键并推进版本；失败项下次启动重试。
 6. 实际发生迁移时显示总数、成功数、失败数和失败文件。
 
 ### 5. 调度器区分轮次与逻辑任务
