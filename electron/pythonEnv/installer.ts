@@ -15,8 +15,12 @@ import {
   type PythonEnvironment,
   resolvePythonEnvironment,
 } from './environment';
-import { SHIP_LIBRARY_REQUIREMENTS } from './dependencies';
+import {
+  BACKEND_RUNTIME_REQUIREMENTS,
+  SHIP_LIBRARY_REQUIREMENTS,
+} from './dependencies';
 import { MANAGED_AUTOWSGR_REQUIREMENT } from './backendRequirement';
+import { buildBackendRuntimeInstallArgs } from './updater';
 
 const execAsync = promisify(exec);
 
@@ -194,6 +198,7 @@ export function buildDependencyInstallPlan(
       '--upgrade',
       ...targetArgs,
       ...SHIP_LIBRARY_REQUIREMENTS,
+      ...BACKEND_RUNTIME_REQUIREMENTS,
     ],
     backendArgs: [
       '-m', 'pip', 'install',
@@ -274,7 +279,7 @@ export async function installDependencies(pythonCmd: string): Promise<{ success:
     return { success: false, output: buildDeps.output.slice(-500) };
   }
 
-  ctx.sendProgress('正在安装舰船资料库更新依赖…');
+  ctx.sendProgress('正在安装工具与后端运行依赖…');
   const toolDeps = await runPip(installPlan.toolArgs);
   if (toolDeps.code !== 0) {
     ctx.sendProgress('ERROR 舰船资料库更新依赖安装失败');
@@ -313,10 +318,33 @@ export async function pullUpdates(): Promise<{ success: boolean; output: string 
     return { success: false, output: `活动热修复构建依赖安装失败: ${output}` };
   }
 
-  return new Promise((resolve) => {
-    const targetDir = localSitePackages();
-    if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+  const targetDir = localSitePackages();
+  if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+  const runtimeDeps = await new Promise<{ code: number; output: string }>((resolve) => {
+    const proc = spawn(
+      pythonCmd,
+      buildBackendRuntimeInstallArgs(targetDir),
+      {
+        cwd: ctx.appRoot(),
+        windowsHide: true,
+        stdio: 'pipe',
+        env: pipEnv(),
+      },
+    );
+    let output = '';
+    proc.stdout?.on('data', (d: Buffer) => { output += d.toString(); });
+    proc.stderr?.on('data', (d: Buffer) => { output += d.toString(); });
+    proc.on('close', (code) => resolve({ code: code ?? 1, output }));
+    proc.on('error', (error) => resolve({ code: 1, output: error.message }));
+  });
+  if (runtimeDeps.code !== 0) {
+    return {
+      success: false,
+      output: `后端运行依赖安装失败: ${runtimeDeps.output.slice(-500)}`,
+    };
+  }
 
+  return new Promise((resolve) => {
     // 先删除旧版，再安装且不级联更新依赖。
     try {
       for (const entry of fs.readdirSync(targetDir)) {

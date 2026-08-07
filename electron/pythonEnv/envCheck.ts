@@ -163,6 +163,7 @@ type CoreDepProbeResult = {
   scipy: boolean;
   requests: boolean;
   beautifulSoup: boolean;
+  maafw: boolean;
   autowsgr: string | null;
   backendRuntimeContract: boolean;
 };
@@ -252,6 +253,7 @@ async function probeCoreDependencies(
       scipy: Boolean(depResult.scipy),
       requests: Boolean(depResult.requests),
       beautifulSoup: Boolean(depResult.beautifulSoup),
+      maafw: Boolean(depResult.maafw),
       autowsgr: depResult.autowsgr == null || !usesExpectedAutowsgr
         ? null
         : String(depResult.autowsgr),

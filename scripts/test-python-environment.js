@@ -43,6 +43,7 @@ const {
   MANAGED_AUTOWSGR_REQUIREMENT,
 } = require('../dist/electron/pythonEnv/backendRequirement.js');
 const {
+  buildBackendRuntimeInstallArgs,
   buildManagedAutowsgrUpdateArgs,
 } = require('../dist/electron/pythonEnv/updater.js');
 const {
@@ -122,6 +123,10 @@ try {
     true,
   );
   assert.equal(
+    managedPlan.toolArgs.includes('maafw>=5.12.3,<6.0'),
+    true,
+  );
+  assert.equal(
     MANAGED_AUTOWSGR_COMMIT,
     '32b5cb2cb4cc20f4c1255a8d42784aaf24e1f432',
   );
@@ -138,6 +143,13 @@ try {
   assert.equal(managedUpdateArgs.at(-1), MANAGED_AUTOWSGR_REQUIREMENT);
   assert.equal(managedUpdateArgs.includes('autowsgr'), false);
   assert.equal(managedUpdateArgs.includes(localSite), true);
+  const runtimeInstallArgs = buildBackendRuntimeInstallArgs(localSite);
+  assert.equal(
+    runtimeInstallArgs.includes('maafw>=5.12.3,<6.0'),
+    true,
+  );
+  assert.equal(runtimeInstallArgs.includes(localSite), true);
+  assert.equal(runtimeInstallArgs.includes('--no-deps'), false);
   const forcedUpdateArgs = buildManagedAutowsgrUpdateArgs(
     localSite,
     true,

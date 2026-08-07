@@ -9,6 +9,10 @@ import { MANAGED_AUTOWSGR_REQUIREMENT } from './backendRequirement';
 import {
   buildBackendRuntimeContractProbeLines,
 } from './backendContractProbe';
+import {
+  BACKEND_RUNTIME_REQUIREMENTS,
+  PYTHON_DEPENDENCY_SPECS,
+} from './dependencies';
 
 const execAsync = promisify(exec);
 
@@ -19,6 +23,20 @@ export interface AutoUpdateDeps {
   localSitePackages: () => string;
   pipEnv: () => NodeJS.ProcessEnv;
   ensurePip: (pythonCmd: string) => Promise<boolean>;
+}
+
+/** 生成后端运行依赖安装参数，允许 pip 拉取传递依赖。 */
+export function buildBackendRuntimeInstallArgs(
+  targetDir: string,
+): string[] {
+  return [
+    '-m', 'pip', 'install',
+    '--upgrade',
+    '--target', targetDir,
+    '-i', 'https://pypi.tuna.tsinghua.edu.cn/simple',
+    '--trusted-host', 'pypi.tuna.tsinghua.edu.cn',
+    ...BACKEND_RUNTIME_REQUIREMENTS,
+  ];
 }
 
 /** 生成 managed 后端更新参数，确保自动更新不会改装 PyPI 裸包。 */
@@ -144,6 +162,28 @@ export async function autoUpdateAutowsgr(
       return failureVersion;
     }
 
+    deps.sendProgress('正在安装后端运行依赖…');
+    const runtimeDepsCode = await new Promise<number>((resolve) => {
+      const proc = spawn(
+        pythonCmd,
+        buildBackendRuntimeInstallArgs(targetDir),
+        {
+          cwd: deps.appRoot(),
+          windowsHide: true,
+          stdio: 'pipe',
+          env: deps.pipEnv(),
+        },
+      );
+      proc.stdout?.on('data', (d: Buffer) => { for (const l of d.toString().split('\n')) { if (l.trim()) deps.sendProgress(l.trim()); } });
+      proc.stderr?.on('data', (d: Buffer) => { for (const l of d.toString().split('\n')) { if (l.trim()) deps.sendProgress(l.trim()); } });
+      proc.on('close', (code) => resolve(code ?? 1));
+      proc.on('error', () => resolve(1));
+    });
+    if (runtimeDepsCode !== 0) {
+      deps.sendProgress('WARNING 后端运行依赖安装失败');
+      return failureVersion;
+    }
+
     const exitCode = await new Promise<number>((resolve) => {
       const proc = spawn(
         pythonCmd,
@@ -186,9 +226,14 @@ export async function autoUpdateAutowsgr(
       '    r["runtime_contract"] = True',
       'except Exception:',
       '    r["runtime_contract"] = False',
-      "for m in ['fastapi', 'uvicorn']:",
-      '    try: __import__(m)',
-      '    except Exception: r["missing"].append(m)',
+      `checks = ${JSON.stringify(
+        PYTHON_DEPENDENCY_SPECS.map(
+          dependency => [dependency.importName, dependency.packageName],
+        ),
+      )}`,
+      'for mod, package in checks:',
+      '    try: __import__(mod)',
+      '    except Exception: r["missing"].append(package)',
       'print(json.dumps(r))',
     ].join('\n'), 'utf-8');
 
