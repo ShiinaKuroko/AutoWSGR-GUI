@@ -65,6 +65,9 @@ jobs:
         run: |
           $pkg = Get-Content package.json | ConvertFrom-Json
           $pkg.version = "${{ steps.version.outputs.VERSION }}"
+          $repository = "${{ github.repository }}".Split('/', 2)
+          $pkg.build.publish.owner = $repository[0]
+          $pkg.build.publish.repo = $repository[1]
           $pkg.build.publish | Add-Member `
             -NotePropertyName channel `
             -NotePropertyValue "${{ steps.version.outputs.CHANNEL }}" `
