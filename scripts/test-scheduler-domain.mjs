@@ -479,6 +479,8 @@ assert.deepEqual(automaticLootCall.slice(0, 6), [
     gap: 4,
     plan: {
       selected_nodes: ['A', '0'],
+      node_defaults: {},
+      node_args: {},
       fleet_id: 3,
     },
   },
