@@ -59,7 +59,7 @@ const cronConfig = {
   lootPlanId: 'bettle-周常-9-2.yaml', lootStopCount: 0,
 };
 const cron = new cronModule.CronScheduler(cronConfig, storage);
-cron.markBattleCompleted();
+cron.markBattleHandled();
 const restoredCron = new cronModule.CronScheduler(cronConfig, storage);
 restoredCron.start();
 restoredCron.stop();

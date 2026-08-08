@@ -5,6 +5,9 @@
  */
 const context = require('./test-context');
 const {
+  createDirectories,
+} = require('../test-support/directories');
+const {
   assert,
   EventEmitter,
   fs,
@@ -87,9 +90,11 @@ function testCombatPlanServices() {
     settings,
     new TaskPresetCodec(),
   );
-  combatRepository.initializeSystemDirectory();
+  createDirectories(
+    appPaths.systemBattlePlansDir(),
+    appPaths.systemTeamPlansDir(),
+  );
   combatRepository.initializeUserDirectory();
-  teamRepository.initializeSystemDirectory();
   teamRepository.initializeUserDirectory();
 
   const split = combatCodec.normalizeFleetPresets({

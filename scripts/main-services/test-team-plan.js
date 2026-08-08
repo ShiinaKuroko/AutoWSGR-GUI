@@ -5,6 +5,9 @@
  */
 const context = require('./test-context');
 const {
+  createDirectories,
+} = require('../test-support/directories');
+const {
   assert,
   EventEmitter,
   fs,
@@ -55,7 +58,7 @@ function testTeamPlanServices() {
     codec,
   );
   const service = new TeamPlanService(codec, repository);
-  repository.initializeSystemDirectory();
+  createDirectories(appPaths.systemTeamPlansDir());
   repository.initializeUserDirectory();
 
   const candidateOnly = codec.normalize({

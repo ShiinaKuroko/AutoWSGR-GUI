@@ -192,14 +192,6 @@ export const FORMATION_NAMES: Record<number, string> = {
   5: '单横阵',
 };
 
-export const FIGHT_CONDITION_NAMES: Record<number, string> = {
-  1: '稳步前进',
-  2: '火力万岁',
-  3: '小心翼翼',
-  4: '瞄准',
-  5: '搜索阵型',
-};
-
 export const REPAIR_MODE_NAMES: Record<number, string> = {
   1: '中破就修',
   2: '大破才修',

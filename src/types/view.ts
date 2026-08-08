@@ -8,7 +8,6 @@ import type {
 import type {
   EventMapCatalogEntry,
   NormalFightTaskConfig,
-  ShipSlot,
 } from './model.js';
 import type { DailySortieStatsSnapshot } from './statistics.js';
 import type {
@@ -268,11 +267,6 @@ export interface PlanPreviewViewObject {
   gap?: number;
   lootCountGe?: number;
   shipCountGe?: number;
-}
-
-export interface FleetPresetVO {
-  name: string;
-  ships: ShipSlot[];
 }
 
 export type FleetPresetCatalogStatus = 'loading' | 'ready' | 'error';
