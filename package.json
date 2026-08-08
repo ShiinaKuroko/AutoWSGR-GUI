@@ -1,6 +1,6 @@
 {
   "name": "wsgrgui",
-  "version": "2.0.5-dev",
+  "version": "2.0.1-alpha",
   "description": "AutoWSGR YAML 管理与自动化桌面界面",
   "main": "dist/electron/main.js",
   "scripts": {
@@ -147,7 +147,7 @@
       "provider": "github",
       "owner": "yltx",
       "repo": "AutoWSGR-GUI",
-      "channel": "dev"
+      "channel": "alpha"
     }
   }
 }
