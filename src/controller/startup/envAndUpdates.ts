@@ -48,8 +48,9 @@ export async function checkAndPrepareEnv(
   const installResult = await bridge.installDeps();
 
   if (!installResult.success) {
-    Logger.error('依赖安装失败');
-    Logger.error(installResult.output.slice(-200));
+    Logger.error('依赖安装失败，请检查日志');
+    // 原始 pip 输出仅写入日志文件，不推送到 UI 面板（可能含乱码，不适合展示）
+    Logger.logToFile(installResult.output.slice(-200));
     return false;
   }
 
