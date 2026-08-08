@@ -128,7 +128,7 @@ try {
   );
   assert.equal(
     MANAGED_AUTOWSGR_COMMIT,
-    '32b5cb2cb4cc20f4c1255a8d42784aaf24e1f432',
+    'de2187d6149c1115fae92f4282181e973974f55a',
   );
   assert.equal(BACKEND_DISTRIBUTION.id, 'personal');
   assert.equal(BACKEND_DISTRIBUTION.ref, 'ShiinaKuroko');
