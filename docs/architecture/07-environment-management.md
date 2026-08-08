@@ -155,9 +155,10 @@ AutoWSGR 是否具备 GUI 所需的运行时接口和活动资源：
 3. 不兼容时安装包内 `backend-distribution.json` 固定的 AutoWSGR 提交。
 4. 安装后重新验证运行契约、活动资源、FastAPI 和 Uvicorn。
 
-公用包清单指向 `OpenWSGR/AutoWSGR` 的 `main` 提交，按兼容性决定是否更新。
-自用包清单指向 `ShiinaKuroko/AutoWSGR` 的 `ShiinaKuroko` 提交；安装脚本会
-删除 `.env_ready`，使安装后的首次完整检查使用 `--force-reinstall` 强制更新。
+Alpha 包清单固定到 `ShiinaKuroko/AutoWSGR` 的 `ShiinaKuroko` 分支提交；
+发布工作流会在打包时自动读取该分支的最新提交；
+安装脚本会删除 `.env_ready`，使安装后的首次完整检查使用
+`--force-reinstall` 强制更新。
 强制更新成功后重新写入标记，后续启动恢复普通兼容检查；失败时不写标记，下次
 启动继续重试。external 模式始终使用用户选择的本地仓库。
 

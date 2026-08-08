@@ -128,9 +128,9 @@ try {
   );
   assert.equal(
     MANAGED_AUTOWSGR_COMMIT,
-    'de2187d6149c1115fae92f4282181e973974f55a',
+    '35eda39ebe06c7550da384bb404e1212c9ba2da5',
   );
-  assert.equal(BACKEND_DISTRIBUTION.id, 'personal');
+  assert.equal(BACKEND_DISTRIBUTION.id, 'alpha');
   assert.equal(BACKEND_DISTRIBUTION.ref, 'ShiinaKuroko');
   assert.equal(FORCE_MANAGED_AUTOWSGR_UPDATE_ON_INSTALL, true);
   assert.equal(

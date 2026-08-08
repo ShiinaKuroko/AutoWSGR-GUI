@@ -6,18 +6,18 @@ module.exports = {
   ...base,
   directories: {
     ...base.directories,
-    output: 'release/personal',
+    output: 'release/alpha',
   },
   extraResources: [
     ...base.extraResources,
     {
-      from: 'build/backend-distributions/personal.json',
+      from: 'build/backend-distribution.json',
       to: 'backend-distribution.json',
     },
   ],
   nsis: {
     ...base.nsis,
-    include: 'build/installer-personal.nsh',
-    artifactName: 'AutoWSGR-GUI-Personal-Setup-${version}.${ext}',
+    include: 'build/installer.nsh',
+    artifactName: 'AutoWSGR-GUI-Alpha-Setup-${version}.${ext}',
   },
 };

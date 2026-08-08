@@ -141,7 +141,7 @@ function shouldAutoUpdate(environment: PythonEnvironment): boolean {
     && ctx.getUpdateMode() !== 'manual';
 }
 
-/** 自用包在安装器清除环境标记后必须重新安装一次指定后端。 */
+/** 发行包在安装器清除环境标记后必须重新安装一次指定后端。 */
 function shouldForceManagedBackendInstall(
   environment: PythonEnvironment,
 ): boolean {

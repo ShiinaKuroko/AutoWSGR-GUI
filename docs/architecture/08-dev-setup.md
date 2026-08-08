@@ -43,13 +43,10 @@ npm run dev
 | `npm run test:scheduler-domain` | 验证逻辑任务身份、后触发、取消和排序 |
 | `npm run test:ocr-log-analyzer` | 验证独立 OCR 日志提取、复核和纠错规则生成工具 |
 | `npm run test:python-environment` | 验证 managed/external Python、CUDA 和后端环境一致性 |
-| `npm run test:backend-distributions` | 验证自用包和公用包的后端来源及强制更新策略 |
+| `npm run test:backend-distribution` | 验证 Alpha 包的后端来源及强制更新策略 |
 | `npm run test:task-group-migration` | 构建后验证任务组迁移和往返兼容 |
 | `npm start` | 等同于 `build` + `electron .`（含 chcp 65001） |
-| `npm run dist` | 完整生成公用 NSIS 安装包 |
-| `npm run dist:personal` | 生成指向 ShiinaKuroko 分支的自用安装包 |
-| `npm run dist:public` | 生成指向默认主库 main 的公用安装包 |
-| `npm run dist:all` | 一次生成自用和公用两个安装包 |
+| `npm run dist` | 完整生成 Alpha NSIS 安装包 |
 | `npm run pack` | 编译 + `electron-builder --dir`（生成目录，不打安装包） |
 | `npm run prepare-python` | 单独下载便携版 Python |
 | `npm run prepare-adb` | 单独下载 ADB 工具 |
@@ -122,10 +119,9 @@ flowchart LR
 }
 ```
 
-**打包目标**：Windows NSIS 安装包：
+**打包目标**：Windows Alpha NSIS 安装包：
 
-- 自用包：`release/personal/AutoWSGR-GUI-Personal-Setup-x.x.x.exe`
-- 公用包：`release/public/AutoWSGR-GUI-Public-Setup-x.x.x.exe`
+- `release/alpha/AutoWSGR-GUI-Alpha-Setup-x.x.x-alpha.exe`
 
 **包含内容**：
 - `dist/` — 编译后的 JS
@@ -140,9 +136,9 @@ flowchart LR
 
 ### NSIS 自定义
 
-`build/installer.nsh` 用于公用包；`build/installer-personal.nsh` 还会清除
-`.env_ready`，使自用包首次启动时强制更新个人分支后端。两个包分别携带
-`backend-distribution.json`，版本号相同也不会混用后端来源。
+`build/installer.nsh` 会清除 `.env_ready`，使新版 Alpha 包首次启动时强制
+更新 `ShiinaKuroko/AutoWSGR` 的指定提交。安装包只携带唯一的
+`backend-distribution.json`。
 
 ---
 

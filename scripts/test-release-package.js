@@ -26,12 +26,10 @@ const sourceResources = path.join(root, 'resource');
 const packageJson = JSON.parse(
   fs.readFileSync(path.join(root, 'package.json'), 'utf8'),
 );
-const releaseDistributions = [
-  { id: 'personal', artifactLabel: 'Personal' },
-  { id: 'public', artifactLabel: 'Public' },
-].filter(distribution => (
-  fs.existsSync(path.join(releaseRoot, distribution.id))
-));
+const alphaDistribution = {
+  id: 'alpha',
+  artifactLabel: 'Alpha',
+};
 const v6MigrationPlans = [
   'bettle-E1炸鱼.yaml',
   'bettle-E5夜战.yaml',
@@ -195,12 +193,7 @@ function assertReleasePackage(distribution) {
     'utf8',
   ));
   const expectedBackendManifest = JSON.parse(fs.readFileSync(
-    path.join(
-      root,
-      'build',
-      'backend-distributions',
-      `${distribution.id}.json`,
-    ),
+    path.join(root, 'build', 'backend-distribution.json'),
     'utf8',
   ));
   assert.deepEqual(
@@ -254,10 +247,4 @@ function assertReleasePackage(distribution) {
   );
 }
 
-assert.ok(
-  releaseDistributions.length > 0,
-  '未找到 release/personal 或 release/public 打包产物',
-);
-for (const distribution of releaseDistributions) {
-  assertReleasePackage(distribution);
-}
+assertReleasePackage(alphaDistribution);
