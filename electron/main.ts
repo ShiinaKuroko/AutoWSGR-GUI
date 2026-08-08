@@ -179,6 +179,21 @@ const shipLibraryService = new ShipLibraryService(appPaths, {
 });
 const shipNameSynchronizer = new ShipNameSynchronizer(atomicFileStore);
 const adbService = new AdbService(appPaths);
+
+/** 关闭 GUI 管理的后端与 ADB server，释放安装目录中的可执行文件。 */
+async function stopRuntimeResources(): Promise<void> {
+  await stopBackend();
+  try {
+    await adbService.stopServer();
+    console.log('[ADB] server 已停止');
+  } catch (error) {
+    const message = error instanceof Error
+      ? error.message
+      : String(error);
+    console.warn(`[ADB] server 停止失败，将继续退出: ${message}`);
+  }
+}
+
 const cudaEnvironmentService = new CudaEnvironmentService(
   CudaEnvironmentService.createDependencies(findPython),
 );
@@ -472,9 +487,9 @@ function initializeApplicationLifecycle(): void {
       sendToRenderer: (channel, ...args) => (
         windowService.sendToRenderer(channel, ...args)
       ),
-      getUpdateMode: () => guiConfigurationService.updateMode(),
       getAppVersion: () => app.getVersion(),
-      stopBackend,
+      getUpdateMode: () => guiConfigurationService.updateMode(),
+      stopBackend: stopRuntimeResources,
     });
     windowService.createWindow();
     const migrationNotice = buildLegacyMigrationNotice(
@@ -492,30 +507,32 @@ function initializeApplicationLifecycle(): void {
     });
   });
 
-  let backendShutdownInProgress = false;
+  let runtimeShutdownInProgress = false;
+  let runtimeShutdownComplete = false;
 
   app.on('before-quit', (event) => {
     windowService.captureWindowBounds();
     windowService.persistWindowBounds();
-    if (backendShutdownInProgress) return;
-    if (getBackendProcess()) {
-      backendShutdownInProgress = true;
-      event.preventDefault();
-      void stopBackend().then(() => {
-        backendShutdownInProgress = false;
-        app.quit();
-      }).catch(error => {
-        backendShutdownInProgress = false;
-        const message = error instanceof Error
-          ? error.message
-          : String(error);
-        console.error('[Backend] 无法安全退出:', message);
-        dialog.showErrorBox(
-          '无法安全退出',
-          `后端进程仍在运行，应用没有退出：${message}`,
-        );
-      });
-    }
+    if (runtimeShutdownComplete) return;
+    event.preventDefault();
+    if (runtimeShutdownInProgress) return;
+
+    runtimeShutdownInProgress = true;
+    void stopRuntimeResources().then(() => {
+      runtimeShutdownComplete = true;
+      runtimeShutdownInProgress = false;
+      app.quit();
+    }).catch(error => {
+      runtimeShutdownInProgress = false;
+      const message = error instanceof Error
+        ? error.message
+        : String(error);
+      console.error('[Backend] 无法安全退出:', message);
+      dialog.showErrorBox(
+        '无法安全退出',
+        `后端进程仍在运行，应用没有退出：${message}`,
+      );
+    });
   });
 
   app.on('window-all-closed', () => {

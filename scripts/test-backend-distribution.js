@@ -60,6 +60,21 @@ try {
   assert.match(installer, /!macro customCheckAppRunning/);
   assert.match(installer, /\/F \/T \/IM/);
   assert.match(installer, /\$R1 < 20/);
+  assert.match(
+    installer,
+    /"\$INSTDIR\\adb\\adb\.exe" kill-server/,
+    '覆盖安装前必须停止旧版内置 ADB server',
+  );
+  assert.match(
+    installer,
+    /Rename "\$INSTDIR\\python\\site-packages" "\$INSTDIR\.site-packages-update"/,
+    '覆盖安装前必须临时保留已有后端依赖',
+  );
+  assert.match(
+    installer,
+    /Rename "\$INSTDIR\.site-packages-update" "\$INSTDIR\\python\\site-packages"/,
+    '写入新前端后必须恢复已有后端依赖',
+  );
   console.log('alpha backend distribution test passed');
 } finally {
   fs.rmSync(resources, { recursive: true, force: true });
