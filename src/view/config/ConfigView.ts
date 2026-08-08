@@ -107,6 +107,7 @@ export class ConfigView {
   private validatePythonBtn = document.getElementById('btn-validate-python') as HTMLButtonElement | null;
   private shipLibraryStatus = document.getElementById('ship-library-status');
   private updateShipLibraryBtn = document.getElementById('btn-update-ship-library') as HTMLButtonElement | null;
+  private shipLibraryUpdateLabel = '更新舰船数据库';
   private defaultWindowWidth = element<HTMLInputElement>('cfg-window-width');
   private defaultWindowHeight = element<HTMLInputElement>('cfg-window-height');
   private rememberWindowBounds = element<HTMLInputElement>('cfg-remember-window-bounds');
@@ -548,6 +549,12 @@ export class ConfigView {
   setPythonStatus(text: string, status: StatusKind): void { this.setStatus(this.pythonStatus, text, status); }
   setBackendStatus(text: string, status: StatusKind): void { this.setStatus(this.backendStatus, text, status); }
   setShipLibraryStatus(text: string, status: StatusKind): void { this.setStatus(this.shipLibraryStatus, text, status); }
+  setShipLibraryUpdateLabel(label: string): void {
+    this.shipLibraryUpdateLabel = label;
+    if (this.updateShipLibraryBtn && !this.updateShipLibraryBtn.disabled) {
+      this.updateShipLibraryBtn.textContent = label;
+    }
+  }
   setAdbStatus(text: string, status: 'online' | 'offline' | 'unknown'): void {
     if (!this.adbStatus) return;
     this.adbStatus.title = text;
@@ -576,7 +583,11 @@ export class ConfigView {
   setShipLibraryUpdateLoading(loading: boolean): void {
     if (!this.updateShipLibraryBtn) return;
     this.updateShipLibraryBtn.disabled = loading;
-    this.updateShipLibraryBtn.textContent = loading ? '正在更新…' : '更新舰船数据库';
+    this.updateShipLibraryBtn.textContent = loading
+      ? this.shipLibraryUpdateLabel === '同步后端'
+        ? '正在同步…'
+        : '正在检查…'
+      : this.shipLibraryUpdateLabel;
   }
 
   setBackendCheckLoading(loading: boolean): void {
