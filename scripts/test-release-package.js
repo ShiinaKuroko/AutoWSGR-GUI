@@ -28,7 +28,6 @@ const packageJson = JSON.parse(
 );
 const alphaDistribution = {
   id: 'alpha',
-  artifactLabel: 'Alpha',
 };
 const v6MigrationPlans = [
   'bettle-E1炸鱼.yaml',
@@ -82,8 +81,7 @@ function assertReleasePackage(distribution) {
   const resources = path.join(unpacked, 'resources');
   const packagedResources = path.join(resources, 'resource');
   const artifactName = (
-    `AutoWSGR-GUI-${distribution.artifactLabel}`
-    + `-Setup-${packageJson.version}.exe`
+    `AutoWSGR-GUI-Setup-${packageJson.version}.exe`
   );
   const label = `${distribution.id} 包`;
 

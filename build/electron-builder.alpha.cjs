@@ -18,6 +18,5 @@ module.exports = {
   nsis: {
     ...base.nsis,
     include: 'build/installer.nsh',
-    artifactName: 'AutoWSGR-GUI-Alpha-Setup-${version}.${ext}',
   },
 };

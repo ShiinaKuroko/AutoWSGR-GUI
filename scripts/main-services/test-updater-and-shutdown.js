@@ -137,7 +137,7 @@ function testGuiUpdatePolicy() {
     workflow,
     /release\/alpha\/alpha\.yml/,
   );
-  assert.match(workflow, /AutoWSGR-GUI-Alpha-Setup-/);
+  assert.match(workflow, /AutoWSGR-GUI-Setup-/);
   assert.match(workflow, /Pin latest Alpha backend/);
   assert.match(workflow, /ShiinaKuroko\/AutoWSGR/);
   assert.doesNotMatch(workflow, /X\.Y\.Z-beta\.N/);

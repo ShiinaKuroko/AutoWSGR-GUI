@@ -121,7 +121,7 @@ flowchart LR
 
 **打包目标**：Windows Alpha NSIS 安装包：
 
-- `release/alpha/AutoWSGR-GUI-Alpha-Setup-x.x.x-alpha.exe`
+- `release/alpha/AutoWSGR-GUI-Setup-x.x.x-alpha.exe`
 
 **包含内容**：
 - `dist/` — 编译后的 JS
