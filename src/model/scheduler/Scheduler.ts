@@ -156,6 +156,17 @@ export class Scheduler {
       ?? null;
   }
 
+  /** 执行一次远征检查（系统启动时与远征任务消费时共用） */
+  private async checkExpedition(): Promise<void> {
+    this.emitLog('info', '正在检查远征...');
+    try {
+      await this.api.expeditionCheck();
+      this.emitLog('info', '远征检查完成');
+    } catch {
+      this.emitLog('debug', '远征检查跳过');
+    }
+  }
+
   /** 启动系统 (连接模拟器 + 启动游戏) */
   async start(configPath?: string): Promise<boolean> {
     const resp = await this.api.systemStart(configPath, 300_000);
@@ -168,13 +179,7 @@ export class Scheduler {
 
     if (this.autoExpedition) {
       // 系统启动后立即检查远征，确保远征页面不会阻碍后续任务
-      this.emitLog('info', '正在检查远征...');
-      try {
-        await this.api.expeditionCheck();
-        this.emitLog('info', '远征检查完成');
-      } catch {
-        this.emitLog('debug', '远征检查跳过');
-      }
+      await this.checkExpedition();
       this.expeditionTimer.start();
     }
     return true;
@@ -483,13 +488,7 @@ export class Scheduler {
 
     // 远征任务: 直接调用远征 API，不走 taskStart 流程
     if (task.type === 'expedition') {
-      try {
-        this.emitLog('info', '正在检查远征...');
-        await this.api.expeditionCheck();
-        this.emitLog('info', '远征检查完成');
-      } catch {
-        this.emitLog('debug', '远征检查跳过');
-      }
+      await this.checkExpedition();
 
       if (!this.systemActive || this.currentTask?.id !== task.id) return;
       await this.handlePostExpedition();
