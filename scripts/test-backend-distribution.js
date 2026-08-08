@@ -57,6 +57,9 @@ try {
     'utf8',
   );
   assert.match(installer, /Delete "\$INSTDIR\\\.env_ready"/);
+  assert.match(installer, /!macro customCheckAppRunning/);
+  assert.match(installer, /\/F \/T \/IM/);
+  assert.match(installer, /\$R1 < 20/);
   console.log('alpha backend distribution test passed');
 } finally {
   fs.rmSync(resources, { recursive: true, force: true });
