@@ -3,6 +3,7 @@
  * ConfigView —— 设置页纯渲染组件。
  * 接收 ConfigViewObject 填充表单，用户修改后由 Controller 收集。
  */
+import type { GuiUpdateStatus } from '../../types/ipc.js';
 import type { NormalFightTaskConfig } from '../../types/model.js';
 import type { ConfigViewObject } from '../../types/view.js';
 import {
@@ -62,6 +63,11 @@ export class ConfigView {
   private emuSerial = element<HTMLInputElement>('cfg-emu-serial');
   private gameApp = element<HTMLSelectElement>('cfg-game-app');
   private updateMode = element<HTMLSelectElement>('cfg-update-mode');
+  private guiUpdateProgress = element<HTMLElement>('gui-update-progress');
+  private guiUpdateStatus = element<HTMLElement>('gui-update-status');
+  private guiUpdatePercent = element<HTMLElement>('gui-update-percent');
+  private guiUpdateProgressTrack = element<HTMLElement>('gui-update-progress-track');
+  private guiUpdateProgressFill = element<HTMLElement>('gui-update-progress-fill');
   private autoExpedition = element<HTMLInputElement>('cfg-auto-expedition');
   private expeditionInterval = element<HTMLInputElement>('cfg-expedition-interval');
   private autoBattle = element<HTMLInputElement>('cfg-auto-battle');
@@ -622,6 +628,67 @@ export class ConfigView {
       '检查中…',
       '立即检查',
     );
+  }
+
+  setGuiUpdateStatus(status: GuiUpdateStatus): void {
+    let text: string;
+    let percent: number | null = 0;
+    let state: 'active' | 'complete' | 'error' = 'active';
+    let percentText: string | null = null;
+
+    switch (status.status) {
+      case 'checking':
+        text = '正在检查更新…';
+        percent = null;
+        percentText = '检查中';
+        break;
+      case 'available':
+        text = `发现 v${status.version}，等待下载`;
+        break;
+      case 'up-to-date':
+        text = '当前已是最新版本';
+        percent = 100;
+        state = 'complete';
+        break;
+      case 'downloading':
+        percent = Math.max(0, Math.min(100, Math.round(status.percent)));
+        text = '正在下载更新…';
+        break;
+      case 'downloaded':
+        text = `v${status.version} 已下载，退出时自动安装`;
+        percent = 100;
+        state = 'complete';
+        break;
+      case 'installing':
+        text = status.message;
+        percent = 100;
+        break;
+      case 'error':
+        text = `更新失败：${status.message}`;
+        percentText = '失败';
+        state = 'error';
+        break;
+    }
+
+    this.guiUpdateProgress.hidden = false;
+    this.guiUpdateProgress.dataset['state'] = state;
+    this.guiUpdateProgress.title = text;
+    this.guiUpdateStatus.textContent = text;
+    this.guiUpdatePercent.textContent = percentText
+      ?? `${percent ?? 0}%`;
+    this.guiUpdateProgressTrack.classList.toggle(
+      'is-indeterminate',
+      percent === null,
+    );
+    this.guiUpdateProgressFill.style.width = `${percent ?? 0}%`;
+    if (percent === null) {
+      this.guiUpdateProgressTrack.removeAttribute('aria-valuenow');
+    } else {
+      this.guiUpdateProgressTrack.setAttribute(
+        'aria-valuenow',
+        String(percent),
+      );
+    }
   }
 
   private setButtonLoading(

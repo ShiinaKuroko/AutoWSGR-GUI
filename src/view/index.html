@@ -1332,13 +1332,30 @@
                   <strong>更新模式</strong>
                   <span>自动模式会在启动时检查更新，手动模式仅在点击按钮时检查。</span>
                 </div>
-                <div class="config-setting-control">
+                <div class="config-setting-control config-setting-control-stack">
                   <div class="input-row config-update-controls">
                     <select id="cfg-update-mode" class="input">
                       <option value="auto">自动更新</option>
                       <option value="manual">手动更新</option>
                     </select>
                     <button class="btn btn-small" id="btn-check-updates">立即检查</button>
+                  </div>
+                  <div id="gui-update-progress" class="config-update-progress" hidden>
+                    <div class="config-update-progress-copy">
+                      <span id="gui-update-status">准备检查更新</span>
+                      <span id="gui-update-percent">0%</span>
+                    </div>
+                    <div
+                      id="gui-update-progress-track"
+                      class="config-update-progress-track"
+                      role="progressbar"
+                      aria-label="GUI 更新进度"
+                      aria-valuemin="0"
+                      aria-valuemax="100"
+                      aria-valuenow="0"
+                    >
+                      <span id="gui-update-progress-fill"></span>
+                    </div>
                   </div>
                 </div>
               </div>

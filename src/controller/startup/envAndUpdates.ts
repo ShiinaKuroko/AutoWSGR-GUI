@@ -114,8 +114,7 @@ function initGuiAutoUpdate(bridge: StartupGateway): void {
           Logger.warn(`发现 GUI 新版本 v${status.version}，当前为手动更新模式，请点击「立即检查更新」后手动下载`);
           break;
         }
-        Logger.info(`发现 GUI 新版本 v${status.version}，正在自动下载增量更新…`);
-        bridge.downloadGuiUpdate?.();
+        Logger.info(`发现 GUI 新版本 v${status.version}，主进程已开始自动下载增量更新…`);
         break;
       case 'downloading':
         if (status.percent != null && status.percent % 25 === 0) {

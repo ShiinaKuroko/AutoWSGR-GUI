@@ -220,6 +220,36 @@ async function runRendererTest(root, tempDirectory) {
   );
 
   const view = new ConfigView();
+  const updateProgress = document.getElementById('gui-update-progress');
+  const updateProgressTrack = document.getElementById(
+    'gui-update-progress-track',
+  );
+  const updateProgressFill = document.getElementById(
+    'gui-update-progress-fill',
+  );
+  const updateStatus = document.getElementById('gui-update-status');
+  const updatePercent = document.getElementById('gui-update-percent');
+  rendererAssert.equal(updateProgress.hidden, true);
+  view.setGuiUpdateStatus({ status: 'checking' });
+  rendererAssert.equal(updateProgress.hidden, false);
+  rendererAssert.equal(updatePercent.textContent, '检查中');
+  rendererAssert.equal(
+    updateProgressTrack.classList.contains('is-indeterminate'),
+    true,
+  );
+  view.setGuiUpdateStatus({
+    status: 'downloading',
+    percent: 42.4,
+    transferred: 42,
+    total: 100,
+  });
+  rendererAssert.equal(updateStatus.textContent, '正在下载更新…');
+  rendererAssert.equal(updatePercent.textContent, '42%');
+  rendererAssert.equal(updateProgressFill.style.width, '42%');
+  view.setGuiUpdateStatus({ status: 'downloaded', version: '2.0.5-alpha' });
+  rendererAssert.equal(updateProgress.dataset.state, 'complete');
+  rendererAssert.equal(updatePercent.textContent, '100%');
+
   const decisiveOptions = Array.from(
     document.getElementById('cfg-decisive-template').options,
   ).map(option => [option.value, option.textContent]);

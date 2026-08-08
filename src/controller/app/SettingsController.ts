@@ -42,6 +42,9 @@ export class SettingsController {
         configView.setShipLibraryStatus(progress.message, 'unknown');
       }
     });
+    this.gateway?.onUpdateStatus((status) => {
+      configView.setGuiUpdateStatus(status);
+    });
 
     configView.bindActions({
       onSave: () => void this.host.saveConfig(),

@@ -472,6 +472,7 @@ function initializeApplicationLifecycle(): void {
       sendToRenderer: (channel, ...args) => (
         windowService.sendToRenderer(channel, ...args)
       ),
+      getUpdateMode: () => guiConfigurationService.updateMode(),
       getAppVersion: () => app.getVersion(),
       stopBackend,
     });

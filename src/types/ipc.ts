@@ -68,6 +68,9 @@ export interface CudaValidationResult {
 
 export type GuiUpdateStatus =
   | {
+      status: 'checking';
+    }
+  | {
       status: 'available';
       version: string;
       releaseNotes?: string;
