@@ -776,6 +776,11 @@ async function runRendererTest(root, tempDirectory) {
   view.render(sample);
 
   const model = new ConfigModel();
+  rendererAssert.equal(
+    model.current.log.root,
+    'logs',
+    '新建配置的默认日志目录必须为 logs',
+  );
   model.loadFromYaml([
     'emulator:',
     '  type: 雷电',

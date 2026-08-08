@@ -305,7 +305,7 @@ export class ConfigView {
       lootPlans: structuredClone(this.lootPlans),
       lootStopCount: Math.trunc(this.clamp(this.lootStopCount.value, 1, 50, 50)),
       logLevel: this.logLevel.value as ConfigViewObject['logLevel'],
-      logRoot: this.logRoot.value.trim() || 'log',
+      logRoot: this.logRoot.value.trim() || 'logs',
       themeMode: this.themeMode.value as ConfigViewObject['themeMode'],
       accentColor: this.accentColor.value,
       debugMode: this.debugMode.checked,

@@ -45,7 +45,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   },
   log: {
     level: 'INFO',
-    root: 'log',
+    root: 'logs',
   },
   daily_automation: {
     auto_expedition: false,
