@@ -45,6 +45,7 @@ const {
 const {
   buildBackendRuntimeInstallArgs,
   buildManagedAutowsgrUpdateArgs,
+  buildRequirementProbeScript,
 } = require('../dist/electron/pythonEnv/updater.js');
 const {
   buildBackendRuntimeContractProbeLines,
@@ -143,13 +144,23 @@ try {
   assert.equal(managedUpdateArgs.at(-1), MANAGED_AUTOWSGR_REQUIREMENT);
   assert.equal(managedUpdateArgs.includes('autowsgr'), false);
   assert.equal(managedUpdateArgs.includes(localSite), true);
+  assert.equal(managedUpdateArgs.includes('--no-deps'), true);
   const runtimeInstallArgs = buildBackendRuntimeInstallArgs(localSite);
   assert.equal(
     runtimeInstallArgs.includes('maafw>=5.12.3,<6.0'),
     true,
   );
   assert.equal(runtimeInstallArgs.includes(localSite), true);
-  assert.equal(runtimeInstallArgs.includes('--no-deps'), false);
+  assert.equal(runtimeInstallArgs.includes('--no-deps'), true);
+  assert.equal(runtimeInstallArgs.includes('--upgrade'), true);
+  const requirementProbe = buildRequirementProbeScript(
+    localSite,
+    ['maafw>=5.12.3,<6.0'],
+    true,
+  );
+  assert.match(requirementProbe, /metadata\.distribution/);
+  assert.match(requirementProbe, /specifier\.contains/);
+  assert.match(requirementProbe, /roots\.extend/);
   const forcedUpdateArgs = buildManagedAutowsgrUpdateArgs(
     localSite,
     true,

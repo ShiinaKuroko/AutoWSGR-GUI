@@ -12,9 +12,11 @@ import {
 import {
   BACKEND_RUNTIME_REQUIREMENTS,
   PYTHON_DEPENDENCY_SPECS,
+  SHIP_LIBRARY_REQUIREMENTS,
 } from './dependencies';
 
 const execAsync = promisify(exec);
+const BACKEND_BUILD_REQUIREMENTS = ['hatchling', 'hatch-vcs'];
 
 export interface AutoUpdateDeps {
   sendProgress: (msg: string) => void;
@@ -25,18 +27,197 @@ export interface AutoUpdateDeps {
   ensurePip: (pythonCmd: string) => Promise<boolean>;
 }
 
-/** 生成后端运行依赖安装参数，允许 pip 拉取传递依赖。 */
+/** 生成依赖安装参数，调用方只传入检查后确认需要处理的包。 */
 export function buildBackendRuntimeInstallArgs(
   targetDir: string,
+  requirements: readonly string[] = BACKEND_RUNTIME_REQUIREMENTS,
 ): string[] {
   return [
     '-m', 'pip', 'install',
     '--upgrade',
     '--target', targetDir,
+    '--no-deps',
     '-i', 'https://pypi.tuna.tsinghua.edu.cn/simple',
     '--trusted-host', 'pypi.tuna.tsinghua.edu.cn',
-    ...BACKEND_RUNTIME_REQUIREMENTS,
+    ...requirements,
   ];
+}
+
+/** 元数据探测失败时才使用 pip 自身的完整依赖解析。 */
+function buildRequirementFallbackArgs(
+  targetDir: string,
+  requirements: readonly string[],
+): string[] {
+  return [
+    '-m', 'pip', 'install',
+    '--upgrade',
+    '--upgrade-strategy', 'only-if-needed',
+    '--target', targetDir,
+    '-i', 'https://pypi.tuna.tsinghua.edu.cn/simple',
+    '--trusted-host', 'pypi.tuna.tsinghua.edu.cn',
+    ...requirements,
+  ];
+}
+
+/** 生成依赖版本探测脚本，递归检查传递依赖和 extras。 */
+export function buildRequirementProbeScript(
+  targetDir: string,
+  requirements: readonly string[],
+  includeBackendRequirements = false,
+): string {
+  return [
+    'import json, sys',
+    'from importlib import metadata',
+    'from pip._vendor.packaging.requirements import Requirement',
+    `sys.path.insert(0, ${JSON.stringify(targetDir)})`,
+    `roots = ${JSON.stringify(requirements)}`,
+    ...(includeBackendRequirements
+      ? [
+          'try:',
+          '    roots.extend(metadata.distribution("autowsgr").requires or [])',
+          'except metadata.PackageNotFoundError:',
+          '    pass',
+        ]
+      : []),
+    'unsatisfied = []',
+    'visited = set()',
+    'def applies(requirement, active_extras):',
+    '    if requirement.marker is None:',
+    '        return True',
+    '    environments = [{"extra": ""}]',
+    '    environments.extend({"extra": extra} for extra in active_extras)',
+    '    return any(requirement.marker.evaluate(env) for env in environments)',
+    'def install_text(requirement):',
+    '    extras = ""',
+    '    if requirement.extras:',
+    '        extras = "[" + ",".join(sorted(requirement.extras)) + "]"',
+    '    if requirement.url:',
+    '        return f"{requirement.name}{extras} @ {requirement.url}"',
+    '    return f"{requirement.name}{extras}{requirement.specifier}"',
+    'pending = [(raw, set()) for raw in roots]',
+    'while pending:',
+    '    raw, active_extras = pending.pop()',
+    '    requirement = Requirement(raw)',
+    '    if not applies(requirement, active_extras):',
+    '        continue',
+    '    key = (',
+    '        requirement.name.lower(),',
+    '        str(requirement.specifier),',
+    '        requirement.url or "",',
+    '        tuple(sorted(requirement.extras)),',
+    '    )',
+    '    if key in visited:',
+    '        continue',
+    '    visited.add(key)',
+    '    try:',
+    '        installed = metadata.distribution(requirement.name)',
+    '    except metadata.PackageNotFoundError:',
+    '        unsatisfied.append(install_text(requirement))',
+    '        continue',
+    '    if requirement.specifier and not requirement.specifier.contains(',
+    '        installed.version, prereleases=True',
+    '    ):',
+    '        unsatisfied.append(install_text(requirement))',
+    '        continue',
+    '    for child in installed.requires or []:',
+    '        pending.append((child, set(requirement.extras)))',
+    'print(json.dumps(list(dict.fromkeys(unsatisfied))))',
+  ].join('\n');
+}
+
+/** 返回真正缺失或版本不兼容的依赖，探测失败时返回 null。 */
+async function findUnsatisfiedRequirements(
+  pythonCmd: string,
+  deps: AutoUpdateDeps,
+  requirements: readonly string[],
+  includeBackendRequirements = false,
+): Promise<string[] | null> {
+  const scriptPath = path.join(
+    deps.getTempDir(),
+    `autowsgr_requirement_probe_${Date.now()}.py`,
+  );
+  try {
+    fs.writeFileSync(
+      scriptPath,
+      buildRequirementProbeScript(
+        deps.localSitePackages(),
+        requirements,
+        includeBackendRequirements,
+      ),
+      'utf-8',
+    );
+    const { stdout } = await execAsync(
+      `"${pythonCmd}" "${scriptPath}"`,
+      { windowsHide: true, timeout: 30000, env: deps.pipEnv() },
+    );
+    const result: unknown = JSON.parse(stdout.trim());
+    return Array.isArray(result)
+      ? result.filter((item): item is string => typeof item === 'string')
+      : null;
+  } catch {
+    return null;
+  } finally {
+    try { fs.unlinkSync(scriptPath); } catch { /* 忽略清理失败。 */ }
+  }
+}
+
+/** 执行 pip 并将输出转发到安装日志。 */
+async function runPip(
+  pythonCmd: string,
+  args: string[],
+  deps: AutoUpdateDeps,
+): Promise<number> {
+  return new Promise<number>((resolve) => {
+    const proc = spawn(pythonCmd, args, {
+      cwd: deps.appRoot(),
+      windowsHide: true,
+      stdio: 'pipe',
+      env: deps.pipEnv(),
+    });
+    proc.stdout?.on('data', (data: Buffer) => {
+      for (const line of data.toString().split('\n')) {
+        if (line.trim()) deps.sendProgress(line.trim());
+      }
+    });
+    proc.stderr?.on('data', (data: Buffer) => {
+      for (const line of data.toString().split('\n')) {
+        if (line.trim()) deps.sendProgress(line.trim());
+      }
+    });
+    proc.on('close', code => resolve(code ?? 1));
+    proc.on('error', () => resolve(1));
+  });
+}
+
+type RequirementEnsureResult = 'ready' | 'probe-failed' | 'install-failed';
+
+/** 分轮补齐依赖，每轮只安装探测器确认不满足的包。 */
+async function ensureRequirements(
+  pythonCmd: string,
+  deps: AutoUpdateDeps,
+  requirements: readonly string[],
+  includeBackendRequirements = false,
+): Promise<RequirementEnsureResult> {
+  const targetDir = deps.localSitePackages();
+  for (let round = 0; round < 16; round += 1) {
+    const missing = await findUnsatisfiedRequirements(
+      pythonCmd,
+      deps,
+      requirements,
+      includeBackendRequirements,
+    );
+    if (missing === null) return 'probe-failed';
+    if (missing.length === 0) return 'ready';
+
+    deps.sendProgress(`正在安装必要依赖: ${missing.join(', ')}`);
+    const code = await runPip(
+      pythonCmd,
+      buildBackendRuntimeInstallArgs(targetDir, missing),
+      deps,
+    );
+    if (code !== 0) return 'install-failed';
+  }
+  return 'install-failed';
 }
 
 /** 生成 managed 后端更新参数，确保自动更新不会改装 PyPI 裸包。 */
@@ -51,6 +232,20 @@ export function buildManagedAutowsgrUpdateArgs(
     '--target', targetDir,
     '--no-build-isolation',
     '--no-deps',
+    '-i', 'https://pypi.tuna.tsinghua.edu.cn/simple',
+    '--trusted-host', 'pypi.tuna.tsinghua.edu.cn',
+    MANAGED_AUTOWSGR_REQUIREMENT,
+  ];
+}
+
+/** 依赖元数据无法读取时，回退给 pip 做一次完整兼容性解析。 */
+function buildManagedDependencyRepairArgs(targetDir: string): string[] {
+  return [
+    '-m', 'pip', 'install',
+    '--upgrade',
+    '--upgrade-strategy', 'only-if-needed',
+    '--target', targetDir,
+    '--no-build-isolation',
     '-i', 'https://pypi.tuna.tsinghua.edu.cn/simple',
     '--trusted-host', 'pypi.tuna.tsinghua.edu.cn',
     MANAGED_AUTOWSGR_REQUIREMENT,
@@ -139,72 +334,65 @@ export async function autoUpdateAutowsgr(
       return failureVersion;
     }
 
-    const buildDepsCode = await new Promise<number>((resolve) => {
-      const proc = spawn(pythonCmd, [
-        '-m', 'pip', 'install',
-        '--upgrade',
-        '--target', targetDir,
-        'hatchling',
-        'hatch-vcs',
-      ], {
-        cwd: deps.appRoot(),
-        windowsHide: true,
-        stdio: 'pipe',
-        env: deps.pipEnv(),
-      });
-      proc.stdout?.on('data', (d: Buffer) => { for (const l of d.toString().split('\n')) { if (l.trim()) deps.sendProgress(l.trim()); } });
-      proc.stderr?.on('data', (d: Buffer) => { for (const l of d.toString().split('\n')) { if (l.trim()) deps.sendProgress(l.trim()); } });
-      proc.on('close', (code) => resolve(code ?? 1));
-      proc.on('error', () => resolve(1));
-    });
-    if (buildDepsCode !== 0) {
+    deps.sendProgress('正在检查后端构建依赖…');
+    const buildRequirementState = await ensureRequirements(
+      pythonCmd,
+      deps,
+      BACKEND_BUILD_REQUIREMENTS,
+    );
+    if (buildRequirementState === 'probe-failed') {
+      const buildDepsCode = await runPip(
+        pythonCmd,
+        buildRequirementFallbackArgs(targetDir, BACKEND_BUILD_REQUIREMENTS),
+        deps,
+      );
+      if (buildDepsCode !== 0) {
+        deps.sendProgress('WARNING GUI 兼容后端构建依赖安装失败');
+        return failureVersion;
+      }
+    } else if (buildRequirementState === 'install-failed') {
       deps.sendProgress('WARNING GUI 兼容后端构建依赖安装失败');
       return failureVersion;
     }
+    deps.sendProgress('后端构建依赖已满足版本要求 ✓');
 
-    deps.sendProgress('正在安装后端运行依赖…');
-    const runtimeDepsCode = await new Promise<number>((resolve) => {
-      const proc = spawn(
-        pythonCmd,
-        buildBackendRuntimeInstallArgs(targetDir),
-        {
-          cwd: deps.appRoot(),
-          windowsHide: true,
-          stdio: 'pipe',
-          env: deps.pipEnv(),
-        },
-      );
-      proc.stdout?.on('data', (d: Buffer) => { for (const l of d.toString().split('\n')) { if (l.trim()) deps.sendProgress(l.trim()); } });
-      proc.stderr?.on('data', (d: Buffer) => { for (const l of d.toString().split('\n')) { if (l.trim()) deps.sendProgress(l.trim()); } });
-      proc.on('close', (code) => resolve(code ?? 1));
-      proc.on('error', () => resolve(1));
-    });
-    if (runtimeDepsCode !== 0) {
-      deps.sendProgress('WARNING 后端运行依赖安装失败');
-      return failureVersion;
-    }
-
-    const exitCode = await new Promise<number>((resolve) => {
-      const proc = spawn(
-        pythonCmd,
-        buildManagedAutowsgrUpdateArgs(targetDir, forceInstall),
-        {
-        cwd: deps.appRoot(),
-        windowsHide: true,
-        stdio: 'pipe',
-        env: deps.pipEnv(),
-        },
-      );
-      proc.stdout?.on('data', (d: Buffer) => { for (const l of d.toString().split('\n')) { if (l.trim()) deps.sendProgress(l.trim()); } });
-      proc.stderr?.on('data', (d: Buffer) => { for (const l of d.toString().split('\n')) { if (l.trim()) deps.sendProgress(l.trim()); } });
-      proc.on('close', (code) => resolve(code ?? 1));
-      proc.on('error', () => resolve(1));
-    });
+    const exitCode = await runPip(
+      pythonCmd,
+      buildManagedAutowsgrUpdateArgs(targetDir, forceInstall),
+      deps,
+    );
 
     if (exitCode !== 0) {
       deps.sendProgress('WARNING autowsgr 升级失败，使用当前版本继续');
       return failureVersion;
     }
+
+    deps.sendProgress('正在核对后端依赖版本…');
+    const runtimeRoots = [
+      ...SHIP_LIBRARY_REQUIREMENTS,
+      ...BACKEND_RUNTIME_REQUIREMENTS,
+    ];
+    const runtimeRequirementState = await ensureRequirements(
+      pythonCmd,
+      deps,
+      runtimeRoots,
+      true,
+    );
+    if (runtimeRequirementState === 'probe-failed') {
+      const runtimeDepsCode = await runPip(
+        pythonCmd,
+        buildManagedDependencyRepairArgs(targetDir),
+        deps,
+      );
+      if (runtimeDepsCode !== 0) {
+        deps.sendProgress('WARNING 后端运行依赖安装失败');
+        return failureVersion;
+      }
+    } else if (runtimeRequirementState === 'install-failed') {
+      deps.sendProgress('WARNING 后端运行依赖安装失败');
+      return failureVersion;
+    }
+    deps.sendProgress('后端运行依赖已满足版本要求 ✓');
 
     // 升级后一次性验证版本和关键依赖。
     const postScript = path.join(deps.getTempDir(), 'autowsgr_post_upgrade.py');

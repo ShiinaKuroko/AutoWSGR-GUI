@@ -411,7 +411,28 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
     ctx.sendProgress('  依赖检查失败');
   }
 
+  const forceBackendInstall = shouldForceManagedBackendInstall(environment);
   const allReady = missingPackages.length === 0;
+  if (!allReady && forceBackendInstall) {
+    ctx.sendProgress('覆盖安装后正在增量更新后端及依赖…');
+    const updatedVer = await autoUpdateAutowsgr(
+      pythonCmd,
+      buildAutoUpdateDeps(),
+      true,
+    );
+    if (updatedVer) {
+      writeEnvMarker(environment, pythonVersion || '', updatedVer);
+      ctx.sendProgress(`环境增量更新完成 (autowsgr ${updatedVer}) ✓`);
+      return {
+        pythonCmd,
+        pythonVersion,
+        missingPackages: [],
+        allReady: true,
+      };
+    }
+    ctx.sendProgress('WARNING 增量更新未完成，将尝试修复缺失依赖');
+  }
+
   if (allReady) {
     ctx.sendProgress('依赖检查通过 ✓');
 
@@ -426,9 +447,6 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
 
     // 自动模式下检查并更新 autowsgr。
     let finalVer = autowsgrVersion;
-    const forceBackendInstall = (
-      shouldForceManagedBackendInstall(environment)
-    );
     if (shouldAutoUpdate(environment) || forceBackendInstall) {
       const updatedVer = await autoUpdateAutowsgr(
         pythonCmd,
