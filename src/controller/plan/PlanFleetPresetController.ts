@@ -119,6 +119,50 @@ export class PlanFleetPresetController {
       .map(cloneFleetPreset);
   }
 
+  /** 使用目录中的最新编队替换当前计划内的同名或已改名引用。 */
+  synchronizePreset(
+    selected: readonly FleetPreset[],
+    newName: string,
+    previousName: string | null,
+    source: PlanPresetSource,
+  ): FleetPreset[] | null {
+    const replacement = this.records.find(record => (
+      record.source === source
+      && record.preset.name === newName
+    ));
+    if (!replacement) return null;
+
+    const matchedNames = new Set([newName]);
+    if (previousName) matchedNames.add(previousName);
+    if (!selected.some(preset => matchedNames.has(preset.name))) {
+      return null;
+    }
+
+    let changed = false;
+    let replacementAdded = false;
+    const synchronized: FleetPreset[] = [];
+    for (const preset of selected) {
+      if (!matchedNames.has(preset.name)) {
+        synchronized.push(cloneFleetPreset(preset));
+        continue;
+      }
+      if (replacementAdded) {
+        changed = true;
+        continue;
+      }
+      const nextPreset = cloneFleetPreset(replacement.preset);
+      synchronized.push(nextPreset);
+      replacementAdded = true;
+      if (
+        fleetPresetIdentityKey(preset)
+        !== fleetPresetIdentityKey(nextPreset)
+      ) {
+        changed = true;
+      }
+    }
+    return changed ? synchronized : null;
+  }
+
   toViewObject(
     selected: readonly FleetPreset[],
   ): PlanFleetPresetSelectorViewObject {

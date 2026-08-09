@@ -22,6 +22,7 @@ import type { MapData } from '../../model/MapDataLoader';
 import type {
   ManagedBattlePlanSelection,
   PlanPresetSource,
+  UserTeamPlan,
 } from '../../types/ipc.js';
 import { taskPresetCodec } from '../../shared/taskPreset';
 import { BattlePlanLoaderView } from '../../view/plan/BattlePlanLoaderView';
@@ -90,6 +91,38 @@ export class PlanController {
   // ── 公共访问器 ──
 
   getCurrentPlan(): PlanModel | null { return this.currentPlan; }
+
+  async synchronizeTeamPlan(
+    previousName: string | null,
+    plan: UserTeamPlan,
+  ): Promise<void> {
+    await this.fleetPresetController.load();
+    if (!this.currentPlan) {
+      this.renderFleetPresetSelector();
+      return;
+    }
+
+    const hadUnsavedChanges = this.hasUnsavedPlanChanges();
+    const previousNameForCurrentPlan = this.currentPlanSource === 'user'
+      ? previousName
+      : null;
+    const synchronized = this.fleetPresetController.synchronizePreset(
+      this.currentPlan.data.fleet_presets ?? [],
+      plan.name,
+      previousNameForCurrentPlan,
+      'user',
+    );
+    if (!synchronized) {
+      this.renderFleetPresetSelector();
+      return;
+    }
+
+    this.applyFleetPresets(synchronized);
+    if (!hadUnsavedChanges) {
+      this.savedPlanSnapshot = this.planDraftSnapshot();
+    }
+    this.renderPlanPreview();
+  }
 
   pickManagedBattlePlan(): Promise<ManagedBattlePlanSelection | null> {
     return this.battlePlanLoader.pick('task-list');

@@ -9,9 +9,11 @@
  * 操作系统文件锁都已释放。
  */
 const { execFileSync, spawn } = require('node:child_process');
+const crypto = require('node:crypto');
 const http = require('node:http');
 const {
   assert,
+  AtomicFileStore,
   fs,
   path,
   temporaryDirectory,
@@ -28,6 +30,12 @@ const {
 } = require(
   '../../dist/electron/services/BackendShutdownService.js'
 );
+const {
+  GuiUpdateInstaller,
+} = require('../../dist/electron/services/GuiUpdateInstaller.js');
+const {
+  GuiUpdateStateStore,
+} = require('../../dist/electron/services/GuiUpdateStateStore.js');
 
 function delay(milliseconds) {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -143,6 +151,163 @@ function testGuiUpdatePolicy() {
   assert.doesNotMatch(workflow, /X\.Y\.Z-beta\.N/);
   assert.doesNotMatch(workflow, /X\.Y\.Z-dev\.N/);
   assert.doesNotMatch(workflow, /^\s+release\/latest\.yml\s*$/m);
+}
+
+async function testGuiUpdateStartupGateAndInstaller() {
+  const root = path.join(temporaryDirectory, 'gui-update-state');
+  const userRoot = path.join(root, 'user-data');
+  const cacheRoot = path.join(root, 'wsgrgui-updater');
+  const pendingRoot = path.join(cacheRoot, 'pending');
+  const installerPath = path.join(
+    pendingRoot,
+    'AutoWSGR-GUI-Setup-2.0.9-alpha.exe',
+  );
+  const statePath = path.join(userRoot, '.gui-update-state.json');
+  fs.rmSync(root, { recursive: true, force: true });
+  fs.mkdirSync(pendingRoot, { recursive: true });
+  fs.mkdirSync(userRoot, { recursive: true });
+  fs.writeFileSync(installerPath, 'verified installer');
+  fs.writeFileSync(
+    path.join(cacheRoot, 'current.blockmap'),
+    'keep blockmap',
+  );
+  fs.writeFileSync(
+    path.join(userRoot, 'gui_settings.json'),
+    '{"keep":true}',
+  );
+
+  let now = Date.parse('2026-08-09T00:00:00.000Z');
+  const runningPids = new Set();
+  const states = new GuiUpdateStateStore(
+    () => statePath,
+    new AtomicFileStore(),
+    {
+      now: () => now,
+      isProcessRunning: pid => runningPids.has(pid),
+    },
+  );
+  const checksum = crypto
+    .createHash('sha512')
+    .update(fs.readFileSync(installerPath))
+    .digest('base64');
+  states.saveDownloaded({
+    sourceVersion: '2.0.8-alpha',
+    targetVersion: '2.0.9-alpha',
+    downloadedFile: installerPath,
+    sha512: checksum,
+  });
+  assert.equal(
+    states.resolveStartup('2.0.8-alpha').action,
+    'install',
+  );
+
+  const launches = [];
+  const logs = [];
+  const installer = new GuiUpdateInstaller(
+    states,
+    {
+      info: message => logs.push(['info', message]),
+      warn: message => logs.push(['warn', message]),
+      error: message => logs.push(['error', message]),
+      debug: message => logs.push(['debug', message]),
+    },
+    path.join(root, 'resources'),
+    {
+      fileExists: filePath => fs.existsSync(filePath),
+      hashSha512: async filePath => crypto
+        .createHash('sha512')
+        .update(fs.readFileSync(filePath))
+        .digest('base64'),
+      launch: async (command, args) => {
+        launches.push([command, args]);
+        runningPids.add(24680);
+        return 24680;
+      },
+      updaterCacheRoot: cacheRoot,
+    },
+  );
+  const installing = await installer.launchPendingUpdate();
+  assert.equal(installing.status, 'installing');
+  assert.equal(installing.installerPid, 24680);
+  assert.deepEqual(launches, [[
+    installerPath,
+    ['--updated', '/S', '--force-run'],
+  ]]);
+  assert.equal(
+    states.resolveStartup('2.0.8-alpha').action,
+    'wait',
+  );
+
+  const applied = states.resolveStartup('2.0.9-alpha');
+  assert.equal(applied.action, 'cleanup');
+  assert.equal(states.read(), null);
+  assert.equal(installer.cleanupAppliedUpdate(applied.state), true);
+  assert.equal(fs.existsSync(pendingRoot), false);
+  assert.equal(
+    fs.existsSync(path.join(cacheRoot, 'current.blockmap')),
+    true,
+  );
+  assert.equal(
+    fs.existsSync(path.join(userRoot, 'gui_settings.json')),
+    true,
+  );
+
+  fs.mkdirSync(pendingRoot, { recursive: true });
+  fs.writeFileSync(installerPath, 'corrupt installer');
+  states.saveDownloaded({
+    sourceVersion: '2.0.8-alpha',
+    targetVersion: '2.0.9-alpha',
+    downloadedFile: installerPath,
+    sha512: checksum,
+  });
+  await assert.rejects(
+    installer.launchPendingUpdate(),
+    /校验失败/,
+  );
+  assert.equal(states.read(), null);
+  assert.equal(fs.existsSync(pendingRoot), false);
+
+  const unrelatedPendingRoot = path.join(
+    root,
+    'unrelated',
+    'pending',
+  );
+  const unrelatedInstallerPath = path.join(
+    unrelatedPendingRoot,
+    'AutoWSGR-GUI-Setup-2.0.9-alpha.exe',
+  );
+  fs.mkdirSync(unrelatedPendingRoot, { recursive: true });
+  fs.writeFileSync(unrelatedInstallerPath, 'corrupt installer');
+  states.saveDownloaded({
+    sourceVersion: '2.0.8-alpha',
+    targetVersion: '2.0.9-alpha',
+    downloadedFile: unrelatedInstallerPath,
+    sha512: checksum,
+  });
+  await assert.rejects(
+    installer.launchPendingUpdate(),
+    /校验失败/,
+  );
+  assert.equal(states.read(), null);
+  assert.equal(fs.existsSync(unrelatedPendingRoot), true);
+
+  fs.mkdirSync(pendingRoot, { recursive: true });
+  fs.writeFileSync(installerPath, 'verified installer');
+  states.saveDownloaded({
+    sourceVersion: '2.0.8-alpha',
+    targetVersion: '2.0.9-alpha',
+    downloadedFile: installerPath,
+    sha512: checksum,
+  });
+  states.markInstalling();
+  states.saveInstallerPid(13579);
+  now += 31 * 60 * 1000;
+  assert.equal(
+    states.resolveStartup('2.0.8-alpha').action,
+    'install',
+  );
+  assert.equal(states.read().status, 'downloaded');
+  assert.ok(logs.length > 0);
 }
 
 async function testSystemStopRequest() {
@@ -380,6 +545,7 @@ async function testWindowsProcessTreeAndFileLock() {
 
 async function testUpdaterAndBackendShutdown() {
   testGuiUpdatePolicy();
+  await testGuiUpdateStartupGateAndInstaller();
   await testSystemStopRequest();
   await testRunningTaskStopsBeforeUpdateInstall();
   await testForceShutdownWaitsForClose();

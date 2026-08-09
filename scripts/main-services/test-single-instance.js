@@ -62,6 +62,16 @@ function testSingleInstanceService() {
   listeners.get('second-instance')();
   assert.deepEqual(calls, ['restore', 'show', 'focus']);
 
+  let updateNotices = 0;
+  primary.setDuplicateLaunchHandler(() => {
+    updateNotices += 1;
+    return true;
+  });
+  listeners.get('second-instance')();
+  assert.equal(updateNotices, 1);
+  assert.deepEqual(calls, ['restore', 'show', 'focus']);
+
+  primary.setDuplicateLaunchHandler(() => false);
   primary.setMainWindowProvider(() => ({
     isDestroyed: () => true,
     isMinimized: () => false,

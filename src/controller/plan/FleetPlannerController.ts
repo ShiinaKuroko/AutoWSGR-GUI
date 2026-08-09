@@ -68,6 +68,10 @@ export class FleetPlannerController {
   private shipLibrary: FleetShipLibraryViewObject | null = null;
   private shipLibraryLoading: Promise<void> | null = null;
   private nextTeamPlanId = 1;
+  private teamPlanSavedHandler: ((
+    previousName: string | null,
+    plan: UserTeamPlan,
+  ) => Promise<void> | void) | null = null;
 
   constructor(
     private readonly repository: FleetPlannerRepository
@@ -120,6 +124,15 @@ export class FleetPlannerController {
     ) | null,
   ) {
     this.planManagementCtrl.onOpenBattlePlan = handler;
+  }
+
+  set onTeamPlanSaved(
+    handler: ((
+      previousName: string | null,
+      plan: UserTeamPlan,
+    ) => Promise<void> | void) | null,
+  ) {
+    this.teamPlanSavedHandler = handler;
   }
 
   setTaskGroupsProvider(
@@ -257,6 +270,16 @@ export class FleetPlannerController {
       this.savedDraftSnapshot = fleetDraftSnapshot(this.draft);
       this.view.showDraftName(plan.name);
       this.view.showTeamPlanSaved(plan.name);
+      const savedPlan = result.plan ?? {
+        ...plan,
+        file: this.draft.file ?? undefined,
+        source: this.draft.source,
+      };
+      await this.teamPlanSavedHandler?.(
+        result.renamedFrom ?? null,
+        savedPlan,
+      );
+      await this.planManagementCtrl.load();
     } catch (error) {
       await this.view.showTeamPlanSaveError(
         error instanceof Error ? error.message : String(error),

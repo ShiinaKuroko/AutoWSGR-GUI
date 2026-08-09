@@ -399,14 +399,6 @@ const electronBridge = {
     return ipcRenderer.invoke('check-gui-updates');
   },
 
-  downloadGuiUpdate: () => {
-    return ipcRenderer.invoke('download-gui-update');
-  },
-
-  installGuiUpdate: () => {
-    return ipcRenderer.invoke('install-gui-update');
-  },
-
   onUpdateStatus: (callback: (status: GuiUpdateStatus) => void) => {
     ipcRenderer.on('update-status', (_event, status) => callback(status));
   },

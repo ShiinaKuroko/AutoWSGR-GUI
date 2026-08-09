@@ -64,6 +64,12 @@ async function runRendererTest(root, tempDirectory) {
     'dist/src/controller/app/ConfigController.js',
   ));
   const {
+    SettingsController,
+  } = require(rendererPath.join(
+    root,
+    'dist/src/controller/app/SettingsController.js',
+  ));
+  const {
     BattlePlanLoaderController,
   } = require(rendererPath.join(
     root,
@@ -243,21 +249,23 @@ async function runRendererTest(root, tempDirectory) {
     updateProgressTrack.classList.contains('is-indeterminate'),
     true,
   );
-  view.setGuiUpdateStatus({
-    status: 'downloading',
-    percent: 42.4,
-    transferred: 42,
-    total: 100,
-  });
-  rendererAssert.equal(updateStatus.textContent, '正在下载更新…');
-  rendererAssert.equal(updatePercent.textContent, '42%');
-  rendererAssert.equal(updateProgressFill.style.width, '42%');
+  view.setGuiUpdateStatus({ status: 'downloading' });
+  rendererAssert.equal(
+    updateStatus.textContent,
+    '正在后台下载并校验更新…',
+  );
+  rendererAssert.equal(updatePercent.textContent, '后台');
+  rendererAssert.equal(updateProgressFill.style.width, '0%');
+  rendererAssert.equal(
+    updateProgressTrack.classList.contains('is-indeterminate'),
+    true,
+  );
   view.setGuiUpdateStatus({ status: 'downloaded', version: '2.0.5-alpha' });
   rendererAssert.equal(updateProgress.dataset.state, 'complete');
   rendererAssert.equal(updatePercent.textContent, '100%');
   rendererAssert.equal(
     updateStatus.textContent,
-    'v2.0.5-alpha 已下载，等待选择更新时间',
+    'v2.0.5-alpha 已准备完成，等待选择重启时间',
   );
   view.setGuiUpdateStatus({ status: 'deferred', version: '2.0.5-alpha' });
   rendererAssert.equal(
@@ -830,6 +838,72 @@ async function runRendererTest(root, tempDirectory) {
     '非法延迟区间未被拦截',
   );
   view.render(sample);
+
+  const adbStatuses = [];
+  const adbLoadingStates = [];
+  let reconnectCalls = 0;
+  let finishReconnect;
+  const reconnectGate = new Promise((resolve) => {
+    finishReconnect = resolve;
+  });
+  const adbController = new SettingsController(
+    {
+      configView: {
+        getEmulatorSerial: () => sample.emulatorSerial,
+        setAdbConnectionLoading: (action, loading) => {
+          adbLoadingStates.push({ action, loading });
+        },
+        setAdbStatus: (text, status) => {
+          adbStatuses.push({ text, status });
+        },
+      },
+      ensureSystemConnected: () => {
+        reconnectCalls += 1;
+        return reconnectGate;
+      },
+    },
+    {
+      connectAdbDevice: async serial => ({
+        success: true,
+        serial,
+        status: 'device',
+        message: 'connected',
+      }),
+    },
+  );
+  const reconnectOperation = adbController.changeAdbConnection('connect');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  rendererAssert.equal(
+    reconnectCalls,
+    1,
+    'ADB 连接成功后没有继续启动后端系统',
+  );
+  rendererAssert.deepStrictEqual(
+    adbStatuses.at(-1),
+    {
+      text: 'ADB 在线，正在连接后端',
+      status: 'unknown',
+    },
+    '后端尚未连接时不应提前显示 ADB 完全在线',
+  );
+  finishReconnect(true);
+  await reconnectOperation;
+  rendererAssert.deepStrictEqual(
+    adbStatuses.at(-1),
+    {
+      text: `在线 (${sample.emulatorSerial})`,
+      status: 'online',
+    },
+    '只有后端系统连接完成后才能显示 ADB 在线',
+  );
+  rendererAssert.deepStrictEqual(
+    adbLoadingStates,
+    [
+      { action: 'connect', loading: true },
+      { action: 'connect', loading: false },
+    ],
+    'ADB 重连完成后没有恢复连接按钮',
+  );
 
   const model = new ConfigModel();
   rendererAssert.equal(

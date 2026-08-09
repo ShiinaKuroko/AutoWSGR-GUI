@@ -19,11 +19,13 @@ export interface SingleInstanceWindow {
 }
 
 type MainWindowProvider = () => SingleInstanceWindow | null;
+type DuplicateLaunchHandler = () => boolean;
 
 /** 保证迁移、环境安装和窗口生命周期只由一个进程执行。 */
 export class SingleInstanceService {
   private primary = false;
   private mainWindowProvider: MainWindowProvider = () => null;
+  private duplicateLaunchHandler: DuplicateLaunchHandler = () => false;
 
   constructor(private readonly application: SingleInstanceApplication) {}
 
@@ -37,6 +39,7 @@ export class SingleInstanceService {
 
     this.primary = true;
     this.application.on('second-instance', () => {
+      if (this.duplicateLaunchHandler()) return;
       this.focusMainWindow();
     });
     return true;
@@ -44,6 +47,11 @@ export class SingleInstanceService {
 
   setMainWindowProvider(provider: MainWindowProvider): void {
     this.mainWindowProvider = provider;
+  }
+
+  /** 安装期间可拦截重复启动，并由主实例显示更新提示。 */
+  setDuplicateLaunchHandler(handler: DuplicateLaunchHandler): void {
+    this.duplicateLaunchHandler = handler;
   }
 
   private focusMainWindow(): void {

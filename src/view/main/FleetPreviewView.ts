@@ -82,7 +82,10 @@ export class FleetPreviewView {
       .slice(0, 6);
     const hasFleet = this.currentShips.length > 0;
     this.grid.hidden = !hasFleet;
-    this.empty.hidden = hasRunningTask || hasFleet;
+    this.empty.hidden = hasFleet;
+    this.empty.textContent = hasRunningTask
+      ? '当前任务没有关联队伍'
+      : '当前无任务执行';
 
     if (!hasFleet) {
       this.grid.replaceChildren();

@@ -80,9 +80,6 @@ export type GuiUpdateStatus =
     }
   | {
       status: 'downloading';
-      percent: number;
-      transferred: number;
-      total: number;
     }
   | {
       status: 'downloaded';
@@ -133,6 +130,8 @@ export interface UserTeamPlanResult {
   exists?: boolean;
   file?: string;
   plan?: UserTeamPlan;
+  renamedFrom?: string;
+  updatedBattlePlans?: number;
   error?: string;
 }
 
@@ -372,14 +371,6 @@ export interface ElectronBridge {
     | { status: 'up-to-date' }
     | { status: 'error'; message: string }
   >;
-  downloadGuiUpdate: () => Promise<{
-    success: boolean;
-    message?: string;
-  }>;
-  installGuiUpdate: () => Promise<{
-    success: boolean;
-    message?: string;
-  }>;
   onUpdateStatus: (
     callback: (status: GuiUpdateStatus) => void,
   ) => void;

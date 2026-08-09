@@ -25,6 +25,11 @@ import { SecureFileService } from './services/SecureFileService';
 import { WindowService } from './services/WindowService';
 import { SingleInstanceService } from './services/SingleInstanceService';
 import {
+  GuiUpdateStateStore,
+} from './services/GuiUpdateStateStore';
+import { GuiUpdateInstaller } from './services/GuiUpdateInstaller';
+import { GuiUpdaterLogger } from './services/GuiUpdaterLogger';
+import {
   DEFAULT_LEGACY_MIGRATION_SELECTION,
   UserDataMigrationService,
   type LegacyMigrationSelection,
@@ -101,6 +106,25 @@ const appPaths = new AppPaths({
   getResourcesPath: () => process.resourcesPath,
 });
 const atomicFileStore = new AtomicFileStore();
+const guiUpdateStateStore = new GuiUpdateStateStore(
+  () => path.join(appPaths.userDataRoot(), '.gui-update-state.json'),
+  atomicFileStore,
+);
+const guiUpdaterLogger = new GuiUpdaterLogger(
+  path.join(
+    appPaths.isPackaged()
+      ? appPaths.appRoot()
+      : appPaths.userDataRoot(),
+    'logs',
+    'updater.log',
+  ),
+  path.join(appPaths.userDataRoot(), 'logs', 'updater.log'),
+);
+const guiUpdateInstaller = new GuiUpdateInstaller(
+  guiUpdateStateStore,
+  guiUpdaterLogger,
+  process.resourcesPath,
+);
 const migrationStateStore = new MigrationStateStore(
   () => path.join(appPaths.userDataRoot(), '.migration-state.json'),
   atomicFileStore,
@@ -133,10 +157,6 @@ const teamPlanRepository = new TeamPlanRepository(
   atomicFileStore,
   teamPlanCodec,
 );
-const teamPlanService = new TeamPlanService(
-  teamPlanCodec,
-  teamPlanRepository,
-);
 const combatPlanRepository = new CombatPlanRepository(
   appPaths,
   atomicFileStore,
@@ -144,6 +164,12 @@ const combatPlanRepository = new CombatPlanRepository(
 const combatPlanCodec = new CombatPlanCodec(
   teamPlanCodec,
   teamPlanRepository,
+);
+const teamPlanService = new TeamPlanService(
+  teamPlanCodec,
+  teamPlanRepository,
+  combatPlanCodec,
+  combatPlanRepository,
 );
 const taskPresetCodec = new TaskPresetCodec();
 const dailyPlanService = new DailyPlanService(
@@ -232,6 +258,40 @@ const windowService = new WindowService(guiSettingsStore, {
 singleInstanceService.setMainWindowProvider(
   () => windowService.getMainWindow(),
 );
+let updateInProgressDialogOpen = false;
+
+/** 安装期间的重复启动只显示系统提示，不创建旧版主窗口。 */
+async function showUpdateInProgressDialog(): Promise<void> {
+  if (updateInProgressDialogOpen) return;
+  updateInProgressDialogOpen = true;
+  try {
+    await app.whenReady();
+    await dialog.showMessageBox({
+      type: 'info',
+      title: 'AutoWSGR-GUI 正在更新',
+      message: '后台正在更新，请稍后',
+      buttons: ['确认'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+  } finally {
+    updateInProgressDialogOpen = false;
+  }
+}
+
+singleInstanceService.setDuplicateLaunchHandler(() => {
+  const state = guiUpdateStateStore.read();
+  if (
+    !state
+    || state.sourceVersion !== app.getVersion()
+    || !guiUpdateStateStore.isInstallationActive(state)
+  ) {
+    return false;
+  }
+  void showUpdateInProgressDialog();
+  return true;
+});
 const shipLibraryUpdater = new ShipLibraryUpdater(
   shipLibraryService,
   {
@@ -416,7 +476,59 @@ function initializeApplicationLifecycle(): void {
   let runtimeShutdownInProgress = false;
   let runtimeShutdownComplete = false;
 
+  /** 在任何迁移、后端初始化和主窗口创建前处理待安装更新。 */
+  const handleStartupUpdate = async (): Promise<boolean> => {
+    const resolution = guiUpdateStateStore.resolveStartup(
+      app.getVersion(),
+    );
+    if (resolution.action === 'continue') return false;
+    if (resolution.action === 'cleanup') {
+      const cleanupTimer = setTimeout(() => {
+        guiUpdateInstaller.cleanupAppliedUpdate(resolution.state);
+      }, 10_000);
+      cleanupTimer.unref();
+      return false;
+    }
+    if (resolution.action === 'wait') {
+      guiUpdaterLogger.info(
+        `Blocked old GUI startup while v`
+        + `${resolution.state.targetVersion} is installing`,
+      );
+      await showUpdateInProgressDialog();
+      runtimeShutdownComplete = true;
+      app.quit();
+      return true;
+    }
+
+    try {
+      await guiUpdateInstaller.launchPendingUpdate();
+      runtimeShutdownComplete = true;
+      app.quit();
+      return true;
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : String(error);
+      guiUpdaterLogger.error(
+        `Cannot install pending GUI update: ${message}`,
+      );
+      await dialog.showMessageBox({
+        type: 'error',
+        title: 'GUI 更新失败',
+        message: '后台更新无法启动',
+        detail: `${message}\n本次将继续打开当前版本。`,
+        buttons: ['确认'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      });
+      return false;
+    }
+  };
+
   app.whenReady().then(async () => {
+    if (await handleStartupUpdate()) return;
+
     let migrationSelection: LegacyMigrationSelection = {
       ...DEFAULT_LEGACY_MIGRATION_SELECTION,
     };
@@ -491,17 +603,18 @@ function initializeApplicationLifecycle(): void {
         windowService.sendToRenderer(channel, ...args)
       ),
       getAppVersion: () => app.getVersion(),
-      getUpdateMode: () => guiConfigurationService.updateMode(),
-      chooseInstallTiming: async (version) => {
+      logger: guiUpdaterLogger,
+      updateStates: guiUpdateStateStore,
+      chooseDownload: async (version) => {
         const options = {
           type: 'question' as const,
-          title: 'GUI 更新已下载',
-          message: `GUI v${version} 已下载完毕，什么时候更新？`,
+          title: '发现 GUI 更新',
+          message: `发现 GUI v${version}，是否现在更新？`,
           detail: [
-            '“现在更新”会停止当前脚本、关闭 GUI，安装完成后自动重启。',
-            '“下一次打开”不会中断当前任务，将在正常退出时安装。',
+            '“现在更新”只会在后台静默下载和校验，不会关闭 GUI 或中断当前任务。',
+            '“稍后”本次不下载，下次打开 GUI 时仍会提示。',
           ].join('\n'),
-          buttons: ['现在更新', '下一次打开'],
+          buttons: ['现在更新', '稍后'],
           defaultId: 1,
           cancelId: 1,
           noLink: true,
@@ -510,11 +623,35 @@ function initializeApplicationLifecycle(): void {
         const result = mainWindow
           ? await dialog.showMessageBox(mainWindow, options)
           : await dialog.showMessageBox(options);
-        return result.response === 0 ? 'now' : 'next-launch';
+        return result.response === 0 ? 'now' : 'later';
       },
-      prepareForUpdateInstall: async () => {
+      chooseRestartTiming: async (version) => {
+        const options = {
+          type: 'question' as const,
+          title: 'GUI 更新准备完成',
+          message: `GUI v${version} 已下载并校验完成`,
+          detail: [
+            '“立即重启”会安全停止后端和 ADB，静默安装完成后启动新版本。',
+            '“下次启动”会继续当前任务，下次打开 GUI 时先完成更新再显示主窗口。',
+          ].join('\n'),
+          buttons: ['立即重启', '下次启动'],
+          defaultId: 1,
+          cancelId: 1,
+          noLink: true,
+        };
+        const mainWindow = windowService.getMainWindow();
+        const result = mainWindow
+          ? await dialog.showMessageBox(mainWindow, options)
+          : await dialog.showMessageBox(options);
+        return result.response === 0
+          ? 'restart'
+          : 'next-launch';
+      },
+      installDownloadedUpdate: async () => {
         await stopRuntimeResources();
+        await guiUpdateInstaller.launchPendingUpdate();
         runtimeShutdownComplete = true;
+        app.quit();
       },
     });
     windowService.createWindow();

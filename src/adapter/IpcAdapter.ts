@@ -61,7 +61,6 @@ export type SettingsGateway = Pick<
   | 'checkGuiUpdates'
   | 'connectAdbDevice'
   | 'disconnectAdbDevice'
-  | 'downloadGuiUpdate'
   | 'getShipLibraryStatus'
   | 'getUpdateMode'
   | 'onShipLibraryUpdateProgress'

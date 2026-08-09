@@ -152,6 +152,9 @@ export class CombatPlanCodec {
         throw new Error(`fleet_presets[${index}].name 不能为空`);
       }
 
+      const userOverride = listedTeams.find(team => (
+        team.name === name && team.source === 'user'
+      )) ?? null;
       const sameSourceTeam = listedTeams.find(team => (
         team.name === name && team.source === source
       )) ?? null;
@@ -161,7 +164,8 @@ export class CombatPlanCodec {
           ships: rawPreset.ships,
         })
         : null;
-      const team = sameSourceTeam
+      const team = userOverride
+        ?? sameSourceTeam
         ?? embeddedTeam
         ?? this.teamRepository.find(name, source, listedTeams);
       if (!team) {

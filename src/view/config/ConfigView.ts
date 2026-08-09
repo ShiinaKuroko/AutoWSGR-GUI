@@ -658,11 +658,12 @@ export class ConfigView {
         state = 'complete';
         break;
       case 'downloading':
-        percent = Math.max(0, Math.min(100, Math.round(status.percent)));
-        text = '正在下载更新…';
+        percent = null;
+        percentText = '后台';
+        text = '正在后台下载并校验更新…';
         break;
       case 'downloaded':
-        text = `v${status.version} 已下载，等待选择更新时间`;
+        text = `v${status.version} 已准备完成，等待选择重启时间`;
         percent = 100;
         state = 'complete';
         break;

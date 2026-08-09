@@ -44,8 +44,13 @@ export class TeamPlanRepository {
   /** 读取并归一化一份编队 YAML。 */
   read(filePath: string): UserTeamPlan {
     return this.codec.normalize(
-      yaml.load(fs.readFileSync(filePath, 'utf-8')),
+      yaml.load(this.readContent(filePath)),
     );
+  }
+
+  /** 读取一份编队 YAML 的原始文本。 */
+  readContent(filePath: string): string {
+    return fs.readFileSync(filePath, 'utf-8');
   }
 
   /** 判断磁盘文件的归一化内容是否与计划一致。 */

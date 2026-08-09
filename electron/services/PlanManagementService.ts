@@ -192,13 +192,17 @@ export class PlanManagementService {
             )
               ? preset.name.trim()
               : `编队 ${index + 1}`;
+            const userOverride = listedTeams.plans.find(team => (
+              team.name === name && team.source === 'user'
+            )) ?? null;
             const sameSourceTeam = listedTeams.plans.find(team => (
               team.name === name && team.source === source
             )) ?? null;
             const embeddedShips = Array.isArray(preset.ships)
               ? preset.ships
               : null;
-            const matchingPlan = sameSourceTeam
+            const matchingPlan = userOverride
+              ?? sameSourceTeam
               ?? (embeddedShips
                 ? null
                 : this.teamRepository.find(

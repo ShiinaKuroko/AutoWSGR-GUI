@@ -120,6 +120,27 @@ assert.deepEqual(
   pureBackupPreview.map(ship => ship.name),
   pureBackupNames,
 );
+const pureBackupRuleOnlyPreview = new CurrentFleetController().resolve({
+  type: 'normal_fight',
+  times: 1,
+  plan: {
+    fleet_rules: pureBackupNames.map(() => ({
+      candidates: pureBackupCandidates,
+    })),
+  },
+});
+assert.deepEqual(
+  pureBackupRuleOnlyPreview.map(ship => ship.name),
+  pureBackupNames,
+);
+assert.deepEqual(
+  new CurrentFleetController().resolve({
+    type: 'normal_fight',
+    times: 1,
+    plan: {},
+  }),
+  [],
+);
 
 const plan = PlanModel.fromYaml([
   'chapter: 1',

@@ -52,14 +52,27 @@ function testTeamPlanServices() {
     getResourcesPath: () => path.join(projectRoot, 'resources'),
   });
   const codec = new TeamPlanCodec();
+  const atomicFiles = new AtomicFileStore();
   const repository = new TeamPlanRepository(
     appPaths,
-    new AtomicFileStore(),
+    atomicFiles,
     codec,
   );
-  const service = new TeamPlanService(codec, repository);
+  const combatRepository = new CombatPlanRepository(
+    appPaths,
+    atomicFiles,
+  );
+  const combatCodec = new CombatPlanCodec(codec, repository);
+  const service = new TeamPlanService(
+    codec,
+    repository,
+    combatCodec,
+    combatRepository,
+  );
   createDirectories(appPaths.systemTeamPlansDir());
+  createDirectories(appPaths.systemBattlePlansDir());
   repository.initializeUserDirectory();
+  combatRepository.initializeUserDirectory();
 
   const candidateOnly = codec.normalize({
     name: '备选位置',
@@ -402,6 +415,98 @@ function testTeamPlanServices() {
     'team-重命名完成.yaml',
   );
   assert.equal(fs.existsSync(renamedPath), true);
+
+  const linkedOldName = 'linked-old';
+  const linkedNewName = 'linked-new';
+  const linkedOldFile = codec.fileName(linkedOldName);
+  assert.equal(service.save({
+    name: linkedOldName,
+    ships: [{ name: '重庆' }],
+  }, false).success, true);
+
+  const linkedBattlePath = path.join(
+    appPaths.userBattlePlansDir(),
+    'bettle-linked.yaml',
+  );
+  combatRepository.write(linkedBattlePath, [
+    '# keep leading comment',
+    'chapter: 1',
+    'map: 1',
+    'custom_root: keep',
+    'fleet_presets:',
+    `  - name: ${linkedOldName}`,
+    '    custom_binding: keep',
+    '  - name: unrelated',
+    '',
+  ].join('\n'));
+  const duplicateBattlePath = path.join(
+    appPaths.userBattlePlansDir(),
+    'bettle-duplicate.yaml',
+  );
+  combatRepository.write(duplicateBattlePath, [
+    'chapter: 1',
+    'map: 2',
+    'fleet_presets:',
+    `  - name: ${linkedOldName}`,
+    `  - name: ${linkedNewName}`,
+    '',
+  ].join('\n'));
+  const unlinkedBattlePath = path.join(
+    appPaths.userBattlePlansDir(),
+    'bettle-unlinked.yaml',
+  );
+  const unlinkedBattleContent = [
+    'chapter: 2',
+    'map: 1',
+    'fleet_presets:',
+    '  - name: unrelated',
+    '',
+  ].join('\n');
+  combatRepository.write(unlinkedBattlePath, unlinkedBattleContent);
+  const systemBattlePath = path.join(
+    appPaths.systemBattlePlansDir(),
+    'bettle-system-linked.yaml',
+  );
+  const systemBattleContent = [
+    'chapter: 3',
+    'map: 1',
+    'fleet_presets:',
+    `  - name: ${linkedOldName}`,
+    '',
+  ].join('\n');
+  combatRepository.write(systemBattlePath, systemBattleContent);
+
+  const linkedRename = service.save({
+    name: linkedNewName,
+    ships: [{ name: '长春' }],
+  }, false, linkedOldFile, 'user');
+  assert.equal(linkedRename.success, true);
+  assert.equal(linkedRename.renamedFrom, linkedOldName);
+  assert.equal(linkedRename.updatedBattlePlans, 2);
+  const linkedBattleContent = combatRepository.read(linkedBattlePath);
+  const linkedBattle = yaml.load(linkedBattleContent);
+  assert.match(linkedBattleContent, /^# keep leading comment/);
+  assert.equal(linkedBattle.custom_root, 'keep');
+  assert.deepEqual(linkedBattle.fleet_presets, [
+    {
+      name: linkedNewName,
+      custom_binding: 'keep',
+    },
+    { name: 'unrelated' },
+  ]);
+  assert.deepEqual(
+    yaml.load(combatRepository.read(duplicateBattlePath)).fleet_presets,
+    [{ name: linkedNewName }],
+  );
+  assert.equal(
+    combatRepository.read(unlinkedBattlePath),
+    unlinkedBattleContent,
+  );
+  assert.equal(
+    combatRepository.read(systemBattlePath),
+    systemBattleContent,
+  );
+
   assert.equal(service.loadSelected(renamedPath).success, true);
   assert.deepEqual(
     service.loadSelected(path.join(temporaryDirectory, 'outside.yaml')),

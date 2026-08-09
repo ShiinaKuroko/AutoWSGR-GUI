@@ -159,28 +159,33 @@ assert.deepEqual(
 );
 assert.match(
   updaterSource,
-  /autoUpdater\.autoDownload\s*=\s*context\.getUpdateMode\(\)\s*===\s*['"]auto['"]/,
-  'GUI 更新检查必须由主进程根据当前模式控制自动下载',
+  /autoUpdater\.autoDownload\s*=\s*false/,
+  '发现更新后必须先由用户确认，禁止直接自动下载',
 );
 assert.match(
   updaterSource,
   /autoUpdater\.autoInstallOnAppQuit\s*=\s*false/,
-  '更新下载完成前不得因退出而自动安装',
+  '普通退出不得自动安装 GUI 更新',
+);
+assert.doesNotMatch(
+  updaterSource,
+  /autoUpdater\.autoInstallOnAppQuit\s*=\s*true/,
+  '任何更新分支都不得重新开启退出安装',
 );
 assert.match(
   updaterSource,
-  /autoUpdater\.on\(\s*['"]update-downloaded['"][\s\S]*autoUpdater\.autoInstallOnAppQuit = true[\s\S]*chooseInstallTiming\(info\.version\)/,
-  '下载完成事件返回前必须注册下次退出安装能力',
+  /context\.chooseDownload\(version\)[\s\S]*choice === ['"]later['"][\s\S]*beginDownload\(version\)/,
+  '发现更新后必须支持现在后台下载和稍后提醒',
 );
 assert.match(
   updaterSource,
-  /context\.chooseInstallTiming\(version\)[\s\S]*timing === ['"]now['"][\s\S]*installDownloadedUpdate\(\)[\s\S]*autoUpdater\.autoInstallOnAppQuit = true/,
-  '下载完成后必须支持现在更新和下次打开两种选择',
+  /updateStates\.saveDownloaded\([\s\S]*offerRestart\(info\.version\)/,
+  '下载校验完成后必须持久化并询问重启时间',
 );
-assert.match(
+assert.doesNotMatch(
   updaterSource,
-  /autoUpdater\.quitAndInstall\(false, true\)/,
-  '现在更新必须安装并重启 GUI',
+  /quitAndInstall|download-progress/,
+  '不得直接关闭 GUI 安装或向页面转发两轮下载进度',
 );
 assert.match(
   updaterSource,
@@ -189,13 +194,28 @@ assert.match(
 );
 assert.match(
   mainSource,
-  /buttons:\s*\[['"]现在更新['"],\s*['"]下一次打开['"]\]/,
-  '更新下载完成后必须让用户选择安装时间',
+  /buttons:\s*\[['"]现在更新['"],\s*['"]稍后['"]\]/,
+  '发现更新后必须让用户决定是否后台下载',
 );
 assert.match(
   mainSource,
-  /prepareForUpdateInstall:[\s\S]*await stopRuntimeResources\(\)[\s\S]*runtimeShutdownComplete = true/,
-  '现在更新必须先停止后端和 ADB，再放行安装器退出',
+  /buttons:\s*\[['"]立即重启['"],\s*['"]下次启动['"]\]/,
+  '下载完成后必须让用户选择立即重启或下次启动',
+);
+assert.match(
+  mainSource,
+  /installDownloadedUpdate:[\s\S]*await stopRuntimeResources\(\)[\s\S]*await guiUpdateInstaller\.launchPendingUpdate\(\)[\s\S]*app\.quit\(\)/,
+  '立即重启必须先停止运行资源，再静默启动安装器',
+);
+assert.match(
+  mainSource,
+  /handleStartupUpdate[\s\S]*app\.whenReady\(\)\.then[\s\S]*if \(await handleStartupUpdate\(\)\) return;[\s\S]*windowService\.createWindow\(\)/,
+  '下次启动必须在创建主窗口前处理待安装更新',
+);
+assert.match(
+  mainSource,
+  /message:\s*['"]后台正在更新，请稍后['"]/,
+  '安装期间重复启动必须显示系统提示',
 );
 assert.match(
   mainSource,

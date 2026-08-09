@@ -513,7 +513,6 @@ export class SettingsController {
 
   private async checkUpdatesManually(): Promise<void> {
     if (!this.gateway) return;
-    const updateMode = this.gateway.getUpdateMode();
     this.host.configView.setUpdateCheckLoading(true);
 
     try {
@@ -529,28 +528,10 @@ export class SettingsController {
           Logger.info('GUI 已是最新版本');
           return;
         }
-        if (updateMode === 'auto') {
-          Logger.info(
-            `检测到 GUI 新版本 v${guiUpdate.version}，自动模式下将自动下载`,
-          );
-          return;
-        }
-        const confirmed = await showConfirm(
-          'GUI 更新',
-          `发现 GUI 新版本 v${guiUpdate.version}，是否下载？\n\n下载完成后可选择“现在更新”或“下一次打开”。`,
+        Logger.info(
+          `检测到 GUI 新版本 v${guiUpdate.version}，`
+          + '更新选择已由系统窗口处理',
         );
-        if (confirmed) {
-          const result = await this.gateway.downloadGuiUpdate();
-          if (result.success) {
-            Logger.info(`GUI 更新下载完成: v${guiUpdate.version}`);
-          } else {
-            Logger.warn(
-              `GUI 更新下载失败: ${result?.message || '未知错误'}`,
-            );
-          }
-        } else {
-          Logger.info('已取消 GUI 更新下载');
-        }
       } catch {
         Logger.warn('GUI 更新检查失败');
       }

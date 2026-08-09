@@ -169,6 +169,10 @@ export class AppController {
     this.fleetPlannerCtrl.onOpenBattlePlan = async (file, source) => {
       await this.planCtrl.openManagedPlan(file, source);
     };
+    this.fleetPlannerCtrl.onTeamPlanSaved = (
+      previousName,
+      plan,
+    ) => this.planCtrl.synchronizeTeamPlan(previousName, plan);
     this.planCtrl.bindActions();
 
     this.taskGroupCtrl = new TaskGroupController(

@@ -1607,6 +1607,60 @@ assert.deepEqual(
 assert.equal(presetController.removePreset(secondAppend, -1), null);
 assert.equal(presetController.removePreset(secondAppend, 1), null);
 
+const sameNameSynchronized = presetController.synchronizePreset(
+  [{
+    name: '已有编队',
+    ships: [{ name: '旧舰船' }],
+  }],
+  '已有编队',
+  null,
+  'user',
+);
+assert.ok(sameNameSynchronized);
+assert.equal(sameNameSynchronized[0].ships[0].name, '海伦娜');
+
+catalogPlans[0] = {
+  ...catalogPlans[0],
+  name: '重命名编队',
+  ships: [{ name: '新舰船' }],
+};
+await presetController.load();
+const renamedSynchronized = presetController.synchronizePreset(
+  [
+    {
+      name: '已有编队',
+      ships: [{ name: '旧舰船' }],
+    },
+    {
+      name: '重命名编队',
+      ships: [{ name: '重复旧快照' }],
+    },
+    {
+      name: '未关联编队',
+      ships: [{ name: '保留舰船' }],
+    },
+  ],
+  '重命名编队',
+  '已有编队',
+  'user',
+);
+assert.ok(renamedSynchronized);
+assert.deepEqual(
+  renamedSynchronized.map(preset => preset.name),
+  ['重命名编队', '未关联编队'],
+);
+assert.equal(renamedSynchronized[0].ships[0].name, '新舰船');
+assert.equal(renamedSynchronized[1].ships[0].name, '保留舰船');
+assert.equal(
+  presetController.synchronizePreset(
+    renamedSynchronized,
+    '重命名编队',
+    null,
+    'system',
+  ),
+  null,
+);
+
 const failedPresetController = new PlanFleetPresetController({
   async getShipLibraryManifest() {
     return manifest;

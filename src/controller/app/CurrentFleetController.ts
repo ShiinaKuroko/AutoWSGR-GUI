@@ -41,11 +41,13 @@ function fleetRuleShip(rule: unknown): RequestedFleetShip | null {
     : { name };
 }
 
-function firstCandidateShip(rule: unknown): RequestedFleetShip | null {
-  if (!rule || typeof rule !== 'object') return null;
+function candidateShips(rule: unknown): RequestedFleetShip[] {
+  if (!rule || typeof rule !== 'object') return [];
   const candidates = (rule as Record<string, unknown>)['candidates'];
-  if (!Array.isArray(candidates)) return null;
-  return fleetRuleShip(candidates[0]);
+  if (!Array.isArray(candidates)) return [];
+  return candidates
+    .map(fleetRuleShip)
+    .filter((ship): ship is RequestedFleetShip => ship !== null);
 }
 
 function requestedFleet(
@@ -62,13 +64,20 @@ function requestedFleet(
     : [];
   const slotCount = Math.min(6, Math.max(rules.length, fleet.length));
   const ships: RequestedFleetShip[] = [];
+  const usedNames = new Set<string>();
   for (let index = 0; index < slotCount; index += 1) {
     const fleetName = normalizedShipName(fleet[index]);
-    const ship = fleetRuleShip(rules[index])
-      // 纯备选槽位使用已去重解析的 fleet，避免每个槽位都展示第一候选。
-      || (fleetName ? { name: fleetName } : null)
-      || firstCandidateShip(rules[index]);
-    if (ship) ships.push(ship);
+    const candidates = [
+      ...(fleetName ? [{ name: fleetName }] : []),
+      fleetRuleShip(rules[index]),
+      ...candidateShips(rules[index]),
+    ].filter((ship): ship is RequestedFleetShip => ship !== null);
+    const ship = candidates.find(candidate => (
+      !usedNames.has(candidate.name)
+    ));
+    if (!ship) continue;
+    usedNames.add(ship.name);
+    ships.push(ship);
   }
   return ships;
 }

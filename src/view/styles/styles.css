@@ -982,6 +982,7 @@ input[type=checkbox]:focus-visible {
 .battle-overview-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 5px;
   flex: 0 0 auto;
 }
@@ -1026,9 +1027,9 @@ input[type=checkbox]:focus-visible {
 
 .current-fleet-preview {
   display: grid;
-  grid-template-columns: repeat(6, minmax(38px, 64px));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 3px;
-  width: auto;
+  width: 100%;
   min-height: 0;
   align-items: start;
   justify-content: start;

@@ -520,6 +520,53 @@ function testCombatPlanServices() {
     yaml.load(preparedSystem.content).fleet_presets[0].ships[0].name,
     '系统舰',
   );
+  combatRepository.write(
+    path.join(
+      appPaths.systemBattlePlansDir(),
+      'bettle-系统计划二.yaml',
+    ),
+    [
+      'chapter: 3',
+      'map: 5',
+      'fleet_presets:',
+      '  - name: 系统舰队',
+      '',
+    ].join('\n'),
+  );
+  teamRepository.write(
+    path.join(
+      appPaths.userTeamPlansDir(),
+      'team-系统舰队.yaml',
+    ),
+    [
+      'name: 系统舰队',
+      'ships:',
+      '  - name: 用户修改舰',
+      '',
+    ].join('\n'),
+  );
+  for (const file of [
+    'bettle-系统计划.yaml',
+    'bettle-系统计划二.yaml',
+  ]) {
+    const preparedWithUserTeam = management.readManaged('system', file);
+    assert.equal(preparedWithUserTeam.success, true);
+    assert.equal(
+      yaml.load(
+        preparedWithUserTeam.content,
+      ).fleet_presets[0].ships[0].name,
+      '用户修改舰',
+    );
+  }
+  const overriddenSummary = management.get();
+  for (const planName of ['系统计划', '系统计划二']) {
+    const planSummary = overriddenSummary.battlePlans.find(plan => (
+      plan.name === planName
+    ));
+    assert.ok(planSummary);
+    assert.equal(planSummary.fleets[0].source, 'user');
+    assert.equal(planSummary.fleets[0].primaryCount, 1);
+  }
 
   const legacyEventPlans = [
     {
