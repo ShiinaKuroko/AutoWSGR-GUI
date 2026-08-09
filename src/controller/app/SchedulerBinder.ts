@@ -255,6 +255,8 @@ export class SchedulerBinder {
         void this.enqueueLootTask(source, planId, stopCount);
       },
 
+      canStartNormalFight: () => this.host.scheduler.isCompletelyIdle,
+
       onNormalFightDue: () => {
         void this.enqueueNormalFightTasks();
       },
@@ -286,17 +288,27 @@ export class SchedulerBinder {
   }
 
   private async enqueueNormalFightTasks(): Promise<void> {
-    const result = await this.taskLoader.loadNormalFightTasks();
-    if (result.status === 'handled') {
-      this.host.cronScheduler.markNormalFightHandled();
-      return;
-    }
-    if (result.status === 'retry') {
+    try {
+      const result = await this.taskLoader.loadNormalFightTasks();
+      if (result.status === 'handled') {
+        this.host.cronScheduler.markNormalFightHandled();
+        return;
+      }
+      if (result.status === 'retry') {
+        this.host.cronScheduler.clearNormalFightPending();
+        return;
+      }
+      for (const taskId of result.taskIds) {
+        this.pendingNormalFightTaskIds.add(taskId);
+      }
+      this.host.scheduler.startConsuming();
+    } catch (error) {
+      Logger.error(
+        `自动出征加载失败: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
       this.host.cronScheduler.clearNormalFightPending();
-      return;
-    }
-    for (const taskId of result.taskIds) {
-      this.pendingNormalFightTaskIds.add(taskId);
     }
   }
 

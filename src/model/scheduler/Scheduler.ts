@@ -137,6 +137,16 @@ export class Scheduler {
     return this._taskQueue.items;
   }
 
+  /** 当前无运行、排队、重试或修理延迟任务，可接收空闲自动任务。 */
+  get isCompletelyIdle(): boolean {
+    return this.systemActive
+      && this._status === 'idle'
+      && this.currentTask === null
+      && this._taskQueue.length === 0
+      && !this._taskQueue.hasDeferredTasks
+      && this.waitingTasks.size === 0;
+  }
+
   /** 获取轮次间隔或失败重试中的任务。 */
   get waitingTaskList(): ReadonlyArray<SchedulerWaitingTask> {
     return [...this.waitingTasks.values()]

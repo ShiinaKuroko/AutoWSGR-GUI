@@ -25,6 +25,7 @@ import type {
   EventFightReq,
   NormalFightReq,
 } from '../../types/api.js';
+import type { StopCondition } from '../../types/model.js';
 import { Logger } from '../../utils/Logger';
 import {
   applyPlanNodeOverrides,
@@ -95,19 +96,6 @@ export class ScheduledTaskLoader {
   }
 
   async loadNormalFightTasks(): Promise<NormalFightLoadResult> {
-    const queuedTasks = [
-      this.host.scheduler.currentRunningTask,
-      ...this.host.scheduler.taskQueue,
-      ...this.host.scheduler.waitingTaskList.map(item => item.task),
-    ];
-    if (queuedTasks.some(task => (
-      task?.unlimited === true
-      && task.name.startsWith('自动出征·')
-    ))) {
-      Logger.info('已有无限自动出征任务在运行，本次不重复加入');
-      return { status: 'handled' };
-    }
-
     const tasks = this.host.configModel.current
       .daily_automation
       .normal_fight_tasks;
@@ -117,7 +105,13 @@ export class ScheduledTaskLoader {
     }
     if (!this.repository) return { status: 'retry' };
 
-    const taskIds: string[] = [];
+    const preparedTasks: Array<{
+      name: string;
+      type: 'normal_fight' | 'event_fight';
+      request: NormalFightReq | EventFightReq;
+      stopCondition?: StopCondition;
+      fleetId?: number;
+    }> = [];
     for (const task of tasks) {
       try {
         const resolved = await this.resolveNormalFightPlan(task.name);
@@ -135,7 +129,7 @@ export class ScheduledTaskLoader {
           {
             path: resolved.path,
             kind: 'plan',
-            times: task.times ?? 1,
+            times: 1,
             label: plan.mapName,
             fleet_id: task.fleet_id,
             fleetPresetIndex: task.fleet_preset_index,
@@ -144,20 +138,13 @@ export class ScheduledTaskLoader {
           resolved.path,
           this.host.configModel.current.ocr.ship_name_aliases,
         );
-        taskIds.push(this.host.scheduler.addTask(
-          `自动出征·${plan.mapName}`,
-          plan.isEvent ? 'event_fight' : 'normal_fight',
+        preparedTasks.push({
+          name: `自动出征·${plan.mapName}`,
+          type: plan.isEvent ? 'event_fight' : 'normal_fight',
           request,
-          TaskPriority.DAILY,
-          task.times ?? Number.POSITIVE_INFINITY,
-          plan.data.stop_condition,
-          undefined,
-          selectedFleetId,
-          undefined,
-          undefined,
-          undefined,
-          true,
-        ));
+          stopCondition: plan.data.stop_condition,
+          fleetId: selectedFleetId,
+        });
       } catch (error) {
         Logger.error(
           `自动出征加载「${task.name}」失败: ${
@@ -167,9 +154,23 @@ export class ScheduledTaskLoader {
       }
     }
 
-    if (taskIds.length === 0) return { status: 'retry' };
-    Logger.info(`自动出征已按顺序加入 ${taskIds.length} 个任务`);
-    this.host.scheduler.startConsuming();
+    if (preparedTasks.length === 0) return { status: 'retry' };
+    if (!this.host.scheduler.isCompletelyIdle) {
+      Logger.debug('自动出征计划加载完成时调度器已非空闲，等待下次检查');
+      return { status: 'retry' };
+    }
+
+    const taskIds = preparedTasks.map(task => this.host.scheduler.addTask(
+      task.name,
+      task.type,
+      task.request,
+      TaskPriority.DAILY,
+      1,
+      task.stopCondition,
+      undefined,
+      task.fleetId,
+    ));
+    Logger.info(`自动出征已按顺序加入 ${taskIds.length} 个单轮任务`);
     return { status: 'queued', taskIds };
   }
 

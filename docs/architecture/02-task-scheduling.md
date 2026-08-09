@@ -131,7 +131,7 @@ flowchart TD
 |----------|----------|----------|
 | 演习 | 0:00 / 12:00 / 18:00 后 | `localStorage` 记录**实际完成**时间戳 |
 | 战役 | 每日 0:00 后 | `localStorage` 记录完成日期 (YYYY-MM-DD) |
-| 常规出击 | 每日 0:00 后 | 同上 |
+| 常规出击 | 每分钟检查；调度器完全空闲时 | 单轮 pending；本轮全部逻辑任务结束后释放 |
 | 决战 | 每日 0:00 后 | 实际任务结束后记录完成日期 |
 | 刷战利品 | 每日 0:00 后 | 同上 |
 | 定时方案 | YAML 中 `scheduled_time: "HH:MM"` | 当日 `firedToday` 标志 |
@@ -144,6 +144,10 @@ flowchart TD
 或配置失败会清除 pending，允许后续 tick 重试；逻辑任务实际结束后，无论成功
 或失败，当天都不再重复，以免失败前已消耗票数。
 
+自动出征只在 `Scheduler` 无运行、排队、重试等待或修理延迟任务时触发。每次
+触发将配置中的所有 YAML 计划各加入一个单轮任务；计划加载期间如果调度器变为
+非空闲，本轮不入队并等待下一次检查。
+
 #### 事件回调
 
 `CronScheduler` 通过回调通知 `AppController`，由 Controller 调用 `Scheduler.addTask()` 入队：
@@ -155,6 +159,7 @@ import type {
 } from '../../src/shared/decisiveAutomation';
 
 interface CronCallbacks {
+  canStartNormalFight?: () => boolean;
   onExerciseDue?: (fleetId: number) => void;
   onCampaignDue?: (campaignName: string, times: number) => void;
   onNormalFightDue?: () => void;

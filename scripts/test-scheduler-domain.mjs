@@ -9,6 +9,7 @@ const entries = [
   'src/controller/app/SchedulerBinder.ts',
   'src/model/scheduler/RepairManager.ts',
   'src/model/scheduler/Scheduler.ts',
+  'src/controller/app/ScheduledTaskLoader.ts',
 ];
 const modules = await Promise.all(entries.map(async entry => {
   const result = await esbuild.build({
@@ -28,6 +29,7 @@ const automaticDecisive = modules[3];
 const schedulerBinderModule = modules[4];
 const repairModule = modules[5];
 const schedulerModule = modules[6];
+const scheduledTaskLoaderModule = modules[7];
 
 const task = taskPolicy.createSchedulerTask({
   id: 'task-1', name: 'test', type: 'normal_fight', request: { type: 'normal_fight' },
@@ -125,6 +127,7 @@ const automationTriggers = {
   decisive: [],
   loot: [],
 };
+let automationIdle = true;
 const automationCron = new cronModule.CronScheduler({
   ...cronConfig,
   autoExercise: true,
@@ -140,6 +143,7 @@ const automationCron = new cronModule.CronScheduler({
   lootStopCount: 21,
 }, automationStorage);
 automationCron.setCallbacks({
+  canStartNormalFight: () => automationIdle,
   onExerciseDue: fleetId => automationTriggers.exercise.push(fleetId),
   onCampaignDue: (name, times) => {
     automationTriggers.campaign.push([name, times]);
@@ -167,6 +171,21 @@ assert.deepEqual(automationTriggers, {
     21,
   ]],
 });
+automationCron.markNormalFightHandled();
+automationIdle = false;
+automationCron.tick();
+assert.equal(
+  automationTriggers.normalFight,
+  1,
+  '队列非空闲时不得触发自动出征',
+);
+automationIdle = true;
+automationCron.tick();
+assert.equal(
+  automationTriggers.normalFight,
+  2,
+  '上一轮结束后，下一次空闲检查应重新触发自动出征',
+);
 automationCron.markExerciseCompleted();
 automationCron.markBattleHandled();
 automationCron.markNormalFightHandled();
@@ -183,6 +202,7 @@ const restoredAutomationCron = new cronModule.CronScheduler({
   autoLoot: true,
 }, automationStorage);
 restoredAutomationCron.setCallbacks({
+  canStartNormalFight: () => true,
   onExerciseDue: () => restoredAutomationTriggers.push('exercise'),
   onCampaignDue: () => restoredAutomationTriggers.push('campaign'),
   onNormalFightDue: () => restoredAutomationTriggers.push('normal'),
@@ -193,8 +213,8 @@ restoredAutomationCron.start();
 restoredAutomationCron.stop();
 assert.deepEqual(
   restoredAutomationTriggers,
-  [],
-  '已处理的日常自动任务不得在同一天跨实例重复触发',
+  ['normal'],
+  '自动出征不受每日持久化标记限制，空闲时应再次触发',
 );
 
 const userDecisiveRequest =
@@ -285,6 +305,75 @@ const managedLootYaml = [
   '  ship_count_ge: 7',
   '',
 ].join('\n');
+const automaticSortieCalls = [];
+let automaticSortieIdle = true;
+let automaticSortieStarts = 0;
+const automaticSortieLoader =
+  new scheduledTaskLoaderModule.ScheduledTaskLoader(
+    {
+      scheduler: {
+        get isCompletelyIdle() {
+          return automaticSortieIdle;
+        },
+        addTask: (...args) => {
+          automaticSortieCalls.push(args);
+          return `automatic-sortie-${automaticSortieCalls.length}`;
+        },
+        startConsuming: () => {
+          automaticSortieStarts += 1;
+        },
+      },
+      templateModel: {},
+      configModel: {
+        current: {
+          daily_automation: {
+            normal_fight_tasks: [{
+              name: 'idle-plan',
+              fleet_id: 2,
+              times: 99,
+            }],
+          },
+          ocr: { ship_name_aliases: {} },
+        },
+      },
+    },
+    {
+      readCombatPlanFile: async path => ({
+        success: true,
+        path,
+        runtimePath: `runtime://${path}`,
+        content: managedLootYaml,
+      }),
+    },
+  );
+const automaticSortieResult =
+  await automaticSortieLoader.loadNormalFightTasks();
+assert.equal(automaticSortieResult.status, 'queued');
+assert.equal(automaticSortieCalls.length, 1);
+assert.equal(
+  automaticSortieCalls[0][2].times,
+  1,
+  '自动出征提交给后端的 YAML 任务必须只执行一次',
+);
+assert.equal(
+  automaticSortieCalls[0][4],
+  1,
+  '自动出征逻辑任务不得使用 YAML 中遗留的重复次数',
+);
+assert.equal(
+  automaticSortieStarts,
+  0,
+  '加载器返回任务 ID 前不得提前启动，避免完成回调丢失',
+);
+automaticSortieIdle = false;
+const busyAutomaticSortieResult =
+  await automaticSortieLoader.loadNormalFightTasks();
+assert.equal(busyAutomaticSortieResult.status, 'retry');
+assert.equal(
+  automaticSortieCalls.length,
+  1,
+  '计划加载期间队列变为忙碌时不得追加自动出征',
+);
 globalThis.window = {
   electronBridge: {
     getDecisivePlanSettings: async () => {
@@ -324,6 +413,9 @@ const binder = new schedulerBinderModule.SchedulerBinder({
     },
     get currentRunningTask() {
       return binderRunningTask;
+    },
+    get isCompletelyIdle() {
+      return binderRunningTask === null;
     },
     taskQueue: [],
     waitingTaskList: [],
@@ -370,6 +462,11 @@ const binder = new schedulerBinderModule.SchedulerBinder({
 });
 binder.bindCronCallbacks();
 binder.bindSchedulerCallbacks();
+assert.equal(
+  cronCallbacks.canStartNormalFight(),
+  true,
+  '空闲自动出征必须使用调度器的完整空闲状态',
+);
 cronCallbacks.onDecisiveDue('user_plan');
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(decisiveQueueCalls.length, 1);
@@ -508,7 +605,7 @@ schedulerCallbacks.onLogicalTaskCanceled(
 assert.equal(
   normalFightHandledCalls,
   1,
-  '用户清空无限自动出征后，cron 不得保留 pending 或立即重新加入',
+  '用户清空本轮自动出征后，cron 不得保留 pending 或立即重新加入',
 );
 
 binder.pendingNormalFightTaskIds.add('normal-parent-system-stop');
@@ -519,7 +616,7 @@ schedulerCallbacks.onLogicalTaskCanceled(
 assert.equal(
   normalFightPendingClears,
   1,
-  '系统停止无限自动出征后应释放 cron pending，允许重启后重试',
+  '系统停止本轮自动出征后应释放 cron pending，允许重启后重试',
 );
 binderRunningTask = {
   id: 'running-round',
@@ -643,6 +740,11 @@ reconnectScheduler.setAutoExpedition(false);
 assert.equal(await reconnectScheduler.start(), true);
 assert.equal(reconnectScheduler.status, 'idle');
 assert.equal(
+  reconnectScheduler.isCompletelyIdle,
+  true,
+  '系统已启动且没有任何任务时应判定为完全空闲',
+);
+assert.equal(
   reconnectWebSocketCalls,
   1,
   '重连成功后没有恢复任务和日志 WebSocket',
@@ -655,6 +757,11 @@ reconnectScheduler.addTask(
   '重连后发送任务测试',
   'normal_fight',
   reconnectTaskRequest,
+);
+assert.equal(
+  reconnectScheduler.isCompletelyIdle,
+  false,
+  '队列中已有任务时不得判定为空闲',
 );
 reconnectScheduler.startConsuming();
 await wait(0);
