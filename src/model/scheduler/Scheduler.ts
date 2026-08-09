@@ -822,7 +822,10 @@ export class Scheduler {
   ): boolean {
     const endpointFightEvents = (round.events ?? []).filter((event) => {
       const node = String(event.node ?? '').trim().toUpperCase();
-      return event.type === 'FIGHT_RESULT' && endpoints.includes(node);
+      return (
+        (event.type === 'RESULT' || event.type === 'FIGHT_RESULT')
+        && endpoints.includes(node)
+      );
     });
 
     if (endpointFightEvents.length > 0) {

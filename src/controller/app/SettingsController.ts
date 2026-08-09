@@ -135,7 +135,12 @@ export class SettingsController {
       const status = await this.gateway.getShipLibraryStatus();
       if (status.error) {
         this.setShipLibraryUpdateAction('wiki', '更新舰船数据库');
-        this.host.configView.setShipLibraryStatus(status.error, 'error');
+        this.host.configView.setShipLibraryStatus(
+          '舰船数据库状态异常',
+          'error',
+          status.error,
+        );
+        Logger.error(`舰船数据库状态异常：${status.error}`);
       } else if (!status.exists || status.shipCount <= 0) {
         this.setShipLibraryUpdateAction('wiki', '更新舰船数据库');
         this.host.configView.setShipLibraryStatus(
@@ -157,9 +162,15 @@ export class SettingsController {
           ? `后端核对失败：${status.backendError}`
           : `后端缺少 ${missing} 条舰名`;
         this.host.configView.setShipLibraryStatus(
-          `Wiki 与 GUI 已同步，${detail}`,
+          status.backendError
+            ? '后端舰名库核对失败'
+            : '前后端舰名库不一致',
           'error',
+          `Wiki 与 GUI 已同步，${detail}`,
         );
+        if (status.backendError) {
+          Logger.error(`后端舰名库核对失败：${status.backendError}`);
+        }
       } else {
         this.setShipLibraryUpdateAction('wiki', '检查更新');
         const updatedAt = status.generatedAt
@@ -176,9 +187,11 @@ export class SettingsController {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.host.configView.setShipLibraryStatus(
-        `状态读取失败: ${message}`,
+        '舰船数据库状态读取失败',
         'error',
+        message,
       );
+      Logger.error(`舰船数据库状态读取失败：${message}`);
     }
   }
 
@@ -441,8 +454,11 @@ export class SettingsController {
       if (!result.success) {
         const message = result.error || result.failures?.[0] || '未知错误';
         this.host.configView.setShipLibraryStatus(
-          `更新失败: ${message}`,
+          updateTarget === 'backend'
+            ? '后端舰名库同步失败'
+            : '舰船数据库更新失败',
           'error',
+          message,
         );
         Logger.error(`舰船资料库更新失败: ${message}`);
         return;
@@ -462,8 +478,11 @@ export class SettingsController {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.host.configView.setShipLibraryStatus(
-        `更新失败: ${message}`,
+        updateTarget === 'backend'
+          ? '后端舰名库同步失败'
+          : '舰船数据库更新失败',
         'error',
+        message,
       );
       Logger.error(`舰船资料库更新失败: ${message}`);
     } finally {

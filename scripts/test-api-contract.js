@@ -7,6 +7,12 @@ const { TaskQueue } = require('../dist/src/model/scheduler/TaskQueue.js');
 const {
   buildPlanQueueRequest,
 } = require('../dist/src/controller/taskGroup/queueLoader.js');
+const {
+  executePresetFlow,
+} = require('../dist/src/controller/plan/presetFlow.js');
+const {
+  CurrentFleetController,
+} = require('../dist/src/controller/app/CurrentFleetController.js');
 const { ALL_SHIPS } = require('../dist/src/shared/shipCatalog.js');
 const {
   FLEET_SHIP_TYPE_CODES,
@@ -87,6 +93,30 @@ function runBackendFleetContract(cases) {
   );
   return JSON.parse(result.stdout);
 }
+
+const pureBackupNames = [
+  'U-47',
+  'U-81',
+  'U-96',
+  'U-505',
+  'U-2540',
+  'U-1405',
+];
+const pureBackupCandidates = pureBackupNames.map(name => ({ name }));
+const pureBackupPreview = new CurrentFleetController().resolve({
+  type: 'normal_fight',
+  times: 1,
+  plan: {
+    fleet: pureBackupNames,
+    fleet_rules: pureBackupNames.map(() => ({
+      candidates: pureBackupCandidates,
+    })),
+  },
+});
+assert.deepEqual(
+  pureBackupPreview.map(ship => ship.name),
+  pureBackupNames,
+);
 
 const plan = PlanModel.fromYaml([
   'chapter: 1',
@@ -210,6 +240,38 @@ assert.deepEqual(JSON.parse(JSON.stringify(nodeFormationRequest.plan.node_args))
     night: true,
   },
 });
+
+let queuedDecisiveTask = null;
+const decisivePresetState = {
+  currentPreset: {
+    task_type: 'decisive',
+  },
+  currentPresetFilePath: 'decisive-10.yaml',
+};
+executePresetFlow(
+  {
+    collectPresetFormValues: () => ({
+      times: 10,
+      chapter: 6,
+      level1: [],
+      level2: [],
+      flagshipPriority: [],
+      useQuickRepair: true,
+    }),
+    hidePresetDetail: () => {},
+  },
+  {
+    scheduler: {
+      addTask: (...args) => {
+        queuedDecisiveTask = args;
+      },
+    },
+    switchPage: () => {},
+    renderMain: () => {},
+  },
+  decisivePresetState,
+);
+assert.equal(queuedDecisiveTask[4], 10);
 
 const rotatedAliasRequest = {
   type: 'normal_fight',

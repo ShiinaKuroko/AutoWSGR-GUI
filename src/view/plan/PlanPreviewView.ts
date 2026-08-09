@@ -545,7 +545,7 @@ export class PlanPreviewView {
     } else {
       timesGroup.style.display = '';
       timesEl.value = String(vo.times ?? 1);
-      timesEl.disabled = vo.taskType === 'decisive';
+      timesEl.disabled = false;
     }
   }
 

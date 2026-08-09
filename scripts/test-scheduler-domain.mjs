@@ -597,6 +597,82 @@ function createSchedulerApi(overrides = {}) {
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+// 终点最低战果按 D < C < B < A < S < SS 判断。
+const endpointResultScheduler = new schedulerModule.Scheduler(
+  createSchedulerApi(),
+);
+const resultGrades = ['D', 'C', 'B', 'A', 'S', 'SS'];
+for (const [actualIndex, actual] of resultGrades.entries()) {
+  for (const [requiredIndex, required] of resultGrades.entries()) {
+    assert.equal(
+      endpointResultScheduler.roundMeetsEndpointResult(
+        {
+          round: 1,
+          success: true,
+          nodes: ['C', 'F', 'I'],
+          grade: 'D',
+          events: [
+            { type: 'RESULT', node: 'I', result: actual },
+          ],
+        },
+        ['I'],
+        required,
+      ),
+      actualIndex >= requiredIndex,
+      `实际 ${actual}、要求 ${required} 的计数结果错误`,
+    );
+  }
+}
+
+// 决战完成一轮后必须继续执行用户设置的剩余轮次。
+let decisiveTaskStarts = 0;
+const decisiveApi = createSchedulerApi({
+  taskStart: async () => {
+    decisiveTaskStarts += 1;
+    return {
+      success: true,
+      data: {
+        task_id: `decisive-backend-${decisiveTaskStarts}`,
+        status: 'running',
+      },
+    };
+  },
+});
+const decisiveScheduler = new schedulerModule.Scheduler(decisiveApi);
+decisiveScheduler.setAutoExpedition(false);
+const decisiveLogicalEvents = [];
+decisiveScheduler.setCallbacks({
+  onLogicalTaskCompleted: logicalId => {
+    decisiveLogicalEvents.push(logicalId);
+  },
+});
+assert.equal(await decisiveScheduler.start(), true);
+const decisiveParentId = decisiveScheduler.addTask(
+  '决战十轮测试',
+  'decisive',
+  { type: 'decisive', chapter: 6 },
+  10,
+  10,
+);
+decisiveScheduler.startConsuming();
+await wait(0);
+decisiveApi.callbacks.onTaskCompleted({
+  type: 'task_completed',
+  success: true,
+  result: null,
+  error: null,
+});
+await wait(0);
+assert.equal(decisiveTaskStarts, 2);
+assert.equal(decisiveScheduler.currentRunningTask?.remainingTimes, 9);
+assert.equal(decisiveScheduler.currentRunningTask?.totalTimes, 10);
+assert.equal(
+  decisiveScheduler.currentRunningTask?.logicalId,
+  decisiveParentId,
+);
+assert.deepEqual(decisiveLogicalEvents, []);
+await decisiveScheduler.stop();
+
 // 无限任务每轮使用新物理 ID，但父 logicalId 必须稳定。
 let gapTaskStarts = 0;
 const gapApi = createSchedulerApi({

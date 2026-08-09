@@ -1519,7 +1519,17 @@ input[type=checkbox]:focus-visible {
 
 /* ═══ 统一任务区域 ═══ */
 #task-area-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   padding: 8px;
+}
+
+#task-area-queue {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .task-area-header {
@@ -1600,7 +1610,8 @@ input[type=checkbox]:focus-visible {
 }
 /* ═══ 任务队列 ═══ */
 .task-queue-list {
-  max-height: 200px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -6793,13 +6804,16 @@ input[type=checkbox]:focus-visible {
 }
 
 .config-setting-control > .config-update-controls {
+  flex-wrap: nowrap;
   justify-content: flex-end;
 }
 
 .config-update-progress {
   display: grid;
+  flex: 0 1 160px;
   gap: 4px;
-  width: min(100%, var(--config-row-width));
+  width: 160px;
+  min-width: 120px;
 }
 .config-update-progress[hidden] {
   display: none;
@@ -7450,6 +7464,13 @@ input[type=checkbox]:focus-visible {
   }
   .ship-library-update-control .adb-status {
     text-align: left;
+  }
+  .config-update-controls {
+    flex-wrap: wrap;
+  }
+  .config-update-controls .config-update-progress {
+    flex: 1 1 160px;
+    width: auto;
   }
   .config-confidence-preview {
     display: grid;

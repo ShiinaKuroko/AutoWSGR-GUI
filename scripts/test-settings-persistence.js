@@ -229,6 +229,12 @@ async function runRendererTest(root, tempDirectory) {
   );
   const updateStatus = document.getElementById('gui-update-status');
   const updatePercent = document.getElementById('gui-update-percent');
+  const updateControls = document.querySelector('.config-update-controls');
+  rendererAssert.equal(
+    updateProgress.parentElement,
+    updateControls,
+    'GUI 更新进度必须与更新模式和检查按钮位于同一行',
+  );
   rendererAssert.equal(updateProgress.hidden, true);
   view.setGuiUpdateStatus({ status: 'checking' });
   rendererAssert.equal(updateProgress.hidden, false);
@@ -249,6 +255,17 @@ async function runRendererTest(root, tempDirectory) {
   view.setGuiUpdateStatus({ status: 'downloaded', version: '2.0.5-alpha' });
   rendererAssert.equal(updateProgress.dataset.state, 'complete');
   rendererAssert.equal(updatePercent.textContent, '100%');
+  const shipLibraryStatus = document.getElementById('ship-library-status');
+  view.setShipLibraryStatus(
+    '前后端舰名库不一致',
+    'error',
+    '后端缺少 12 条舰名',
+  );
+  rendererAssert.equal(
+    shipLibraryStatus.textContent,
+    '前后端舰名库不一致',
+  );
+  rendererAssert.equal(shipLibraryStatus.title, '后端缺少 12 条舰名');
 
   const decisiveOptions = Array.from(
     document.getElementById('cfg-decisive-template').options,

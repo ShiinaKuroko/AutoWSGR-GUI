@@ -338,13 +338,16 @@
 }
 
 .config-setting-control > .config-update-controls {
+  flex-wrap: nowrap;
   justify-content: flex-end;
 }
 
 .config-update-progress {
   display: grid;
+  flex: 0 1 160px;
   gap: 4px;
-  width: min(100%, var(--config-row-width));
+  width: 160px;
+  min-width: 120px;
 
   &[hidden] {
     display: none;
@@ -1055,6 +1058,15 @@
 
     .adb-status {
       text-align: left;
+    }
+  }
+
+  .config-update-controls {
+    flex-wrap: wrap;
+
+    .config-update-progress {
+      flex: 1 1 160px;
+      width: auto;
     }
   }
 

@@ -117,7 +117,7 @@ export function executePresetFlow(
       break;
   }
 
-  const effectiveTimes = (preset.task_type === 'exercise' || preset.task_type === 'decisive') ? 1 : times;
+  const effectiveTimes = preset.task_type === 'exercise' ? 1 : times;
   const stopCondition = preset.stop_condition;
 
   host.scheduler.addTask(name, preset.task_type, req, TaskPriority.USER_TASK, effectiveTimes, stopCondition);

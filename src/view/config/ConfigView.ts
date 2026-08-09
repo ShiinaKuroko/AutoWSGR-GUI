@@ -554,7 +554,14 @@ export class ConfigView {
   }
   setPythonStatus(text: string, status: StatusKind): void { this.setStatus(this.pythonStatus, text, status); }
   setBackendStatus(text: string, status: StatusKind): void { this.setStatus(this.backendStatus, text, status); }
-  setShipLibraryStatus(text: string, status: StatusKind): void { this.setStatus(this.shipLibraryStatus, text, status); }
+  setShipLibraryStatus(
+    text: string,
+    status: StatusKind,
+    details = text,
+  ): void {
+    this.setStatus(this.shipLibraryStatus, text, status);
+    if (this.shipLibraryStatus) this.shipLibraryStatus.title = details;
+  }
   setShipLibraryUpdateLabel(label: string): void {
     this.shipLibraryUpdateLabel = label;
     if (this.updateShipLibraryBtn && !this.updateShipLibraryBtn.disabled) {

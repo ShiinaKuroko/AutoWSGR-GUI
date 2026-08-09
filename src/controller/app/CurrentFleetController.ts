@@ -65,8 +65,9 @@ function requestedFleet(
   for (let index = 0; index < slotCount; index += 1) {
     const fleetName = normalizedShipName(fleet[index]);
     const ship = fleetRuleShip(rules[index])
-      || firstCandidateShip(rules[index])
-      || (fleetName ? { name: fleetName } : null);
+      // 纯备选槽位使用已去重解析的 fleet，避免每个槽位都展示第一候选。
+      || (fleetName ? { name: fleetName } : null)
+      || firstCandidateShip(rules[index]);
     if (ship) ships.push(ship);
   }
   return ships;
