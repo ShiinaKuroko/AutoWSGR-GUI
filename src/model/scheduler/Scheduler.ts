@@ -195,6 +195,16 @@ export class Scheduler {
     }
   }
 
+  /** 检查后端系统是否已经完成模拟器连接。 */
+  async isSystemReady(): Promise<boolean> {
+    try {
+      const resp = await this.api.systemStatus();
+      return resp.success && resp.data?.emulator_connected === true;
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * HTTP 超时但后端实际已就绪时的恢复:
    * 建立 WebSocket、设置状态、启动远征检查。

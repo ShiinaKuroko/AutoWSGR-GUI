@@ -597,6 +597,79 @@ function createSchedulerApi(overrides = {}) {
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+const readySystemScheduler = new schedulerModule.Scheduler(
+  createSchedulerApi({
+    systemStatus: async () => ({
+      success: true,
+      data: { emulator_connected: true },
+    }),
+  }),
+);
+assert.equal(await readySystemScheduler.isSystemReady(), true);
+const unavailableSystemScheduler = new schedulerModule.Scheduler(
+  createSchedulerApi({
+    systemStatus: async () => ({
+      success: true,
+      data: { emulator_connected: false },
+    }),
+  }),
+);
+assert.equal(
+  await unavailableSystemScheduler.isSystemReady(),
+  false,
+  '后端接口可达但模拟器未连接时不能恢复为空闲状态',
+);
+
+// 手动重连成功后必须恢复任务通道，并能继续发送 GUI 队列任务。
+let reconnectWebSocketCalls = 0;
+const reconnectedTaskRequests = [];
+const reconnectApi = createSchedulerApi({
+  connectWebSockets: () => {
+    reconnectWebSocketCalls += 1;
+  },
+  taskStart: async (request) => {
+    reconnectedTaskRequests.push(request);
+    return {
+      success: true,
+      data: {
+        task_id: 'reconnected-backend-task',
+        status: 'running',
+      },
+    };
+  },
+});
+const reconnectScheduler = new schedulerModule.Scheduler(reconnectApi);
+reconnectScheduler.setAutoExpedition(false);
+assert.equal(await reconnectScheduler.start(), true);
+assert.equal(reconnectScheduler.status, 'idle');
+assert.equal(
+  reconnectWebSocketCalls,
+  1,
+  '重连成功后没有恢复任务和日志 WebSocket',
+);
+const reconnectTaskRequest = {
+  type: 'normal_fight',
+  plan_id: 'reconnect-test-plan',
+};
+reconnectScheduler.addTask(
+  '重连后发送任务测试',
+  'normal_fight',
+  reconnectTaskRequest,
+);
+reconnectScheduler.startConsuming();
+await wait(0);
+assert.deepEqual(
+  reconnectedTaskRequests,
+  [reconnectTaskRequest],
+  '重连成功后 GUI 队列任务没有发送到后端',
+);
+assert.equal(reconnectScheduler.status, 'running');
+assert.equal(
+  reconnectScheduler.currentRunningTask?.backendTaskId,
+  'reconnected-backend-task',
+);
+await reconnectScheduler.stop();
+
 // 终点最低战果按 D < C < B < A < S < SS 判断。
 const endpointResultScheduler = new schedulerModule.Scheduler(
   createSchedulerApi(),

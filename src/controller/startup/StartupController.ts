@@ -89,8 +89,8 @@ export class StartupController {
   }
 
   /** 代理: 启动系统 */
-  startSystem(): void {
-    import('./connection.js').then(m => m.startSystem(this.host));
+  startSystem(): Promise<boolean> {
+    return import('./connection.js').then(m => m.startSystem(this.host));
   }
 
   startHeartbeat(): void {

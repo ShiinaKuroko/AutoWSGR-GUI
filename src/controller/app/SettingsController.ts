@@ -23,6 +23,7 @@ export interface SettingsControllerHost {
     currentPlans: readonly LootAutomationPlan[],
   ): Promise<LootAutomationPlan[] | null>;
   reloadShipLibrary(): Promise<void>;
+  ensureSystemConnected(): Promise<boolean>;
 }
 
 export class SettingsController {
@@ -412,6 +413,25 @@ export class SettingsController {
         : await this.gateway.disconnectAdbDevice(serial);
       if (result.success) {
         const connected = action === 'connect';
+        if (connected) {
+          this.host.configView.setAdbStatus(
+            'ADB 在线，正在连接后端',
+            'unknown',
+          );
+          const systemConnected = await this.host.ensureSystemConnected();
+          if (!systemConnected) {
+            this.host.configView.setAdbStatus(
+              'ADB 在线，后端连接失败',
+              'offline',
+            );
+            Logger.warn(`ADB 已连接但后端系统启动失败: ${serial}`);
+            await showAlert(
+              '后端连接失败',
+              'ADB 设备已经在线，但后端仍未连接模拟器。请检查 ADB 地址和后端日志后重试。',
+            );
+            return;
+          }
+        }
         this.host.configView.setAdbStatus(
           connected ? `在线 (${serial})` : '已断开',
           connected ? 'online' : 'offline',

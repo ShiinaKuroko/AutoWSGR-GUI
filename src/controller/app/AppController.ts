@@ -230,6 +230,12 @@ export class AppController {
         ]);
         this.renderMain();
       },
+      ensureSystemConnected: () => {
+        if (this.scheduler.status !== 'not_connected') {
+          return Promise.resolve(true);
+        }
+        return this.startupCtrl?.startSystem() ?? Promise.resolve(false);
+      },
     });
     this.settingsCtrl.bindActions();
 
