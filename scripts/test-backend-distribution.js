@@ -75,6 +75,17 @@ try {
     /Rename "\$INSTDIR\.site-packages-update" "\$INSTDIR\\python\\site-packages"/,
     '写入新前端后必须恢复已有后端依赖',
   );
+  assert.match(installer, /!macro customUnInstall/);
+  assert.match(
+    installer,
+    /\$\{ifNot\} \$\{isUpdated\}/,
+    '覆盖升级调用旧卸载器时不能删除后端依赖',
+  );
+  assert.match(
+    installer,
+    /RMDir \/r "\$INSTDIR\\python\\site-packages"/,
+    '主动卸载时必须删除后端依赖',
+  );
   console.log('alpha backend distribution test passed');
 } finally {
   fs.rmSync(resources, { recursive: true, force: true });

@@ -68,6 +68,14 @@
   BackendEnvPreserved:
 !macroend
 
+; 覆盖升级会调用旧卸载器，此时保留依赖；只有主动卸载才完整清理。
+!macro customUnInstall
+  ${ifNot} ${isUpdated}
+    RMDir /r "$INSTDIR\python\site-packages"
+    RMDir /r "$INSTDIR.site-packages-update"
+  ${endIf}
+!macroend
+
 !macro customInstall
   ; 新前端写入完成后恢复依赖，后端版本仍由首次启动检查更新。
   IfFileExists "$INSTDIR.site-packages-update\*.*" 0 BackendEnvRestored
