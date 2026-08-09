@@ -11,6 +11,9 @@ const {
   executePresetFlow,
 } = require('../dist/src/controller/plan/presetFlow.js');
 const {
+  saveNodeEditorValues,
+} = require('../dist/src/controller/plan/nodeEditor.js');
+const {
   CurrentFleetController,
 } = require('../dist/src/controller/app/CurrentFleetController.js');
 const { ALL_SHIPS } = require('../dist/src/shared/shipCatalog.js');
@@ -215,13 +218,23 @@ const nodeFormationPlan = PlanModel.fromYaml([
   'chapter: 7',
   'map: 4',
   'selected_nodes: [A, B]',
+  'endpoint_nodes: [B]',
+  'result: B',
   'node_defaults:',
   '  formation: 2',
   '  night: false',
+  '  long_missile_support: false',
+  '  proceed: true',
   'node_args:',
+  '  A:',
+  '    night: true',
+  '    long_missile_support: true',
+  '    proceed: true',
   '  B:',
   '    formation: 4',
   '    night: true',
+  '    long_missile_support: true',
+  '    proceed: true',
   '',
 ].join('\n'), 'node-formation.yaml');
 const { req: nodeFormationRequest } = buildPlanQueueRequest(
@@ -233,12 +246,66 @@ assert.deepEqual(nodeFormationRequest.plan.selected_nodes, ['A', 'B', '0']);
 assert.deepEqual(JSON.parse(JSON.stringify(nodeFormationRequest.plan.node_defaults)), {
   formation: 2,
   night: false,
+  long_missile_support: false,
+  proceed: true,
 });
 assert.deepEqual(JSON.parse(JSON.stringify(nodeFormationRequest.plan.node_args)), {
+  A: {
+    night: true,
+    long_missile_support: true,
+    proceed: true,
+  },
   B: {
     formation: 4,
     night: true,
+    long_missile_support: true,
+    proceed: false,
   },
+});
+const endpointRoundTripPlan = PlanModel.fromYaml(
+  nodeFormationPlan.toYaml(),
+  'node-formation-round-trip.yaml',
+);
+assert.equal(endpointRoundTripPlan.data.node_args.B.proceed, false);
+assert.equal(endpointRoundTripPlan.getNodeArgs('B').proceed, false);
+
+const endpointEditorPlan = PlanModel.fromYaml([
+  'chapter: 7',
+  'map: 4',
+  'selected_nodes: [A]',
+  'node_defaults: {formation: 2, proceed: true}',
+  '',
+].join('\n'), 'node-editor-actions.yaml');
+const endpointEditorSaved = saveNodeEditorValues(
+  {
+    collectNodeEditorValues: () => ({
+      enabled: true,
+      isEndpoint: true,
+      result: 'S',
+      formation: 4,
+      night: true,
+      longMissileSupport: true,
+      proceed: true,
+      detour: false,
+      slWhenDetourFails: false,
+      rulesText: '',
+    }),
+    hideNodeEditor: () => {},
+  },
+  endpointEditorPlan,
+  'A',
+);
+assert.equal(endpointEditorSaved, true);
+assert.deepEqual(endpointEditorPlan.data.endpoint_nodes, ['A']);
+assert.equal(endpointEditorPlan.data.result, 'S');
+assert.deepEqual(endpointEditorPlan.data.node_args.A, {
+  formation: 4,
+  night: true,
+  long_missile_support: true,
+  proceed: false,
+  detour: false,
+  SL_when_detour_fails: undefined,
+  enemy_rules: undefined,
 });
 
 let queuedDecisiveTask = null;

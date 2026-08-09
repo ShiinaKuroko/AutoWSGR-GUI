@@ -32,7 +32,7 @@ export function applyPlanNodeOverrides(
     plan.data.selected_nodes,
   );
   req.plan.node_defaults = structuredClone(plan.data.node_defaults ?? {});
-  req.plan.node_args = structuredClone(plan.data.node_args ?? {});
+  req.plan.node_args = plan.getNodeArgsForExecution();
 }
 
 export function buildPlanQueueRequest(

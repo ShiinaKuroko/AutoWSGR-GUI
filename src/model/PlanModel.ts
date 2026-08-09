@@ -246,7 +246,23 @@ export class PlanModel {
   getNodeArgs(nodeId: string): NodeArgs {
     const defaults = this.data.node_defaults ?? {};
     const overrides = this.data.node_args?.[nodeId] ?? {};
-    return { ...defaults, ...overrides };
+    const args = { ...defaults, ...overrides };
+    if (this.data.endpoint_nodes?.includes(nodeId)) {
+      args.proceed = false;
+    }
+    return args;
+  }
+
+  /** 获取任务执行用节点覆盖，确保终点节点不会继续前进。 */
+  getNodeArgsForExecution(): Record<string, NodeArgs> {
+    const nodeArgs = structuredClone(this.data.node_args ?? {});
+    for (const nodeId of this.data.endpoint_nodes ?? []) {
+      nodeArgs[nodeId] = {
+        ...nodeArgs[nodeId],
+        proceed: false,
+      };
+    }
+    return nodeArgs;
   }
 
   /** 该节点是否有自定义参数 (node_args 中存在条目) */
@@ -321,13 +337,14 @@ export class PlanModel {
       delete obj.node_defaults;
     }
 
-    if (this.data.node_args) {
+    const nodeArgs = this.getNodeArgsForExecution();
+    if (Object.keys(nodeArgs).length > 0) {
       const rawNodeArgs = this.rawRoot.node_args;
       const rawMap = rawNodeArgs && typeof rawNodeArgs === 'object' && !Array.isArray(rawNodeArgs)
         ? rawNodeArgs as Record<string, unknown>
         : {};
       const cleaned: Record<string, unknown> = {};
-      for (const [nodeId, args] of Object.entries(this.data.node_args)) {
+      for (const [nodeId, args] of Object.entries(nodeArgs)) {
         const merged = this.mergeNodeArgs(rawMap[nodeId], args);
         if (Object.keys(merged).length > 0) cleaned[nodeId] = merged;
       }

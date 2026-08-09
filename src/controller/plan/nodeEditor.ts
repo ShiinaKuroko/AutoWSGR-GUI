@@ -144,7 +144,7 @@ export function saveNodeEditorValues(
     formation: vals.formation,
     night: vals.night,
     long_missile_support: vals.longMissileSupport,
-    proceed: vals.proceed,
+    proceed: vals.isEndpoint ? false : vals.proceed,
     detour: vals.detour,
     SL_when_detour_fails: vals.slWhenDetourFails || undefined,
     enemy_rules: rules.length > 0 ? rules : undefined,

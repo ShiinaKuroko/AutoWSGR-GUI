@@ -43,6 +43,7 @@ export class NodeEditorView {
   private drawerEl: HTMLElement;
   private enabledInput: HTMLInputElement;
   private currentNodeId: string | null = null;
+  private currentNodeIsTerminal = false;
   private disabledDrafts = new Map<string, NodeEditorValues>();
   private resizeAnimation: Animation | null = null;
 
@@ -64,7 +65,7 @@ export class NodeEditorView {
       this.updateEnabledVisibility(true);
     });
     (document.getElementById('node-edit-endpoint') as HTMLInputElement)
-      .addEventListener('change', () => this.updateEndpointResultVisibility());
+      .addEventListener('change', () => this.updateEndpointControls());
     document.getElementById('btn-node-editor-close')?.addEventListener(
       'click',
       () => this.onClose?.(),
@@ -84,6 +85,7 @@ export class NodeEditorView {
     this.cancelResizeAnimation();
     this.rememberDisabledDraft();
     this.currentNodeId = nodeId;
+    this.currentNodeIsTerminal = args.isTerminal;
     const isCombatNode = !NON_COMBAT_TYPES.has(nodeType);
     const draft = this.disabledDrafts.get(nodeId);
 
@@ -154,19 +156,13 @@ export class NodeEditorView {
       draft?.longMissileSupport ?? args.longMissileSupport;
     (document.getElementById('node-edit-proceed') as HTMLInputElement).checked =
       draft?.proceed ?? args.proceed;
-    const proceedLabel = document.getElementById('node-edit-proceed-label') as HTMLElement;
-    if (args.isTerminal) {
-      proceedLabel.style.display = 'none';
-    } else {
-      proceedLabel.style.display = '';
-    }
     (document.getElementById('node-edit-rules') as HTMLTextAreaElement).value =
       draft?.rulesText ?? args.enemyRules;
 
     this.placeholderEl.style.display = 'none';
     this.editorEl.style.display = '';
     this.updateEnabledVisibility();
-    this.updateEndpointResultVisibility();
+    this.updateEndpointControls();
     this.openDrawer();
   }
 
@@ -174,6 +170,7 @@ export class NodeEditorView {
     this.cancelResizeAnimation();
     this.rememberDisabledDraft();
     this.currentNodeId = null;
+    this.currentNodeIsTerminal = false;
     this.drawerEl.classList.remove('is-open');
     this.drawerEl.setAttribute('aria-hidden', 'true');
     const activeElement = document.activeElement;
@@ -190,6 +187,7 @@ export class NodeEditorView {
   resetDrafts(): void {
     this.disabledDrafts.clear();
     this.currentNodeId = null;
+    this.currentNodeIsTerminal = false;
   }
 
   collectValues(): NodeEditorValues {
@@ -211,14 +209,18 @@ export class NodeEditorView {
     const resultInput = this.editorEl.querySelector<HTMLInputElement>(
       'input[name="node-edit-result"]:checked',
     );
+    const isEndpoint =
+      (document.getElementById('node-edit-endpoint') as HTMLInputElement).checked;
     return {
       enabled: this.enabledInput.checked,
-      isEndpoint: (document.getElementById('node-edit-endpoint') as HTMLInputElement).checked,
+      isEndpoint,
       result: (resultInput?.value || undefined) as BattleResultGrade | undefined,
       formation: Number.parseInt(formationInput?.value ?? '2', 10),
       night: (document.getElementById('node-edit-night') as HTMLInputElement).checked,
       longMissileSupport: (document.getElementById('node-edit-long-missile-support') as HTMLInputElement).checked,
-      proceed: (document.getElementById('node-edit-proceed') as HTMLInputElement).checked,
+      proceed: !isEndpoint
+        && !this.currentNodeIsTerminal
+        && (document.getElementById('node-edit-proceed') as HTMLInputElement).checked,
       detour: (document.getElementById('node-edit-detour') as HTMLInputElement).checked,
       slWhenDetourFails: (document.getElementById('node-edit-sl-when-detour-fails') as HTMLInputElement).checked,
       rulesText: (document.getElementById('node-edit-rules') as HTMLTextAreaElement).value,
@@ -243,7 +245,7 @@ export class NodeEditorView {
         .forEach((element) => {
           element.hidden = hidden;
         });
-      this.updateEndpointResultVisibility();
+      this.updateEndpointControls();
     };
 
     if (
@@ -293,10 +295,20 @@ export class NodeEditorView {
       });
   }
 
-  private updateEndpointResultVisibility(): void {
+  private updateEndpointControls(): void {
     const endpointInput = document.getElementById('node-edit-endpoint') as HTMLInputElement;
     const resultGroup = document.getElementById('node-edit-result-group') as HTMLElement;
     resultGroup.hidden = !this.enabledInput.checked || !endpointInput.checked;
+
+    const proceedInput = document.getElementById('node-edit-proceed') as HTMLInputElement;
+    const proceedLabel = document.getElementById('node-edit-proceed-label') as HTMLElement;
+    const proceedUnavailable = endpointInput.checked || this.currentNodeIsTerminal;
+    if (proceedUnavailable) {
+      proceedInput.checked = false;
+    }
+    proceedInput.disabled = proceedUnavailable;
+    proceedLabel.style.display = this.currentNodeIsTerminal ? 'none' : '';
+    proceedLabel.title = endpointInput.checked ? '终点节点不能继续前进' : '';
   }
 
   private cancelResizeAnimation(): void {
