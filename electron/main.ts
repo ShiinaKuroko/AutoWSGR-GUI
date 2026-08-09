@@ -413,6 +413,9 @@ function sendProgress(msg: string): void {
 if (isPrimaryInstance) initializeApplicationLifecycle();
 
 function initializeApplicationLifecycle(): void {
+  let runtimeShutdownInProgress = false;
+  let runtimeShutdownComplete = false;
+
   app.whenReady().then(async () => {
     let migrationSelection: LegacyMigrationSelection = {
       ...DEFAULT_LEGACY_MIGRATION_SELECTION,
@@ -489,7 +492,30 @@ function initializeApplicationLifecycle(): void {
       ),
       getAppVersion: () => app.getVersion(),
       getUpdateMode: () => guiConfigurationService.updateMode(),
-      stopBackend: stopRuntimeResources,
+      chooseInstallTiming: async (version) => {
+        const options = {
+          type: 'question' as const,
+          title: 'GUI 更新已下载',
+          message: `GUI v${version} 已下载完毕，什么时候更新？`,
+          detail: [
+            '“现在更新”会停止当前脚本、关闭 GUI，安装完成后自动重启。',
+            '“下一次打开”不会中断当前任务，将在正常退出时安装。',
+          ].join('\n'),
+          buttons: ['现在更新', '下一次打开'],
+          defaultId: 1,
+          cancelId: 1,
+          noLink: true,
+        };
+        const mainWindow = windowService.getMainWindow();
+        const result = mainWindow
+          ? await dialog.showMessageBox(mainWindow, options)
+          : await dialog.showMessageBox(options);
+        return result.response === 0 ? 'now' : 'next-launch';
+      },
+      prepareForUpdateInstall: async () => {
+        await stopRuntimeResources();
+        runtimeShutdownComplete = true;
+      },
     });
     windowService.createWindow();
     const migrationNotice = buildLegacyMigrationNotice(
@@ -506,9 +532,6 @@ function initializeApplicationLifecycle(): void {
       }
     });
   });
-
-  let runtimeShutdownInProgress = false;
-  let runtimeShutdownComplete = false;
 
   app.on('before-quit', (event) => {
     windowService.captureWindowBounds();

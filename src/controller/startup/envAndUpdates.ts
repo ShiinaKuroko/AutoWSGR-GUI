@@ -106,23 +106,34 @@ export async function checkForUpdates(
 function initGuiAutoUpdate(bridge: StartupGateway): void {
   if (!bridge.onUpdateStatus) return;
 
+  let lastDownloadMilestone: number | null = null;
   bridge.onUpdateStatus((status) => {
     const updateMode = getUpdateMode(bridge);
     switch (status.status) {
       case 'available':
+        lastDownloadMilestone = null;
         if (updateMode === 'manual') {
           Logger.warn(`发现 GUI 新版本 v${status.version}，当前为手动更新模式，请点击「立即检查更新」后手动下载`);
           break;
         }
         Logger.info(`发现 GUI 新版本 v${status.version}，主进程已开始自动下载增量更新…`);
         break;
-      case 'downloading':
-        if (status.percent != null && status.percent % 25 === 0) {
-          Logger.info(`GUI 更新下载中… ${status.percent}%`);
+      case 'downloading': {
+        const milestone = Math.floor(status.percent / 25) * 25;
+        if (milestone !== lastDownloadMilestone) {
+          lastDownloadMilestone = milestone;
+          Logger.info(`GUI 更新下载中… ${milestone}%`);
         }
         break;
+      }
       case 'downloaded':
-        Logger.info(`GUI v${status.version} 下载完成，将在退出时自动安装`);
+        Logger.info(`GUI v${status.version} 下载完成，等待选择更新时间`);
+        break;
+      case 'deferred':
+        Logger.info(`GUI v${status.version} 将在下次打开前更新，当前任务继续运行`);
+        break;
+      case 'installing':
+        Logger.info(status.message);
         break;
       case 'error':
         Logger.warn(`GUI 更新检查失败: ${status.message || '未知错误'}`);

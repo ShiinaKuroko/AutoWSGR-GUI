@@ -164,8 +164,38 @@ assert.match(
 );
 assert.match(
   updaterSource,
+  /autoUpdater\.autoInstallOnAppQuit\s*=\s*false/,
+  '更新下载完成前不得因退出而自动安装',
+);
+assert.match(
+  updaterSource,
+  /autoUpdater\.on\(\s*['"]update-downloaded['"][\s\S]*autoUpdater\.autoInstallOnAppQuit = true[\s\S]*chooseInstallTiming\(info\.version\)/,
+  '下载完成事件返回前必须注册下次退出安装能力',
+);
+assert.match(
+  updaterSource,
+  /context\.chooseInstallTiming\(version\)[\s\S]*timing === ['"]now['"][\s\S]*installDownloadedUpdate\(\)[\s\S]*autoUpdater\.autoInstallOnAppQuit = true/,
+  '下载完成后必须支持现在更新和下次打开两种选择',
+);
+assert.match(
+  updaterSource,
+  /autoUpdater\.quitAndInstall\(false, true\)/,
+  '现在更新必须安装并重启 GUI',
+);
+assert.match(
+  updaterSource,
   /autoUpdater\.on\(\s*['"]checking-for-update['"]/,
   'GUI 更新检查必须向渲染进程发送检查中状态',
+);
+assert.match(
+  mainSource,
+  /buttons:\s*\[['"]现在更新['"],\s*['"]下一次打开['"]\]/,
+  '更新下载完成后必须让用户选择安装时间',
+);
+assert.match(
+  mainSource,
+  /prepareForUpdateInstall:[\s\S]*await stopRuntimeResources\(\)[\s\S]*runtimeShutdownComplete = true/,
+  '现在更新必须先停止后端和 ADB，再放行安装器退出',
 );
 assert.match(
   mainSource,

@@ -662,7 +662,12 @@ export class ConfigView {
         text = '正在下载更新…';
         break;
       case 'downloaded':
-        text = `v${status.version} 已下载，退出时自动安装`;
+        text = `v${status.version} 已下载，等待选择更新时间`;
+        percent = 100;
+        state = 'complete';
+        break;
+      case 'deferred':
+        text = `v${status.version} 将在下次打开前更新`;
         percent = 100;
         state = 'complete';
         break;

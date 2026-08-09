@@ -517,12 +517,12 @@ export class SettingsController {
         }
         const confirmed = await showConfirm(
           'GUI 更新',
-          `发现 GUI 新版本 v${guiUpdate.version}，是否立即下载？`,
+          `发现 GUI 新版本 v${guiUpdate.version}，是否下载？\n\n下载完成后可选择“现在更新”或“下一次打开”。`,
         );
         if (confirmed) {
           const result = await this.gateway.downloadGuiUpdate();
           if (result.success) {
-            Logger.info(`GUI 更新下载开始: v${guiUpdate.version}`);
+            Logger.info(`GUI 更新下载完成: v${guiUpdate.version}`);
           } else {
             Logger.warn(
               `GUI 更新下载失败: ${result?.message || '未知错误'}`,

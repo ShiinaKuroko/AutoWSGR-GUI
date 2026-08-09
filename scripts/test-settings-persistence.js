@@ -255,6 +255,15 @@ async function runRendererTest(root, tempDirectory) {
   view.setGuiUpdateStatus({ status: 'downloaded', version: '2.0.5-alpha' });
   rendererAssert.equal(updateProgress.dataset.state, 'complete');
   rendererAssert.equal(updatePercent.textContent, '100%');
+  rendererAssert.equal(
+    updateStatus.textContent,
+    'v2.0.5-alpha 已下载，等待选择更新时间',
+  );
+  view.setGuiUpdateStatus({ status: 'deferred', version: '2.0.5-alpha' });
+  rendererAssert.equal(
+    updateStatus.textContent,
+    'v2.0.5-alpha 将在下次打开前更新',
+  );
   const shipLibraryStatus = document.getElementById('ship-library-status');
   view.setShipLibraryStatus(
     '前后端舰名库不一致',

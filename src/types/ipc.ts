@@ -89,6 +89,10 @@ export type GuiUpdateStatus =
       version: string;
     }
   | {
+      status: 'deferred';
+      version: string;
+    }
+  | {
       status: 'installing' | 'error';
       message: string;
     };
