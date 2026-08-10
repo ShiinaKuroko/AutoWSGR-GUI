@@ -9,8 +9,12 @@ import {
 } from '../../shared/lootPlans.js';
 import {
   MAX_NORMAL_FIGHT_DAILY_EXECUTIONS,
-  normalFightDailyLimit,
 } from '../../model/scheduler/NormalFightDailyQuota.js';
+import { LoaderDialog } from '../shared/LoaderDialog';
+import {
+  captureScrollPosition,
+  restoreScrollPosition,
+} from '../shared/scrollPosition';
 import { appendTeamPlanCardContent } from './TeamPlanListUi';
 
 export type BattlePlanLoaderPurpose =
@@ -30,7 +34,7 @@ export interface BattlePlanLoaderCallbacks {
   onSortFieldChange(field: BattlePlanSortField): void;
   onSelectPlan(file: string, source: PlanPresetSource): void;
   onSelectFleet(index: number): void;
-  onAutomationDailyMaxChange(value: number): void;
+  onAutomationDailyMaxChange(value: number): number;
   onAddLootPlan(file: string, source: PlanPresetSource): void;
   onDeleteLootPlan(source: PlanPresetSource, file: string): void;
   onConfirm(): void;
@@ -50,14 +54,19 @@ export interface BattlePlanLoaderViewObject {
   purpose: BattlePlanLoaderPurpose;
   lootPlans: LootAutomationPlan[];
   automationDailyMax: number;
+  fleetSelectionEnabled: boolean;
+  confirmEnabled: boolean;
 }
 
 export class BattlePlanLoaderView {
+  private readonly dialogElement = document.getElementById(
+    'battle-plan-loader',
+  )!;
+  private readonly dialog = new LoaderDialog(this.dialogElement);
   private callbacks: BattlePlanLoaderCallbacks | null = null;
 
   bindActions(callbacks: BattlePlanLoaderCallbacks): void {
     this.callbacks = callbacks;
-    const dialog = document.getElementById('battle-plan-loader');
     document.getElementById('btn-cancel-battle-plan-loader')?.addEventListener(
       'click',
       () => callbacks.onCancel(),
@@ -136,19 +145,15 @@ export class BattlePlanLoaderView {
       'click',
       () => callbacks.onConfirm(),
     );
-    dialog?.addEventListener('click', (event) => {
-      if (event.target === dialog) callbacks.onCancel();
-    });
+    this.dialog.bindDismiss(callbacks.onCancel);
   }
 
   open(): void {
-    const dialog = document.getElementById('battle-plan-loader');
-    if (dialog) dialog.style.display = 'flex';
+    this.dialog.open();
   }
 
   close(): void {
-    const dialog = document.getElementById('battle-plan-loader');
-    if (dialog) dialog.style.display = 'none';
+    this.dialog.close();
   }
 
   resetSearch(): void {
@@ -260,6 +265,7 @@ export class BattlePlanLoaderView {
   render(vo: BattlePlanLoaderViewObject): void {
     const list = document.getElementById('battle-plan-loader-list');
     if (!list) return;
+    const scrollPosition = captureScrollPosition(list);
     list.replaceChildren();
     if (vo.plans.length === 0) {
       const empty = document.createElement('div');
@@ -268,7 +274,12 @@ export class BattlePlanLoaderView {
         ? '未读取到合法的作战配置'
         : '没有符合当前条件的作战配置';
       list.append(empty);
-      this.clearSelection(vo.purpose, vo.lootPlans);
+      this.clearSelection(
+        vo.purpose,
+        vo.lootPlans,
+        vo.confirmEnabled,
+      );
+      restoreScrollPosition(list, scrollPosition);
       return;
     }
 
@@ -333,8 +344,11 @@ export class BattlePlanLoaderView {
         vo.purpose,
         vo.lootPlans,
         vo.automationDailyMax,
+        vo.fleetSelectionEnabled,
+        vo.confirmEnabled,
       );
     }
+    restoreScrollPosition(list, scrollPosition);
   }
 
   private renderPreview(
@@ -343,6 +357,8 @@ export class BattlePlanLoaderView {
     purpose: BattlePlanLoaderPurpose,
     lootPlans: LootAutomationPlan[],
     automationDailyMax: number,
+    fleetSelectionEnabled: boolean,
+    confirmEnabled: boolean,
   ): void {
     const title = document.getElementById('battle-plan-loader-preview-title');
     const badge = document.getElementById('battle-plan-loader-preview-source');
@@ -396,7 +412,7 @@ export class BattlePlanLoaderView {
             plan,
             hasDetails,
             selectedFleetIndex,
-            purpose,
+            fleetSelectionEnabled,
           ),
         ];
         if (purpose === 'loot-automation') {
@@ -408,12 +424,7 @@ export class BattlePlanLoaderView {
       }
     }
     if (confirmButton) {
-      confirmButton.disabled = purpose === 'loot-automation'
-        ? false
-        : (
-        this.requiresFleetSelection(plan, purpose)
-        && selectedFleetIndex === null
-        );
+      confirmButton.disabled = !confirmEnabled;
     }
   }
 
@@ -492,7 +503,7 @@ export class BattlePlanLoaderView {
     input.min = '1';
     input.max = String(MAX_NORMAL_FIGHT_DAILY_EXECUTIONS);
     input.step = '1';
-    input.value = String(normalFightDailyLimit(value));
+    input.value = String(value);
     input.addEventListener('input', () => {
       if (
         input.valueAsNumber >= 1
@@ -502,9 +513,10 @@ export class BattlePlanLoaderView {
       }
     });
     input.addEventListener('change', () => {
-      const normalized = normalFightDailyLimit(input.valueAsNumber);
+      const normalized = this.callbacks?.onAutomationDailyMaxChange(
+        input.valueAsNumber,
+      ) ?? value;
       input.value = String(normalized);
-      this.callbacks?.onAutomationDailyMaxChange(normalized);
     });
     const unit = document.createElement('strong');
     unit.textContent = '次';
@@ -517,7 +529,7 @@ export class BattlePlanLoaderView {
     plan: ManagedBattlePlan,
     hasDetails: boolean,
     selectedFleetIndex: number | null,
-    purpose: BattlePlanLoaderPurpose,
+    fleetSelectionEnabled: boolean,
   ): HTMLElement {
     const section = document.createElement('section');
     section.className = 'battle-plan-preview-section wide';
@@ -536,14 +548,12 @@ export class BattlePlanLoaderView {
     if (plan.fleets.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'battle-plan-preview-empty';
-      empty.textContent = purpose === 'automation'
-        ? '没有可选择的编队，无法用于自动出征'
-        : this.isPickingWithFleet(purpose)
-          ? '未配置编队预设，将使用 YAML 的舰队编号和游戏当前编成'
-          : '未配置编队预设';
+      empty.textContent = fleetSelectionEnabled
+        ? '未配置编队预设，将使用 YAML 的舰队编号和游戏当前编成'
+        : '未配置编队预设';
       list.append(empty);
     } else {
-      const selectable = this.isPickingWithFleet(purpose);
+      const selectable = fleetSelectionEnabled;
       plan.fleets.forEach((fleet, index) => {
         const card = document.createElement(selectable ? 'button' : 'div');
         if (card instanceof HTMLButtonElement) card.type = 'button';
@@ -600,22 +610,31 @@ export class BattlePlanLoaderView {
     const lootLabel = document.createElement('span');
     lootLabel.textContent = '战利品检测';
     const lootValue = document.createElement('strong');
-    lootValue.textContent = hasDetails ? String(plan.lootCountGe) : '重启后显示';
+    lootValue.textContent = hasDetails
+      ? this.stopCountLabel(plan.lootCountGe)
+      : '重启后显示';
     loot.append(lootLabel, lootValue);
     const ship = document.createElement('div');
     const shipLabel = document.createElement('span');
     shipLabel.textContent = '掉落检测';
     const shipValue = document.createElement('strong');
-    shipValue.textContent = hasDetails ? String(plan.shipCountGe) : '重启后显示';
+    shipValue.textContent = hasDetails
+      ? this.stopCountLabel(plan.shipCountGe)
+      : '重启后显示';
     ship.append(shipLabel, shipValue);
     values.append(loot, ship);
     field.append(heading, values);
     return field;
   }
 
+  private stopCountLabel(value: number): string {
+    return value >= 0 ? String(value) : '未开启';
+  }
+
   private clearSelection(
     purpose: BattlePlanLoaderPurpose,
     lootPlans: readonly LootAutomationPlan[],
+    confirmEnabled: boolean,
   ): void {
     const title = document.getElementById('battle-plan-loader-preview-title');
     const badge = document.getElementById('battle-plan-loader-preview-source');
@@ -638,30 +657,8 @@ export class BattlePlanLoaderView {
       }
     }
     if (confirmButton) {
-      confirmButton.disabled = purpose !== 'loot-automation';
+      confirmButton.disabled = !confirmEnabled;
     }
-  }
-
-  private isPickingWithFleet(purpose: BattlePlanLoaderPurpose): boolean {
-    return (
-      purpose === 'queue'
-      || purpose === 'task-list'
-      || purpose === 'automation'
-    );
-  }
-
-  private requiresFleetSelection(
-    plan: ManagedBattlePlan,
-    purpose: BattlePlanLoaderPurpose,
-  ): boolean {
-    if (plan.kind === 'preset') return false;
-    return (
-      purpose === 'automation'
-      || (
-        this.isPickingWithFleet(purpose)
-        && plan.fleets.length > 0
-      )
-    );
   }
 
   private sameBattlePlan(

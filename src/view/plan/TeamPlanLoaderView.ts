@@ -11,6 +11,7 @@ import {
   showAlert,
   showConfirm,
 } from '../shared/DialogHelper';
+import { LoaderDialog } from '../shared/LoaderDialog';
 import {
   captureScrollPosition,
   restoreScrollPosition,
@@ -41,6 +42,7 @@ export interface TeamPlanLoaderViewHost {
 
 export class TeamPlanLoaderView {
   private readonly dialog = document.getElementById('fleet-team-loader')!;
+  private readonly modal = new LoaderDialog(this.dialog);
   private readonly search = document.getElementById(
     'fleet-team-loader-search',
   ) as HTMLInputElement;
@@ -104,12 +106,12 @@ export class TeamPlanLoaderView {
       }
       return;
     }
-    this.dialog.style.display = 'flex';
+    this.modal.open();
     this.search.focus();
   }
 
   close(): void {
-    this.dialog.style.display = 'none';
+    this.modal.close();
   }
 
   private bindActions(): void {
@@ -165,12 +167,7 @@ export class TeamPlanLoaderView {
       this.selectedPosition = position;
       this.renderPreview();
     });
-    this.dialog.addEventListener('click', event => {
-      if (event.target === this.dialog) this.close();
-    });
-    document.addEventListener('keydown', event => {
-      if (event.key === 'Escape') this.close();
-    });
+    this.modal.bindDismiss(() => this.close());
   }
 
   private async refresh(): Promise<void> {

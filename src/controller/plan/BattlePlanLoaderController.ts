@@ -77,6 +77,7 @@ export class BattlePlanLoaderController {
       onSelectFleet: (index) => this.selectFleet(index),
       onAutomationDailyMaxChange: (value) => {
         this.automationDailyMax = normalFightDailyLimit(value);
+        return this.automationDailyMax;
       },
       onAddLootPlan: (file, source) => this.addLootPlan(file, source),
       onDeleteLootPlan: (source, file) => {
@@ -374,6 +375,10 @@ export class BattlePlanLoaderController {
       this.resetFleetSelection(this.selectedPlan);
       this.resetAutomationDailyMax(this.selectedPlan);
     }
+    const fleetSelectionEnabled = this.isPickingWithFleet();
+    const requiresFleetSelection = this.selectedPlan
+      ? this.requiresFleetSelection(this.selectedPlan)
+      : false;
     this.view.render({
       plans: visiblePlans,
       totalPlanCount: this.plans.length,
@@ -382,6 +387,17 @@ export class BattlePlanLoaderController {
       purpose: this.purpose,
       lootPlans: this.lootPlanDraft,
       automationDailyMax: this.automationDailyMax,
+      fleetSelectionEnabled,
+      confirmEnabled: (
+        this.purpose === 'loot-automation'
+        || (
+          this.selectedPlan !== null
+          && (
+            !requiresFleetSelection
+            || this.selectedFleetIndex !== null
+          )
+        )
+      ),
     });
   }
 
@@ -533,13 +549,7 @@ export class BattlePlanLoaderController {
 
   private requiresFleetSelection(plan: ManagedBattlePlan): boolean {
     if (plan.kind === 'preset') return false;
-    return (
-      this.purpose === 'automation'
-      || (
-        this.isPickingWithFleet()
-        && plan.fleets.length > 0
-      )
-    );
+    return this.isPickingWithFleet() && plan.fleets.length > 0;
   }
 
   private samePlan(

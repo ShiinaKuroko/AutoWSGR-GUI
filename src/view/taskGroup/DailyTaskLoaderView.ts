@@ -4,6 +4,11 @@ import type {
   DailyPlanType,
   ManagedDailyPlan,
 } from '../../types/ipc.js';
+import { LoaderDialog } from '../shared/LoaderDialog';
+import {
+  captureScrollPosition,
+  restoreScrollPosition,
+} from '../shared/scrollPosition';
 
 export interface DailyTaskLoaderViewActions {
   onClose(): void;
@@ -25,6 +30,7 @@ export class DailyTaskLoaderView {
   private readonly status: HTMLElement;
   private readonly addToList: HTMLButtonElement;
   private readonly addToQueue: HTMLButtonElement;
+  private readonly modal: LoaderDialog;
 
   constructor() {
     this.overlay = document.getElementById('daily-task-loader')!;
@@ -36,6 +42,7 @@ export class DailyTaskLoaderView {
     this.addToQueue = document.getElementById(
       'btn-daily-task-add-queue',
     ) as HTMLButtonElement;
+    this.modal = new LoaderDialog(this.overlay);
   }
 
   bindActions(actions: DailyTaskLoaderViewActions): void {
@@ -43,9 +50,7 @@ export class DailyTaskLoaderView {
       ?.addEventListener('click', actions.onClose);
     this.addToList.addEventListener('click', actions.onAddToList);
     this.addToQueue.addEventListener('click', actions.onAddToQueue);
-    this.overlay.addEventListener('click', (event) => {
-      if (event.target === this.overlay) actions.onClose();
-    });
+    this.modal.bindDismiss(actions.onClose);
     this.overlay.querySelectorAll<HTMLButtonElement>(
       '[data-daily-task-tab]',
     ).forEach((button) => {
@@ -61,11 +66,11 @@ export class DailyTaskLoaderView {
   private actions: DailyTaskLoaderViewActions | null = null;
 
   open(): void {
-    this.overlay.style.display = 'flex';
+    this.modal.open();
   }
 
   close(): void {
-    this.overlay.style.display = 'none';
+    this.modal.close();
   }
 
   setStatus(message: string): void {
@@ -87,6 +92,7 @@ export class DailyTaskLoaderView {
       );
     });
 
+    const scrollPosition = captureScrollPosition(this.list);
     this.list.innerHTML = '';
     const visible = plans.filter(plan => plan.taskType === activeType);
     if (visible.length === 0) {
@@ -99,6 +105,7 @@ export class DailyTaskLoaderView {
         this.list.appendChild(this.createCard(plan, selected))
       ));
     }
+    restoreScrollPosition(this.list, scrollPosition);
     this.addToList.disabled = selected === null;
     this.addToQueue.disabled = selected === null;
   }

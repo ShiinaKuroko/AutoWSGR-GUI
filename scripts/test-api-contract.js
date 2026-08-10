@@ -54,6 +54,10 @@ function buildFleetContractCase(name, sourceYaml) {
   };
 }
 
+function buildPlanRequest(plan, fileName) {
+  return buildPlanQueueRequest({}, plan, fileName).req;
+}
+
 function runBackendFleetContract(cases) {
   const projectRoot = path.resolve(__dirname, '..');
   const backendRoot = path.resolve(
@@ -307,6 +311,23 @@ assert.deepEqual(JSON.parse(JSON.stringify(nodeFormationRequest.plan.node_args))
     proceed: false,
   },
 });
+
+const weekly92File = 'bettle-周常-9-2.yaml';
+const weekly92Yaml = fs.readFileSync(path.join(
+  __dirname,
+  '..',
+  'resource',
+  'system_battle_plans',
+  weekly92File,
+), 'utf8');
+const weekly92Plan = PlanModel.fromYaml(weekly92Yaml, weekly92File);
+const legacySlPlan = PlanModel.fromYaml(
+  weekly92Yaml.replaceAll('SL_when_detour_fails', 'sl_when_detour_fails'),
+  `legacy-${weekly92File}`,
+);
+const weekly92Request = buildPlanRequest(weekly92Plan, weekly92File);
+const legacySlRequest = buildPlanRequest(legacySlPlan, `legacy-${weekly92File}`);
+
 const endpointRoundTripPlan = PlanModel.fromYaml(
   nodeFormationPlan.toYaml(),
   'node-formation-round-trip.yaml',
@@ -331,7 +352,7 @@ const endpointEditorSaved = saveNodeEditorValues(
       night: true,
       longMissileSupport: true,
       proceed: true,
-      detour: false,
+      detour: true,
       slWhenDetourFails: false,
       rulesText: '',
     }),
@@ -348,10 +369,15 @@ assert.deepEqual(endpointEditorPlan.data.node_args.A, {
   night: true,
   long_missile_support: true,
   proceed: false,
-  detour: false,
-  SL_when_detour_fails: undefined,
+  detour: true,
+  SL_when_detour_fails: false,
   enemy_rules: undefined,
 });
+const endpointEditorRequest = buildPlanRequest(endpointEditorPlan, 'node-editor-actions.yaml');
+assert.equal(
+  endpointEditorRequest.plan.node_args.A.SL_when_detour_fails,
+  false,
+);
 
 let queuedDecisiveTask = null;
 const decisivePresetState = {
@@ -624,4 +650,30 @@ assert.equal(relaxedApiRule.candidates[1].relaxed, true);
 assert.equal(backendContracts[4].api[0].primary.relaxed, true);
 assert.equal(backendContracts[4].api[0].candidates[0].relaxed, false);
 assert.equal(backendContracts[4].api[0].candidates[1].relaxed, true);
+const backendNodeContracts = runBackendFleetContract([
+  ['generated-node-editor', endpointEditorRequest],
+  ['legacy-lowercase-sl', legacySlRequest],
+  ['system-weekly-9-2', weekly92Request],
+].map(([name, request]) => ({
+  name,
+  node_contract: true,
+  request,
+})));
+assert.equal(backendNodeContracts.length, 3);
+const backendNodeContractsByName = Object.fromEntries(
+  backendNodeContracts.map(contract => [contract.name, contract]),
+);
+assert.equal(
+  backendNodeContractsByName['generated-node-editor']
+    .node_decisions.nodes.A,
+  false,
+);
+for (const name of ['legacy-lowercase-sl', 'system-weekly-9-2']) {
+  const decisions = backendNodeContractsByName[name].node_decisions;
+  assert.equal(decisions.default, true);
+  assert.equal(
+    Object.values(decisions.nodes).every(value => value === true),
+    true,
+  );
+}
 console.log('GUI/AutoWSGR API contract tests passed');

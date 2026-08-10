@@ -241,20 +241,23 @@ export class SettingsController {
         throw new Error(result?.error || '无法读取所选出征计划');
       }
       const fleetPresetIndex = selected.fleetPresetIndex;
-      if (fleetPresetIndex === undefined) {
-        throw new Error('自动出征计划必须选择使用舰队');
+      const fleetName = fleetPresetIndex === undefined
+        ? ''
+        : selected.plan.fleets[fleetPresetIndex]?.name;
+      if (fleetPresetIndex !== undefined && !fleetName) {
+        throw new Error('所选使用舰队不存在');
       }
-      const fleetName = selected.plan.fleets[fleetPresetIndex]?.name;
-      if (!fleetName) throw new Error('所选使用舰队不存在');
       const task: NormalFightTaskConfig = {
         name: selected.plan.file,
         source: selected.plan.source,
-        fleet_preset_index: fleetPresetIndex,
+        ...(fleetPresetIndex === undefined
+          ? {}
+          : { fleet_preset_index: fleetPresetIndex }),
         times: normalFightDailyLimit(selected.dailyMaxExecutions),
       };
       this.host.configView.setNormalFightPlan(
         task,
-        fleetName,
+        fleetName ?? '',
         this.host.getNormalFightRemaining(task),
       );
     } catch (error) {

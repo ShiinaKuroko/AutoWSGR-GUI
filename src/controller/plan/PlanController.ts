@@ -222,7 +222,7 @@ export class PlanController {
         proceed: args.proceed ?? true,
         detour: args.detour ?? false,
         canDetour,
-        slWhenDetourFails: args.SL_when_detour_fails ?? false,
+        slWhenDetourFails: args.SL_when_detour_fails ?? true,
         isEndpoint,
         result: this.currentPlan.data.result,
         isTerminal,

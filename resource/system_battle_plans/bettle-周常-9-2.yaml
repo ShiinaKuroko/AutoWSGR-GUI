@@ -8,11 +8,11 @@ fight_condition: 1
 repair_mode: 1
 node_defaults: {formation: 2, night: false, proceed: true}
 node_args:
-  A: {sl_when_detour_fails: true, detour: true}
-  D: {sl_when_detour_fails: true, detour: true}
-  G: {sl_when_detour_fails: true, detour: true}
-  H: {sl_when_detour_fails: true, detour: true}
-  M: {sl_when_detour_fails: true, detour: true}
+  A: {SL_when_detour_fails: true, detour: true}
+  D: {SL_when_detour_fails: true, detour: true}
+  G: {SL_when_detour_fails: true, detour: true}
+  H: {SL_when_detour_fails: true, detour: true}
+  M: {SL_when_detour_fails: true, detour: true}
   O: {formation: 4, night: true, long_missile_support: false, proceed: true, detour: false}
 times: 3
 fleet_id: 3

@@ -451,6 +451,9 @@ function testUserDataMigration() {
     [
       'chapter: 1',
       'map: 2',
+      'node_args:',
+      '  A: {detour: true, SL_when_detour_fails: null, sl_when_detour_fails: false}',
+      '  B: {detour: true, sl_when_detour_fails: true}',
       'fleet_presets:',
       '  - name: Legacy Team',
       '    ships:',
@@ -710,10 +713,19 @@ function testUserDataMigration() {
     )),
     false,
   );
+  const migratedPlan = yaml.load(fs.readFileSync(migratedPlanPath, 'utf8'));
   assert.deepEqual(
-    yaml.load(fs.readFileSync(migratedPlanPath, 'utf8')).fleet_presets,
+    migratedPlan.fleet_presets,
     [{ name: 'Legacy Team' }],
   );
+  assert.deepEqual(migratedPlan.node_args.A, {
+    detour: true,
+    SL_when_detour_fails: false,
+  });
+  assert.deepEqual(migratedPlan.node_args.B, {
+    detour: true,
+    SL_when_detour_fails: true,
+  });
   assert.deepEqual(
     yaml.load(fs.readFileSync(migratedTeamPath, 'utf8')).ships,
     [

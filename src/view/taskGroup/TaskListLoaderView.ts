@@ -3,6 +3,7 @@ import {
   captureScrollPosition,
   restoreScrollPosition,
 } from '../shared/scrollPosition';
+import { LoaderDialog } from '../shared/LoaderDialog';
 
 export interface TaskListLoaderGroupViewObject {
   name: string;
@@ -41,6 +42,7 @@ export class TaskListLoaderView {
   private readonly previewTitle: HTMLElement;
   private readonly preview: HTMLElement;
   private readonly confirmButton: HTMLButtonElement;
+  private readonly modal: LoaderDialog;
   private actions: TaskListLoaderViewActions | null = null;
   private draggedIndex: number | null = null;
 
@@ -55,6 +57,7 @@ export class TaskListLoaderView {
     this.confirmButton = document.getElementById(
       'btn-confirm-task-list-loader',
     ) as HTMLButtonElement;
+    this.modal = new LoaderDialog(this.dialog);
   }
 
   bindActions(actions: TaskListLoaderViewActions): void {
@@ -62,25 +65,20 @@ export class TaskListLoaderView {
     document.getElementById('btn-cancel-task-list-loader')
       ?.addEventListener('click', actions.onClose);
     this.confirmButton.addEventListener('click', actions.onConfirm);
-    this.dialog.addEventListener('click', (event) => {
-      if (event.target === this.dialog) actions.onClose();
-    });
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && this.isOpen()) actions.onClose();
-    });
+    this.modal.bindDismiss(actions.onClose);
   }
 
   open(): void {
-    this.dialog.style.display = 'flex';
+    this.modal.open();
   }
 
   close(): void {
-    this.dialog.style.display = 'none';
+    this.modal.close();
     this.draggedIndex = null;
   }
 
   isOpen(): boolean {
-    return this.dialog.style.display !== 'none';
+    return this.modal.isOpen();
   }
 
   render(viewObject: TaskListLoaderViewObject): void {

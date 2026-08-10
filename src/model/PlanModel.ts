@@ -4,6 +4,7 @@
  * 负责从 YAML 文件解析战斗方案，并提供节点参数的查询与合并。
  */
 import { yamlCodec } from '../adapter/index.js';
+import { normalizeLegacyNodeDecisionFields } from '../shared/nodeDecision.js';
 import type {
   PlanData,
   NodeArgs,
@@ -397,6 +398,7 @@ export class PlanModel {
       'proceed',
       'detour',
       'SL_when_detour_fails',
+      'sl_when_detour_fails',
       'enemy_rules',
       'proceed_stop',
     ];
@@ -635,7 +637,9 @@ export class PlanModel {
 
   private static normalizeNodeArgs(args: NodeArgs | undefined): NodeArgs | undefined {
     if (!args) return undefined;
-    const normalized: NodeArgs = { ...args };
+    const normalized = normalizeLegacyNodeDecisionFields(
+      args as NodeArgs & Record<string, unknown>,
+    );
     normalized.enemy_rules = PlanModel.normalizeEnemyRules(args.enemy_rules);
     normalized.enemy_formation_rules = PlanModel.normalizeEnemyRules(
       args.enemy_formation_rules,

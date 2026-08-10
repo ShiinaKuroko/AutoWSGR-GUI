@@ -10,8 +10,8 @@ node_defaults: {formation: 2, night: false, proceed: true}
 node_args:
   M: {formation: 4, night: true, long_missile_support: false, proceed: true, detour: false}
 times: 3
-result: S
 fleet_id: 3
+result: S
 fleet_presets:
   - name: 大淀85AIII队
     ships:

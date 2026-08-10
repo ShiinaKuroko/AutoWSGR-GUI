@@ -3,6 +3,9 @@
  */
 import * as yaml from 'js-yaml';
 import {
+  normalizeLegacyNodeDecisionFields,
+} from '../../src/shared/nodeDecision';
+import {
   type PlanPresetSource,
   TeamPlanCodec,
   type UserTeamPlan,
@@ -76,19 +79,27 @@ export class CombatPlanCodec {
     allowMissingReferences = false,
   ): SplitCombatPlan {
     this.requireMapCoordinates(root);
-    if (root.fleet_presets === undefined) {
+    const normalizedRoot = structuredClone(root);
+    if (this.isPlainObject(normalizedRoot.node_args)) {
+      for (const [nodeId, node] of Object.entries(normalizedRoot.node_args)) {
+        if (!this.isPlainObject(node)) continue;
+        normalizedRoot.node_args[nodeId] =
+          normalizeLegacyNodeDecisionFields(node);
+      }
+    }
+    if (normalizedRoot.fleet_presets === undefined) {
       return {
-        mapRoot: structuredClone(root),
+        mapRoot: normalizedRoot,
         teams: [],
       };
     }
-    if (!Array.isArray(root.fleet_presets)) {
+    if (!Array.isArray(normalizedRoot.fleet_presets)) {
       throw new Error('fleet_presets 必须是列表');
     }
 
     const names = new Set<string>();
     const teams: UserTeamPlan[] = [];
-    const references = root.fleet_presets.map((rawPreset, index) => {
+    const references = normalizedRoot.fleet_presets.map((rawPreset, index) => {
       if (!this.isPlainObject(rawPreset)) {
         throw new Error(`fleet_presets[${index}] 必须是对象`);
       }
@@ -124,7 +135,7 @@ export class CombatPlanCodec {
 
     return {
       mapRoot: {
-        ...structuredClone(root),
+        ...normalizedRoot,
         fleet_presets: references,
       },
       teams,

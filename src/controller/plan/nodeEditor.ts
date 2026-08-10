@@ -146,7 +146,7 @@ export function saveNodeEditorValues(
     long_missile_support: vals.longMissileSupport,
     proceed: vals.isEndpoint ? false : vals.proceed,
     detour: vals.detour,
-    SL_when_detour_fails: vals.slWhenDetourFails || undefined,
+    SL_when_detour_fails: vals.slWhenDetourFails,
     enemy_rules: rules.length > 0 ? rules : undefined,
   };
 

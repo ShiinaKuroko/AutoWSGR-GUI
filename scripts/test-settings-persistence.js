@@ -573,7 +573,21 @@ async function runRendererTest(root, tempDirectory) {
     emptyTaskGroupButton,
     '队列管理浮窗缺少空任务组',
   );
+  const taskGroupList = document.getElementById('task-list-loader-groups');
+  taskGroupList.style.height = '44px';
+  taskGroupList.style.flex = '0 0 44px';
+  taskGroupList.scrollTop = 20;
+  const taskGroupScrollTop = taskGroupList.scrollTop;
+  rendererAssert.ok(
+    taskGroupScrollTop > 0,
+    '计划组滚动测试未形成真实滚动区域',
+  );
   emptyTaskGroupButton.click();
+  rendererAssert.equal(
+    taskGroupList.scrollTop,
+    taskGroupScrollTop,
+    '切换计划组后左侧滚动位置不得重置',
+  );
   rendererAssert.equal(
     document.getElementById('task-list-loader-preview-title')
       ?.textContent,
@@ -764,8 +778,23 @@ async function runRendererTest(root, tempDirectory) {
     document.getElementById('generic-prompt-message')?.textContent ?? '',
     /周常 8-2/,
   );
-  document.getElementById('generic-prompt-cancel')?.click();
+  document.getElementById('generic-prompt-ok')?.dispatchEvent(
+    new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+    }),
+  );
   await Promise.resolve();
+  rendererAssert.equal(
+    document.getElementById('generic-prompt')?.style.display,
+    'none',
+    'Escape 必须关闭最上层确认框',
+  );
+  rendererAssert.equal(
+    document.getElementById('battle-plan-loader')?.style.display,
+    'flex',
+    'Escape 关闭确认框时不得同时关闭底层计划浮窗',
+  );
   rendererAssert.equal(
     document.querySelectorAll('.loot-plan-list-preview-card').length,
     2,
@@ -850,15 +879,132 @@ async function runRendererTest(root, tempDirectory) {
     '取消浮窗不应回填列表草稿',
   );
 
-  for (const plan of managedBattlePlans) {
-    plan.fleets = [{
-      name: `${plan.name}舰队`,
-      source: plan.source,
-      primaryCount: 6,
-      backupCount: 0,
-    }];
-    plan.fleetCount = 1;
-  }
+  const noFleetPlan = managedBattlePlans[0];
+  const fleetPlan = managedBattlePlans[1];
+  noFleetPlan.modifiedAt = 3;
+  noFleetPlan.lootCountGe = -1;
+  noFleetPlan.shipCountGe = -1;
+  fleetPlan.fleets = [{
+    name: `${fleetPlan.name}舰队`,
+    source: fleetPlan.source,
+    primaryCount: 6,
+    backupCount: 0,
+  }];
+  fleetPlan.fleetCount = 1;
+  fleetPlan.lootCountGe = -1;
+  fleetPlan.shipCountGe = -1;
+  const taskListPlanPromise = loaderController.pick('task-list');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const findPlanCard = (file) => (
+    Array.from(
+      document.querySelectorAll('button[data-battle-plan-file]'),
+    ).find(button => button.dataset.battlePlanFile === file)
+  );
+  rendererAssert.equal(
+    document.getElementById('battle-plan-loader-title')?.textContent,
+    '添加计划到任务列表',
+    '任务列表入口没有打开共用的计划加载浮窗',
+  );
+  rendererAssert.deepStrictEqual(
+    Array.from(
+      document.querySelectorAll(
+        '.battle-plan-preview-stop-values strong',
+      ),
+    ).map(element => element.textContent),
+    ['未开启', '未开启'],
+    '任务列表浮窗中未开启的停止检测不得显示为 -1',
+  );
+  rendererAssert.equal(
+    document.querySelector(
+      '.battle-plan-preview-fleet-list .battle-plan-preview-empty',
+    )?.textContent,
+    '未配置编队预设，将使用 YAML 的舰队编号和游戏当前编成',
+    '任务列表浮窗的无编队提示不正确',
+  );
+  const battlePlanList = document.getElementById(
+    'battle-plan-loader-list',
+  );
+  battlePlanList.style.height = '80px';
+  battlePlanList.style.maxHeight = '80px';
+  battlePlanList.style.flex = '0 0 80px';
+  rendererAssert.ok(
+    battlePlanList.scrollHeight > battlePlanList.clientHeight,
+    '滚动位置测试必须构造真实可滚动的任务列表',
+  );
+  const requestedScrollTop = Math.min(
+    41,
+    battlePlanList.scrollHeight - battlePlanList.clientHeight,
+  );
+  battlePlanList.scrollTop = requestedScrollTop;
+  const preservedScrollTop = battlePlanList.scrollTop;
+  rendererAssert.ok(
+    preservedScrollTop > 0,
+    '滚动位置测试未能设置非零滚动位置',
+  );
+  findPlanCard(fleetPlan.file)?.click();
+  rendererAssert.equal(
+    battlePlanList.scrollTop,
+    preservedScrollTop,
+    '任务列表浮窗选择任务后左侧滚动位置不得重置',
+  );
+  findPlanCard(noFleetPlan.file)?.click();
+  rendererAssert.equal(
+    document.getElementById('btn-confirm-battle-plan-loader')?.disabled,
+    false,
+    '任务列表浮窗必须允许提交没有关联编队的计划',
+  );
+  document.getElementById('btn-confirm-battle-plan-loader')?.click();
+  const pickedTaskListPlan = await taskListPlanPromise;
+  rendererAssert.equal(
+    pickedTaskListPlan?.plan.file,
+    noFleetPlan.file,
+    '任务列表浮窗没有返回所选的无编队计划',
+  );
+  rendererAssert.equal(
+    pickedTaskListPlan?.fleetPresetIndex,
+    undefined,
+    '无编队计划不应返回舰队索引',
+  );
+
+  const noFleetAutomationPromise = loaderController.pick(
+    'automation',
+    {
+      name: noFleetPlan.file,
+      source: noFleetPlan.source,
+      times: 7,
+    },
+  );
+  await new Promise(resolve => setTimeout(resolve, 0));
+  rendererAssert.equal(
+    findPlanCard(noFleetPlan.file)?.disabled,
+    false,
+    '自动任务浮窗不得禁用没有关联编队的计划',
+  );
+  rendererAssert.equal(
+    document.getElementById('btn-confirm-battle-plan-loader')?.disabled,
+    false,
+    '自动任务浮窗必须允许提交没有关联编队的计划',
+  );
+  rendererAssert.equal(
+    document.querySelector(
+      '.battle-plan-preview-fleet-list .battle-plan-preview-empty',
+    )?.textContent,
+    '未配置编队预设，将使用 YAML 的舰队编号和游戏当前编成',
+    '自动任务浮窗不应提示无编队计划无法提交',
+  );
+  document.getElementById('btn-confirm-battle-plan-loader')?.click();
+  const pickedNoFleetAutomation = await noFleetAutomationPromise;
+  rendererAssert.equal(
+    pickedNoFleetAutomation?.plan.file,
+    noFleetPlan.file,
+    '自动任务浮窗没有返回所选的无编队计划',
+  );
+  rendererAssert.equal(
+    pickedNoFleetAutomation?.fleetPresetIndex,
+    undefined,
+    '无编队自动任务不应返回舰队索引',
+  );
+
   const pickedAutomationPlanPromise = loaderController.pick(
     'automation',
     {
@@ -920,6 +1066,11 @@ async function runRendererTest(root, tempDirectory) {
     plan.source === 'user'
     && plan.file === 'bettle-用户胖次测试.yaml'
   ));
+  let automationSelection = {
+    plan: selectedManagedPlan,
+    fleetPresetIndex: 0,
+    dailyMaxExecutions: 7,
+  };
   const automationSettingsController = new SettingsController(
     {
       configView: {
@@ -928,11 +1079,7 @@ async function runRendererTest(root, tempDirectory) {
           savedAutomationTask = task;
         },
       },
-      pickAutomationPlan: async () => ({
-        plan: selectedManagedPlan,
-        fleetPresetIndex: 0,
-        dailyMaxExecutions: 7,
-      }),
+      pickAutomationPlan: async () => automationSelection,
       getNormalFightRemaining: () => 7,
     },
     {
@@ -952,6 +1099,21 @@ async function runRendererTest(root, tempDirectory) {
       times: 7,
     },
     '自动出征配置必须保存受管计划来源和文件名，不得保存物理路径',
+  );
+  automationSelection = {
+    plan: noFleetPlan,
+    dailyMaxExecutions: 6,
+  };
+  savedAutomationTask = null;
+  await automationSettingsController.selectAutomationPlan();
+  rendererAssert.deepEqual(
+    savedAutomationTask,
+    {
+      name: noFleetPlan.file,
+      source: noFleetPlan.source,
+      times: 6,
+    },
+    '无关联编队的自动出征计划不得强制保存编队索引',
   );
 
   const globalScrollButtonRule = Array.from(document.styleSheets)

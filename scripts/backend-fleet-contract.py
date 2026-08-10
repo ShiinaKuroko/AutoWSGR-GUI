@@ -8,7 +8,7 @@ path supplied on the command line.
 The three inputs pass through their production boundaries:
 1. Original YAML goes through CombatPlan.from_yaml().
 2. GUI YAML goes through CombatPlan.from_yaml().
-3. HTTP JSON goes through NormalFightRequest and build_fleet_selection().
+3. HTTP JSON goes through NormalFightRequest and backend serializers.
 
 Only canonical FleetSlotRule data is written to stdout. Backend logs remain on
 stderr, so the Node.js caller can parse the result as one JSON document.
@@ -55,6 +55,17 @@ def _plan_contract(plan: Any) -> list[dict[str, Any]]:
     return [_slot_contract(slot) for slot in plan.fleet_presets[0].slots]
 
 
+def _node_contract(plan: Any) -> dict[str, Any]:
+    """Return final backend detour-failure decisions for every node."""
+    return {
+        'default': plan.default_node.SL_when_detour_fails,
+        'nodes': {
+            node: decision.SL_when_detour_fails
+            for node, decision in plan.nodes.items()
+        },
+    }
+
+
 def main() -> None:
     """Load contract cases from stdin and write backend results to stdout."""
     if len(sys.argv) != 2:
@@ -74,15 +85,20 @@ def main() -> None:
     with TemporaryDirectory(prefix='autowsgr-gui-contract-') as temp:
         temp_root = Path(temp)
         for index, case in enumerate(cases):
-            source_path = temp_root / f'{index}-source.yaml'
-            gui_path = temp_root / f'{index}-gui.yaml'
-            source_path.write_text(case['source_yaml'], encoding='utf-8')
-            gui_path.write_text(case['gui_yaml'], encoding='utf-8')
-
             request = NormalFightRequest.model_validate(case['request'])
             if request.plan is None:
                 raise AssertionError('contract request has no plan')
             api_plan = build_combat_plan(request.plan)
+            if case.get('node_contract'):
+                results.append({
+                    'name': case['name'],
+                    'node_decisions': _node_contract(api_plan),
+                })
+                continue
+            source_path = temp_root / f'{index}-source.yaml'
+            gui_path = temp_root / f'{index}-gui.yaml'
+            source_path.write_text(case['source_yaml'], encoding='utf-8')
+            gui_path.write_text(case['gui_yaml'], encoding='utf-8')
             selection = build_fleet_selection(api_plan, request.plan)
             if selection.slot_rules is None:
                 raise AssertionError('contract request produced no fleet rules')

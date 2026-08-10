@@ -54,6 +54,17 @@ export function showWarningNotice(message: string): void {
   showNotice(message, true);
 }
 
+/** Escape 只关闭当前顶层通用对话框，不继续传递到底层浮窗。 */
+function closeDialogOnEscape(
+  event: KeyboardEvent,
+  close: () => void,
+): void {
+  if (event.key !== 'Escape') return;
+  event.preventDefault();
+  event.stopPropagation();
+  close();
+}
+
 /** 弹出输入框，返回用户输入的字符串，取消返回 null */
 export function showPrompt(
   title: string,
@@ -84,7 +95,7 @@ export function showPrompt(
       overlay.style.display = 'none';
       okBtn.removeEventListener('click', onOk);
       cancelBtn.removeEventListener('click', onCancel);
-      inputEl.removeEventListener('keydown', onKey);
+      overlay.removeEventListener('keydown', onKey);
     };
     const onOk = () => {
       cleanup();
@@ -95,12 +106,15 @@ export function showPrompt(
       resolve(null);
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Enter') onOk();
-      if (event.key === 'Escape') onCancel();
+      if (event.key === 'Enter' && event.target === inputEl) {
+        onOk();
+        return;
+      }
+      closeDialogOnEscape(event, onCancel);
     };
     okBtn.addEventListener('click', onOk);
     cancelBtn.addEventListener('click', onCancel);
-    inputEl.addEventListener('keydown', onKey);
+    overlay.addEventListener('keydown', onKey);
   });
 }
 
@@ -128,6 +142,7 @@ export function showConfirm(title: string, message = ''): Promise<boolean> {
       overlay.style.display = 'none';
       okBtn.removeEventListener('click', onOk);
       cancelBtn.removeEventListener('click', onCancel);
+      overlay.removeEventListener('keydown', onKey);
     };
     const onOk = () => {
       cleanup();
@@ -137,8 +152,12 @@ export function showConfirm(title: string, message = ''): Promise<boolean> {
       cleanup();
       resolve(false);
     };
+    const onKey = (event: KeyboardEvent) => {
+      closeDialogOnEscape(event, onCancel);
+    };
     okBtn.addEventListener('click', onOk);
     cancelBtn.addEventListener('click', onCancel);
+    overlay.addEventListener('keydown', onKey);
   });
 }
 
@@ -165,11 +184,16 @@ export function showAlert(title: string, message = ''): Promise<void> {
     const cleanup = () => {
       overlay.style.display = 'none';
       okBtn.removeEventListener('click', onOk);
+      overlay.removeEventListener('keydown', onKey);
     };
     const onOk = () => {
       cleanup();
       resolve();
     };
+    const onKey = (event: KeyboardEvent) => {
+      closeDialogOnEscape(event, onOk);
+    };
     okBtn.addEventListener('click', onOk);
+    overlay.addEventListener('keydown', onKey);
   });
 }
