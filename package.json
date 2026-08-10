@@ -1,6 +1,6 @@
 {
   "name": "wsgrgui",
-  "version": "2.0.11-alpha",
+  "version": "2.0.12-alpha",
   "description": "AutoWSGR YAML 管理与自动化桌面界面",
   "main": "dist/electron/main.js",
   "scripts": {
