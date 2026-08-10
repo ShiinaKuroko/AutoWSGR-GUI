@@ -32,6 +32,10 @@ const projectRoot = path.resolve(__dirname, '..');
 const temporaryDirectory = fs.mkdtempSync(
   path.join(os.tmpdir(), 'autowsgr-settings-test-'),
 );
+app.setPath(
+  'userData',
+  path.join(temporaryDirectory, 'electron-user-data'),
+);
 
 /**
  * 在真实设置页 DOM 中执行设置保存测试。
@@ -56,6 +60,12 @@ async function runRendererTest(root, tempDirectory) {
   } = require(rendererPath.join(
     root,
     'dist/src/model/ConfigModel.js',
+  ));
+  const {
+    NormalFightDailyQuota,
+  } = require(rendererPath.join(
+    root,
+    'dist/src/model/scheduler/NormalFightDailyQuota.js',
   ));
   const {
     ConfigController,
@@ -134,6 +144,7 @@ async function runRendererTest(root, tempDirectory) {
         times: 2,
       },
     ],
+    normalFightRemaining: 2,
     autoDecisive: true,
     decisiveTemplateId: 'system_preset',
     autoLoot: true,
@@ -330,6 +341,25 @@ async function runRendererTest(root, tempDirectory) {
       `自动战役与出征舰队下拉框的 ${property} 必须一致`,
     );
   });
+  view.render(sample);
+  rendererAssert.equal(
+    document.querySelector('#cfg-normal-fight-tasks .config-task-remaining')
+      ?.textContent,
+    '今日剩余执行次数：2',
+    '加载自动出征任务后必须显示今日剩余执行次数',
+  );
+  view.setNormalFightPlan(
+    { ...sample.normalFightTasks[0], times: 5 },
+    '草稿舰队',
+    3,
+  );
+  view.setNormalFightRemaining(sample.normalFightTasks, 1);
+  rendererAssert.equal(
+    document.querySelector('#cfg-normal-fight-tasks .config-task-remaining')
+      ?.textContent,
+    '今日剩余执行次数：3',
+    '已修改但未保存的每日次数不得被旧配置刷新覆盖',
+  );
   view.render(sample);
 
   [
@@ -819,6 +849,70 @@ async function runRendererTest(root, tempDirectory) {
     '取消浮窗不应回填列表草稿',
   );
 
+  for (const plan of managedBattlePlans) {
+    plan.fleets = [{
+      name: `${plan.name}舰队`,
+      source: plan.source,
+      primaryCount: 6,
+      backupCount: 0,
+    }];
+    plan.fleetCount = 1;
+  }
+  const pickedAutomationPlanPromise = loaderController.pick(
+    'automation',
+    {
+      name: 'C:\\SettingsTest\\bettle-用户胖次测试.yaml',
+      fleet_preset_index: 0,
+      times: 7,
+    },
+  );
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const dailyMaxField = document.querySelector(
+    '.automation-daily-max-field',
+  );
+  const dailyMaxInput = dailyMaxField?.querySelector('input');
+  rendererAssert.equal(
+    dailyMaxField?.querySelector(':scope > span')?.textContent,
+    '每日最大执行次数',
+    '自动出征浮窗缺少每日执行上限标题',
+  );
+  rendererAssert.equal(dailyMaxInput?.min, '1');
+  rendererAssert.equal(dailyMaxInput?.max, '999');
+  rendererAssert.equal(
+    dailyMaxInput?.value,
+    '7',
+    '重新打开同一个自动出征计划时必须回填已保存的每日次数',
+  );
+  rendererAssert.equal(
+    document.getElementById('battle-plan-loader-preview-title')?.textContent,
+    '配置预览：用户胖次测试',
+    '重新打开自动出征浮窗时必须定位到当前已加载计划',
+  );
+  dailyMaxInput.value = '1000';
+  dailyMaxInput.dispatchEvent(new Event('change'));
+  rendererAssert.equal(
+    dailyMaxInput.value,
+    '999',
+    '每日执行上限不得超过 999',
+  );
+  document.getElementById('btn-confirm-battle-plan-loader')?.click();
+  const pickedAutomationPlan = await pickedAutomationPlanPromise;
+  rendererAssert.equal(
+    pickedAutomationPlan?.fleetPresetIndex,
+    0,
+    '单个舰队的自动出征计划应自动选中舰队',
+  );
+  rendererAssert.equal(
+    pickedAutomationPlan?.dailyMaxExecutions,
+    999,
+    '自动出征计划没有返回浮窗设置的每日执行上限',
+  );
+  rendererAssert.equal(
+    pickedAutomationPlan?.plan.file,
+    'bettle-用户胖次测试.yaml',
+    '自动出征浮窗确认后没有返回当前已加载计划',
+  );
+
   const globalScrollButtonRule = Array.from(document.styleSheets)
     .flatMap(sheet => Array.from(sheet.cssRules))
     .find(rule => rule.selectorText === '::-webkit-scrollbar-button');
@@ -1133,6 +1227,7 @@ async function runRendererTest(root, tempDirectory) {
     cronScheduler: {
       updateConfig: () => {},
     },
+    normalFightDailyQuota: new NormalFightDailyQuota(),
     templateCtrl: {},
     startupCtrl: {
       startSystem: () => {},

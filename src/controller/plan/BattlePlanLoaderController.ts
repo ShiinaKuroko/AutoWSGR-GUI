@@ -6,11 +6,15 @@ import type {
   PlanPresetSource,
   PlanTeamBinding,
 } from '../../types/ipc.js';
+import type { NormalFightTaskConfig } from '../../types/model.js';
 import {
   lootAutomationPlanKey,
   normalizeLootAutomationPlans,
   type LootAutomationPlan,
 } from '../../shared/lootPlans.js';
+import {
+  normalFightDailyLimit,
+} from '../../model/scheduler/NormalFightDailyQuota.js';
 import {
   BattlePlanLoaderView,
   type BattlePlanLoaderPurpose,
@@ -39,6 +43,8 @@ export class BattlePlanLoaderController {
   private plans: ManagedBattlePlan[] = [];
   private selectedPlan: ManagedBattlePlan | null = null;
   private selectedFleetIndex: number | null = null;
+  private automationDailyMax = 1;
+  private automationInitialTask: NormalFightTaskConfig | null = null;
   private sortField: BattlePlanSortField = 'modifiedAt';
   private purpose: BattlePlanLoaderPurpose = 'editor';
   private resolveSelection: (
@@ -69,6 +75,9 @@ export class BattlePlanLoaderController {
       },
       onSelectPlan: (file, source) => this.selectPlan(file, source),
       onSelectFleet: (index) => this.selectFleet(index),
+      onAutomationDailyMaxChange: (value) => {
+        this.automationDailyMax = normalFightDailyLimit(value);
+      },
       onAddLootPlan: (file, source) => this.addLootPlan(file, source),
       onDeleteLootPlan: (source, file) => {
         void this.deleteLootPlan(source, file);
@@ -82,6 +91,7 @@ export class BattlePlanLoaderController {
     this.finishSelection(null);
     this.purpose = 'editor';
     this.selectedFleetIndex = null;
+    this.automationInitialTask = null;
     this.prepareAndOpen();
     return this.refresh().then(() => this.view.focusSearch());
   }
@@ -91,10 +101,18 @@ export class BattlePlanLoaderController {
       BattlePlanLoaderPurpose,
       'editor' | 'loot-automation'
     >,
+    currentAutomationTask?: NormalFightTaskConfig,
   ): Promise<ManagedBattlePlanSelection | null> {
     this.finishSelection(null);
     this.purpose = purpose;
     this.selectedFleetIndex = null;
+    this.automationInitialTask = purpose === 'automation'
+      && currentAutomationTask
+      ? structuredClone(currentAutomationTask)
+      : null;
+    this.automationDailyMax = normalFightDailyLimit(
+      this.automationInitialTask?.times,
+    );
     this.prepareAndOpen();
     void this.refresh().then(() => this.view.focusSearch());
     return new Promise((resolve) => {
@@ -109,6 +127,7 @@ export class BattlePlanLoaderController {
     this.finishLootPlans(null);
     this.purpose = 'loot-automation';
     this.selectedFleetIndex = null;
+    this.automationInitialTask = null;
     this.lootPlanDraft = normalizeLootAutomationPlans(currentPlans, []);
     this.prepareAndOpen();
     void this.refresh().then(() => this.view.focusSearch());
@@ -128,6 +147,7 @@ export class BattlePlanLoaderController {
     this.finishSelection(null);
     this.finishLootPlans(null);
     this.selectedFleetIndex = null;
+    this.automationInitialTask = null;
     this.purpose = 'editor';
     this.view.setPurposeCopy(this.purpose);
   }
@@ -203,12 +223,19 @@ export class BattlePlanLoaderController {
         : detailedPlans;
       const visiblePlans = this.visiblePlans();
       const current = this.host.getCurrentPlanIdentity();
-      this.selectedPlan = visiblePlans.find(plan => (
+      const initialAutomationTask = this.automationInitialTask;
+      const currentAutomationPlan = initialAutomationTask
+        ? visiblePlans.find(plan => (
+            this.matchesAutomationTask(plan, initialAutomationTask)
+          ))
+        : null;
+      this.selectedPlan = currentAutomationPlan ?? visiblePlans.find(plan => (
         Boolean(current.file)
         && plan.file === current.file
         && plan.source === current.source
       )) ?? visiblePlans[0] ?? null;
       this.resetFleetSelection(this.selectedPlan);
+      this.resetAutomationDailyMax(this.selectedPlan);
       this.view.setCount(this.plans.length);
       const errorCount = result.errors.filter(
         error => error.kind === 'battle',
@@ -345,6 +372,7 @@ export class BattlePlanLoaderController {
     }
     if (!this.samePlan(this.selectedPlan, previousSelection)) {
       this.resetFleetSelection(this.selectedPlan);
+      this.resetAutomationDailyMax(this.selectedPlan);
     }
     this.view.render({
       plans: visiblePlans,
@@ -353,6 +381,7 @@ export class BattlePlanLoaderController {
       selectedFleetIndex: this.selectedFleetIndex,
       purpose: this.purpose,
       lootPlans: this.lootPlanDraft,
+      automationDailyMax: this.automationDailyMax,
     });
   }
 
@@ -363,6 +392,7 @@ export class BattlePlanLoaderController {
     if (!selected) return;
     if (!this.samePlan(selected, this.selectedPlan)) {
       this.resetFleetSelection(selected);
+      this.resetAutomationDailyMax(selected);
     }
     this.selectedPlan = selected;
     this.render();
@@ -374,6 +404,31 @@ export class BattlePlanLoaderController {
       && plan?.kind === 'battle'
       && plan.fleets.length === 1
     ) ? 0 : null;
+  }
+
+  private resetAutomationDailyMax(plan: ManagedBattlePlan | null): void {
+    if (this.purpose !== 'automation') return;
+    const initialLimit = plan
+      && this.automationInitialTask
+      && this.matchesAutomationTask(plan, this.automationInitialTask)
+      ? this.automationInitialTask.times
+      : plan?.times;
+    this.automationDailyMax = normalFightDailyLimit(initialLimit);
+  }
+
+  private matchesAutomationTask(
+    plan: ManagedBattlePlan,
+    task: NormalFightTaskConfig,
+  ): boolean {
+    const taskPath = task.name
+      .trim()
+      .replace(/\\/g, '/')
+      .toLocaleLowerCase();
+    const planFile = plan.file
+      .trim()
+      .replace(/\\/g, '/')
+      .toLocaleLowerCase();
+    return taskPath === planFile || taskPath.endsWith(`/${planFile}`);
   }
 
   private selectFleet(index: number): void {
@@ -454,6 +509,9 @@ export class BattlePlanLoaderController {
         ...(this.selectedFleetIndex === null
           ? {}
           : { fleetPresetIndex: this.selectedFleetIndex }),
+        ...(this.purpose === 'automation'
+          ? { dailyMaxExecutions: this.automationDailyMax }
+          : {}),
       });
       this.close();
       return;

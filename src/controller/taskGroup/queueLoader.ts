@@ -17,7 +17,10 @@ import { resolveFleetPresetRules } from '../../model/fleet/FleetRuleMapper';
 import { toBackendName } from '../../shared/shipNameNormalizer';
 import { taskPresetCodec } from '../../shared/taskPreset';
 import { Logger } from '../../utils/Logger';
-import { normalizeSelectedNodesForBackend } from '../plan/selectedNodes';
+import {
+  assertPlanRouteReadyForExecution,
+  normalizeSelectedNodesForBackend,
+} from '../plan/selectedNodes';
 import type { TaskGroupHost } from '../contracts.js';
 import { readTaskGroupItemFile } from './managedPlanReader';
 import { parseYamlRecord } from '../../adapter';
@@ -28,9 +31,11 @@ export function applyPlanNodeOverrides(
   plan: PlanModel,
 ): void {
   req.plan = req.plan ?? {};
-  req.plan.selected_nodes = normalizeSelectedNodesForBackend(
+  const selectedNodes = normalizeSelectedNodesForBackend(
     plan.data.selected_nodes,
   );
+  assertPlanRouteReadyForExecution(selectedNodes);
+  req.plan.selected_nodes = selectedNodes;
   req.plan.node_defaults = structuredClone(plan.data.node_defaults ?? {});
   req.plan.node_args = plan.getNodeArgsForExecution();
 }

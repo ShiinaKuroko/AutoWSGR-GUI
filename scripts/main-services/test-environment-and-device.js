@@ -155,6 +155,12 @@ async function testAdbService() {
   });
 
   assert.equal(service.executable(), 'adb');
+  assert.equal(
+    await service.stopServer(),
+    false,
+    '没有内置 ADB 时不得调用系统 adb kill-server',
+  );
+  assert.equal(calls.length, 0);
   const bundledAdb = path.join(projectRoot, 'adb', 'adb.exe');
   fs.mkdirSync(path.dirname(bundledAdb), { recursive: true });
   fs.writeFileSync(bundledAdb, 'adb', 'utf8');
@@ -261,7 +267,24 @@ async function testAdbService() {
   );
 
   responses.push({ stdout: '', stderr: '' });
-  await service.stopServer();
+  assert.equal(
+    await service.stopServer(),
+    false,
+    '系统 ADB 运行时不得关闭 server',
+  );
+  assert.equal(calls.at(-1).executable, 'powershell.exe');
+  assert.match(calls.at(-1).args.at(-1), /Get-CimInstance Win32_Process/);
+  assert.match(calls.at(-1).args.at(-1), /adb-project[\\/]adb[\\/]adb\.exe/);
+
+  responses.push(
+    { stdout: '1', stderr: '' },
+    { stdout: '', stderr: '' },
+  );
+  assert.equal(
+    await service.stopServer(),
+    true,
+    '只有 GUI 目录内置 ADB 运行时才允许关闭 server',
+  );
   assert.deepEqual(calls.at(-1), {
     executable: bundledAdb,
     args: ['kill-server'],

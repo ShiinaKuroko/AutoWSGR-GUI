@@ -32,6 +32,11 @@
   transform: translate(-50%, 0);
 }
 
+.save-success-notice.is-warning {
+  background: color-mix(in srgb, var(--warning) 88%, #0f172a);
+  border-color: color-mix(in srgb, var(--warning) 72%, #fff);
+}
+
 .save-success-notice-icon {
   flex: 0 0 auto;
   display: grid;
@@ -41,6 +46,10 @@
   color: var(--success);
   background: #fff;
   border-radius: 50%;
+}
+
+.save-success-notice.is-warning .save-success-notice-icon {
+  color: var(--warning);
 }
 
 .save-success-notice-text {

@@ -250,7 +250,7 @@ export class PlanPreviewView {
       fieldsEl.hidden = !enabledInput.checked;
       valueInput.disabled = !enabledInput.checked;
       if (!enabledInput.checked) {
-        this.onPlanFieldChange?.(field, -1);
+        this.onPlanFieldChange?.(field, undefined);
         return;
       }
 

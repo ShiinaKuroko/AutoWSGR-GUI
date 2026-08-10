@@ -206,17 +206,21 @@ const shipLibraryService = new ShipLibraryService(appPaths, {
 const shipNameSynchronizer = new ShipNameSynchronizer(atomicFileStore);
 const adbService = new AdbService(appPaths);
 
-/** 关闭 GUI 管理的后端与 ADB server，释放安装目录中的可执行文件。 */
+/** 关闭 GUI 管理的后端与内置 ADB server，释放安装目录中的可执行文件。 */
 async function stopRuntimeResources(): Promise<void> {
   await stopBackend();
   try {
-    await adbService.stopServer();
-    console.log('[ADB] server 已停止');
+    const stopped = await adbService.stopServer();
+    console.log(
+      stopped
+        ? '[ADB] GUI 内置 server 已停止'
+        : '[ADB] 未发现 GUI 内置 server，跳过停止',
+    );
   } catch (error) {
     const message = error instanceof Error
       ? error.message
       : String(error);
-    console.warn(`[ADB] server 停止失败，将继续退出: ${message}`);
+    console.warn(`[ADB] GUI 内置 server 停止失败，将继续退出: ${message}`);
   }
 }
 

@@ -65,6 +65,10 @@ export interface PlanManagementResult {
   ignoredUnlinkedPlans: string[];
 }
 
+interface SaveManagedOptions {
+  importEmbeddedTeams?: boolean;
+}
+
 /** 编排管理页查询、计划读取、保存、重命名和删除。 */
 export class PlanManagementService {
   constructor(
@@ -366,6 +370,7 @@ export class PlanManagementService {
           source,
         };
       }
+      const missingTeamNames = this.missingTeamNames(root, source);
       const prepared = this.runtimePlans.prepare(source, file);
       return {
         success: true,
@@ -375,6 +380,7 @@ export class PlanManagementService {
         runtimePath: prepared.runtimePath,
         content: prepared.content,
         source,
+        missingTeamNames,
       };
     } catch (error) {
       return {
@@ -452,6 +458,8 @@ export class PlanManagementService {
         path.basename(selectedPath),
         this.combatRepository.read(selectedPath),
         overwrite,
+        undefined,
+        { importEmbeddedTeams: true },
       );
     } catch (error) {
       return {
@@ -467,6 +475,7 @@ export class PlanManagementService {
     content: string,
     overwrite: boolean,
     currentFile?: string,
+    options: SaveManagedOptions = {},
   ): Record<string, unknown> {
     try {
       const name = typeof rawName === 'string'
@@ -500,6 +509,7 @@ export class PlanManagementService {
         parsed,
         'user',
         false,
+        !options.importEmbeddedTeams,
       );
       const file = `bettle-${name}.yaml`;
       const target = this.combatRepository.safeUserPath(file);
@@ -521,16 +531,53 @@ export class PlanManagementService {
         && !updatesCurrentFile
       );
       const teamDirectory = this.teamRepository.directory('user');
-      const teamWrites = this.teamRepository.buildWrites(
-        split.teams,
-        teamDirectory,
-      ).map((item, index) => ({
-        ...item,
-        unchanged: this.teamRepository.matches(
-          item.path,
-          split.teams[index],
-        ),
-      }));
+      const missingTeamNames = options.importEmbeddedTeams
+        ? []
+        : this.missingTeamNames(parsed, 'user');
+      const missingTeams = new Set(missingTeamNames);
+      const parsedPresets = Array.isArray(parsed.fleet_presets)
+        ? parsed.fleet_presets
+        : null;
+      const normalizedPresets = Array.isArray(split.mapRoot.fleet_presets)
+        ? split.mapRoot.fleet_presets
+        : null;
+      const mapRoot = (
+        missingTeams.size > 0
+        && parsedPresets
+        && normalizedPresets
+      )
+        ? {
+            ...split.mapRoot,
+            fleet_presets: normalizedPresets.map(
+              (reference, index) => {
+                const embedded = parsedPresets[index];
+                const embeddedName = this.combatCodec.isPlainObject(embedded)
+                  && typeof embedded.name === 'string'
+                  ? embedded.name.trim()
+                  : '';
+                return (
+                  missingTeams.has(embeddedName)
+                  && this.combatCodec.isPlainObject(embedded)
+                  && Array.isArray(embedded.ships)
+                )
+                  ? structuredClone(embedded)
+                  : reference;
+              },
+            ),
+          }
+        : split.mapRoot;
+      const teamWrites = options.importEmbeddedTeams
+        ? this.teamRepository.buildWrites(
+            split.teams,
+            teamDirectory,
+          ).map((item, index) => ({
+            ...item,
+            unchanged: this.teamRepository.matches(
+              item.path,
+              split.teams[index],
+            ),
+          }))
+        : [];
       const conflicts = [
         ...(mapConflict ? [`地图：${file}`] : []),
         ...teamWrites
@@ -558,7 +605,7 @@ export class PlanManagementService {
       }
       this.combatRepository.write(
         target,
-        this.combatCodec.serialize(split.mapRoot, content),
+        this.combatCodec.serialize(mapRoot, content),
       );
       if (
         currentPath
@@ -721,6 +768,31 @@ export class PlanManagementService {
         error: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  /** 返回计划引用但编队管理中不存在的编队名称。 */
+  private missingTeamNames(
+    root: Record<string, unknown>,
+    source: PlanPresetSource,
+  ): string[] {
+    if (!Array.isArray(root.fleet_presets)) return [];
+    const plans = this.teamRepository.list().plans;
+    const names = root.fleet_presets.flatMap((preset) => {
+      if (
+        !this.combatCodec.isPlainObject(preset)
+        || typeof preset.name !== 'string'
+      ) {
+        return [];
+      }
+      const name = preset.name.trim();
+      return (
+        name
+        && !this.teamRepository.find(name, source, plans)
+      )
+        ? [name]
+        : [];
+    });
+    return [...new Set(names)];
   }
 
   /** 读取并兼容旧格式的未关联忽略项。 */

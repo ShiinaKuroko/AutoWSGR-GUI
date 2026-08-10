@@ -7,6 +7,7 @@ import { PlanModel } from '../../model/PlanModel';
 import type {
   EventMapCatalogEntry,
   FleetPreset,
+  NormalFightTaskConfig,
   TaskPreset,
 } from '../../types/model.js';
 import {
@@ -31,6 +32,7 @@ import {
   showAlert,
   showConfirm,
   showSaveSuccess,
+  showWarningNotice,
 } from '../../view/shared/DialogHelper';
 import { importTaskPresetFlow, closePresetDetailFlow, executePresetFlow, type PresetState } from './presetFlow';
 import { jsonCodec, parseYamlRecord } from '../../adapter';
@@ -46,6 +48,7 @@ import {
   PlanFleetPresetController,
   type PlanFleetPresetRepository,
 } from './PlanFleetPresetController.js';
+import { initialSelectedNodesForNewPlan } from './selectedNodes';
 import type { PlanHost } from '../contracts.js';
 
 export class PlanController {
@@ -139,8 +142,10 @@ export class PlanController {
     return this.battlePlanLoader.pick('queue');
   }
 
-  pickManagedBattlePlanForAutomation(): Promise<ManagedBattlePlanSelection | null> {
-    return this.battlePlanLoader.pick('automation');
+  pickManagedBattlePlanForAutomation(
+    currentTask?: NormalFightTaskConfig,
+  ): Promise<ManagedBattlePlanSelection | null> {
+    return this.battlePlanLoader.pick('automation', currentTask);
   }
 
   pickManagedLootPlans(
@@ -373,6 +378,13 @@ export class PlanController {
       this.savedPlanSnapshot = this.planDraftSnapshot();
       this.renderPlanPreview();
       this.host.switchPage('plan');
+      if (result.missingTeamNames?.length) {
+        showWarningNotice(
+          `当前 YAML 关联的编队配置不存在：${
+            result.missingTeamNames.join('、')
+          }，请检查`,
+        );
+      }
       return true;
     } catch (error) {
       await showAlert(
@@ -582,7 +594,7 @@ export class PlanController {
     }
 
     this.planView.resetNodeEditorDrafts();
-    const selectedNodes = Object.keys(mapData).sort();
+    const selectedNodes = initialSelectedNodesForNewPlan();
     if (!this.currentPlan) {
       this.currentPlan = PlanModel.create(
         chapter,

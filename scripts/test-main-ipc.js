@@ -220,7 +220,7 @@ assert.match(
 assert.match(
   mainSource,
   /async function stopRuntimeResources[\s\S]*await stopBackend\(\)[\s\S]*await adbService\.stopServer\(\)/,
-  'GUI 退出流程必须依次停止后端和 ADB server',
+  'GUI 退出流程必须依次停止后端和 GUI 内置 ADB server',
 );
 assert.match(
   mainSource,

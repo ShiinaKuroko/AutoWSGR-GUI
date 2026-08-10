@@ -5,6 +5,10 @@ import type {
   ShipLibraryUpdateTarget,
 } from '../../types/ipc.js';
 import type { LootAutomationPlan } from '../../shared/lootPlans.js';
+import {
+  normalFightDailyLimit,
+} from '../../model/scheduler/NormalFightDailyQuota.js';
+import type { NormalFightTaskConfig } from '../../types/model.js';
 import { ApiClient } from '../../model/ApiClient';
 import { Logger } from '../../utils/Logger';
 import { showAlert, showConfirm } from '../../view/shared/DialogHelper';
@@ -18,10 +22,13 @@ export interface SettingsControllerHost {
   readonly configView: ConfigView;
   getConfigDir(): string;
   saveConfig(): Promise<void>;
-  pickAutomationPlan(): Promise<ManagedBattlePlanSelection | null>;
+  pickAutomationPlan(
+    currentTask?: NormalFightTaskConfig,
+  ): Promise<ManagedBattlePlanSelection | null>;
   pickLootAutomationPlans(
     currentPlans: readonly LootAutomationPlan[],
   ): Promise<LootAutomationPlan[] | null>;
+  getNormalFightRemaining(task: NormalFightTaskConfig): number;
   reloadShipLibrary(): Promise<void>;
   ensureSystemConnected(): Promise<boolean>;
 }
@@ -221,7 +228,8 @@ export class SettingsController {
   }
 
   private async selectAutomationPlan(): Promise<void> {
-    const selected = await this.host.pickAutomationPlan();
+    const currentTask = this.host.configView.getNormalFightTasks()[0];
+    const selected = await this.host.pickAutomationPlan(currentTask);
     if (!selected) return;
     try {
       const result = await this.gateway?.readManagedCombatPlan(
@@ -237,10 +245,15 @@ export class SettingsController {
       }
       const fleetName = selected.plan.fleets[fleetPresetIndex]?.name;
       if (!fleetName) throw new Error('所选使用舰队不存在');
+      const task: NormalFightTaskConfig = {
+        name: result.path,
+        fleet_preset_index: fleetPresetIndex,
+        times: normalFightDailyLimit(selected.dailyMaxExecutions),
+      };
       this.host.configView.setNormalFightPlan(
-        result.path,
-        fleetPresetIndex,
+        task,
         fleetName,
+        this.host.getNormalFightRemaining(task),
       );
     } catch (error) {
       await showAlert(

@@ -7,7 +7,11 @@ import { ConfigModel } from '../../model/ConfigModel';
 import type { ConfigView } from '../../view/config/ConfigView';
 import type { SetupWizardView } from '../../view/setup/SetupWizardView';
 import type { MainView } from '../../view/main/MainView';
-import type { Scheduler, CronScheduler } from '../../model/scheduler';
+import type {
+  CronScheduler,
+  NormalFightDailyQuota,
+  Scheduler,
+} from '../../model/scheduler';
 import type { StartupController } from '../startup/StartupController';
 import type {
   EmulatorConfig,
@@ -66,6 +70,7 @@ export interface ConfigControllerHost {
   readonly mainView: MainView;
   readonly scheduler: Scheduler;
   readonly cronScheduler: CronScheduler;
+  readonly normalFightDailyQuota: NormalFightDailyQuota;
   startupCtrl: StartupController | null;
   configDir: string;
 }
@@ -318,6 +323,11 @@ export class ConfigController {
       battleTimes: gui.battleTimes,
       autoNormalFight: cfg.daily_automation.auto_normal_fight,
       normalFightTasks: cfg.daily_automation.normal_fight_tasks,
+      normalFightRemaining: cfg.daily_automation.normal_fight_tasks.length > 0
+        ? this.host.normalFightDailyQuota.totalRemaining(
+            cfg.daily_automation.normal_fight_tasks,
+          )
+        : null,
       autoDecisive: gui.autoDecisive,
       decisiveTemplateId: gui.decisiveTemplateId,
       autoLoot: gui.autoLoot,
@@ -467,6 +477,7 @@ export class ConfigController {
       });
       this.host.scheduler.setAutoExpedition(da.auto_expedition);
       this.host.scheduler.setExpeditionInterval(gui.expeditionInterval);
+      this.refreshNormalFightRemaining();
 
       Logger.info('设置已保存，后端启动项将在重启后生效');
     } catch (error) {
@@ -488,6 +499,17 @@ export class ConfigController {
         Logger.warn('后端未运行，请重启应用');
       }
     }
+  }
+
+  /** 使用已保存的自动出征任务刷新今日剩余次数。 */
+  refreshNormalFightRemaining(): void {
+    const tasks = this.host.configModel.current
+      .daily_automation
+      .normal_fight_tasks;
+    this.host.configView.setNormalFightRemaining(
+      tasks,
+      this.host.normalFightDailyQuota.totalRemaining(tasks),
+    );
   }
 
   /** 把设置页输入应用到指定模型，供候选配置和正式提交复用。 */

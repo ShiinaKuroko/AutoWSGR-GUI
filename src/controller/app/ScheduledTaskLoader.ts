@@ -7,6 +7,8 @@ import type { ConfigModel } from '../../model/ConfigModel';
 import { PlanModel } from '../../model/PlanModel';
 import {
   TaskPriority,
+  uniqueNormalFightTasks,
+  type NormalFightDailyQuota,
   type Scheduler,
 } from '../../model/scheduler';
 import type { TemplateModel } from '../../model/TemplateModel';
@@ -25,7 +27,11 @@ import type {
   EventFightReq,
   NormalFightReq,
 } from '../../types/api.js';
-import type { StopCondition } from '../../types/model.js';
+import type {
+  BattleResultGrade,
+  NormalFightTaskConfig,
+  StopCondition,
+} from '../../types/model.js';
 import { Logger } from '../../utils/Logger';
 import {
   applyPlanNodeOverrides,
@@ -40,10 +46,17 @@ export interface ScheduledTaskLoaderHost {
   readonly scheduler: Scheduler;
   readonly templateModel: TemplateModel;
   readonly configModel: ConfigModel;
+  readonly normalFightDailyQuota: NormalFightDailyQuota;
 }
 
 export type NormalFightLoadResult =
-  | { status: 'queued'; taskIds: string[] }
+  | {
+      status: 'queued';
+      tasks: Array<{
+        taskId: string;
+        config: NormalFightTaskConfig;
+      }>;
+    }
   | { status: 'handled' }
   | { status: 'retry' };
 
@@ -104,15 +117,29 @@ export class ScheduledTaskLoader {
       return { status: 'handled' };
     }
     if (!this.repository) return { status: 'retry' };
+    const uniqueTasks = uniqueNormalFightTasks(tasks);
+    if (uniqueTasks.length < tasks.length) {
+      Logger.warn('自动出征存在重复的计划和舰队配置，本次仅执行一次');
+    }
+    const eligibleTasks = uniqueTasks.filter(task => (
+      this.host.normalFightDailyQuota.remaining(task) > 0
+    ));
+    if (eligibleTasks.length === 0) {
+      Logger.debug('自动出征今日执行次数已用完');
+      return { status: 'handled' };
+    }
 
     const preparedTasks: Array<{
       name: string;
       type: 'normal_fight' | 'event_fight';
       request: NormalFightReq | EventFightReq;
+      config: NormalFightTaskConfig;
       stopCondition?: StopCondition;
       fleetId?: number;
+      endpointNodes?: string[];
+      endpointResult?: BattleResultGrade;
     }> = [];
-    for (const task of tasks) {
+    for (const task of eligibleTasks) {
       try {
         const resolved = await this.resolveNormalFightPlan(task.name);
         if (!resolved) {
@@ -142,8 +169,11 @@ export class ScheduledTaskLoader {
           name: `自动出征·${plan.mapName}`,
           type: plan.isEvent ? 'event_fight' : 'normal_fight',
           request,
+          config: structuredClone(task),
           stopCondition: plan.data.stop_condition,
           fleetId: selectedFleetId,
+          endpointNodes: plan.data.endpoint_nodes,
+          endpointResult: plan.data.result,
         });
       } catch (error) {
         Logger.error(
@@ -160,18 +190,34 @@ export class ScheduledTaskLoader {
       return { status: 'retry' };
     }
 
-    const taskIds = preparedTasks.map(task => this.host.scheduler.addTask(
-      task.name,
-      task.type,
-      task.request,
-      TaskPriority.DAILY,
-      1,
-      task.stopCondition,
-      undefined,
-      task.fleetId,
-    ));
-    Logger.info(`自动出征已按顺序加入 ${taskIds.length} 个单轮任务`);
-    return { status: 'queued', taskIds };
+    const queuedTasks = preparedTasks
+      .filter(task => (
+        this.host.normalFightDailyQuota.remaining(task.config) > 0
+      ))
+      .map(task => ({
+        taskId: this.host.scheduler.addTask(
+          task.name,
+          task.type,
+          task.request,
+          TaskPriority.DAILY,
+          1,
+          task.stopCondition,
+          undefined,
+          task.fleetId,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          task.endpointNodes,
+          task.endpointResult,
+        ),
+        config: task.config,
+      }));
+    if (queuedTasks.length === 0) return { status: 'handled' };
+    Logger.info(
+      `自动出征已按顺序加入 ${queuedTasks.length} 个单轮任务`,
+    );
+    return { status: 'queued', tasks: queuedTasks };
   }
 
   async loadLootTask(

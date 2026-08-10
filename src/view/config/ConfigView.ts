@@ -17,6 +17,10 @@ import {
 import {
   normalizeDecisiveAutomationSource,
 } from '../../shared/decisiveAutomation.js';
+import {
+  normalFightDailyLimit,
+  normalFightTaskKey,
+} from '../../model/scheduler/NormalFightDailyQuota.js';
 
 type StatusKind = 'ok' | 'error' | 'unknown';
 
@@ -55,6 +59,7 @@ export class ConfigView {
   private configPanels = Array.from(document.querySelectorAll<HTMLElement>('[data-config-panel]'));
   private configTabDescription = document.getElementById('config-tab-description');
   private normalFightTasks: NormalFightTaskConfig[] = [];
+  private normalFightRemaining: number | null = null;
   private normalFightFleetNames = new Map<string, string>();
   private lootPlans: LootAutomationPlan[] = [];
 
@@ -222,6 +227,7 @@ export class ConfigView {
     this.battleTimes.value = String(vo.battleTimes);
     this.autoNormalFight.checked = vo.autoNormalFight;
     this.normalFightTasks = structuredClone(vo.normalFightTasks);
+    this.normalFightRemaining = vo.normalFightRemaining;
     this.normalFightFleetNames.clear();
     this.renderNormalFightTasks();
     this.autoDecisive.checked = vo.autoDecisive;
@@ -301,6 +307,7 @@ export class ConfigView {
       battleTimes: Math.trunc(this.clamp(this.battleTimes.value, 1, 99, 3)),
       autoNormalFight: this.autoNormalFight.checked,
       normalFightTasks: this.collectNormalFightTasks(),
+      normalFightRemaining: this.normalFightRemaining,
       autoDecisive: this.autoDecisive.checked,
       decisiveTemplateId: normalizeDecisiveAutomationSource(
         this.decisiveTemplate.value,
@@ -347,19 +354,41 @@ export class ConfigView {
   }
 
   setNormalFightPlan(
-    path: string,
-    fleetPresetIndex: number,
+    task: NormalFightTaskConfig,
     fleetName: string,
+    remaining: number,
   ): void {
-    this.normalFightTasks = [{
-      name: path,
-      fleet_preset_index: fleetPresetIndex,
-    }];
+    this.normalFightTasks = [structuredClone(task)];
+    this.normalFightRemaining = Math.max(0, Math.trunc(remaining));
     this.normalFightFleetNames.clear();
     this.normalFightFleetNames.set(
-      this.normalFightFleetKey(path, fleetPresetIndex),
+      this.normalFightFleetKey(
+        task.name,
+        task.fleet_preset_index ?? 0,
+      ),
       fleetName,
     );
+    this.renderNormalFightTasks();
+  }
+
+  getNormalFightTasks(): NormalFightTaskConfig[] {
+    return structuredClone(this.normalFightTasks);
+  }
+
+  setNormalFightRemaining(
+    tasks: readonly NormalFightTaskConfig[],
+    remaining: number,
+  ): void {
+    const signature = (task: NormalFightTaskConfig): string => (
+      JSON.stringify([
+        normalFightTaskKey(task),
+        normalFightDailyLimit(task.times),
+      ])
+    );
+    const currentKeys = this.normalFightTasks.map(signature);
+    const savedKeys = tasks.map(signature);
+    if (JSON.stringify(currentKeys) !== JSON.stringify(savedKeys)) return;
+    this.normalFightRemaining = Math.max(0, Math.trunc(remaining));
     this.renderNormalFightTasks();
   }
 
@@ -389,6 +418,13 @@ export class ConfigView {
       ? `${displayName} 等 ${this.normalFightTasks.length} 个任务`
       : displayName;
     this.normalFightTaskList.appendChild(name);
+
+    const remaining = document.createElement('span');
+    remaining.className = 'config-task-remaining';
+    remaining.textContent = `今日剩余执行次数：${
+      this.normalFightRemaining ?? 0
+    }`;
+    this.normalFightTaskList.appendChild(remaining);
 
     if (primaryTask.fleet_preset_index != null) {
       const fleetIndex = primaryTask.fleet_preset_index;

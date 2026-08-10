@@ -185,6 +185,8 @@ export interface ManagedBattlePlan {
 export interface ManagedBattlePlanSelection {
   plan: ManagedBattlePlan;
   fleetPresetIndex?: number;
+  /** 仅用于自动出征：该计划每日最多完成的有效轮数。 */
+  dailyMaxExecutions?: number;
 }
 
 export interface ManagedDailyPlan {
@@ -254,6 +256,7 @@ export interface PlanFileOperationResult {
   content?: string;
   source?: PlanPresetSource;
   teamFiles?: string[];
+  missingTeamNames?: string[];
   conflicts?: string[];
   error?: string;
 }

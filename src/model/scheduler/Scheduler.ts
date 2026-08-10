@@ -430,6 +430,7 @@ export class Scheduler {
       runningTask.logicalId,
       true,
       null,
+      false,
     );
     this.setStatus('idle');
     this.notifyQueueChange();
@@ -519,7 +520,12 @@ export class Scheduler {
       if (preflightMet) {
         this.emitLog('info', `任务「${task.name}」启动前已满足停止条件，跳过`);
         this.callbacks.onTaskCompleted?.(task.id, true, null, null);
-        this.callbacks.onLogicalTaskCompleted?.(task.logicalId, true, null);
+        this.callbacks.onLogicalTaskCompleted?.(
+          task.logicalId,
+          true,
+          null,
+          false,
+        );
         this.currentTask = null;
         this.consumeNext();
         return;
@@ -586,18 +592,28 @@ export class Scheduler {
       if (resp.success && resp.data) {
         task.backendTaskId = resp.data.task_id;
       } else {
+        const reason = resp.error ?? '任务启动失败';
         this.currentTask = null;
-        if (this.scheduleRetry(task, resp.error ?? '任务启动失败')) return;
-        this.callbacks.onTaskCompleted?.(task.id, false, null, resp.error ?? '任务启动失败');
-        this.callbacks.onLogicalTaskCompleted?.(task.logicalId, false, resp.error ?? '任务启动失败');
+        if (this.scheduleRetry(task, reason)) return;
+        this.emitLog(
+          'error',
+          `任务「${task.name}」启动失败，重试已耗尽：${reason}`,
+        );
+        this.callbacks.onTaskCompleted?.(task.id, false, null, reason);
+        this.callbacks.onLogicalTaskCompleted?.(task.logicalId, false, reason);
         this.consumeNext();
       }
     } catch (e) {
       if (!this.systemActive || this.currentTask?.id !== task.id) return;
+      const reason = String(e);
       this.currentTask = null;
-      if (this.scheduleRetry(task, String(e))) return;
-      this.callbacks.onTaskCompleted?.(task.id, false, null, String(e));
-      this.callbacks.onLogicalTaskCompleted?.(task.logicalId, false, String(e));
+      if (this.scheduleRetry(task, reason)) return;
+      this.emitLog(
+        'error',
+        `任务「${task.name}」启动异常，重试已耗尽：${reason}`,
+      );
+      this.callbacks.onTaskCompleted?.(task.id, false, null, reason);
+      this.callbacks.onLogicalTaskCompleted?.(task.logicalId, false, reason);
       this.consumeNext();
     }
   }
@@ -648,7 +664,12 @@ export class Scheduler {
     if (!success) {
       this.callbacks.onTaskCompleted?.(finished.id, false, result, error);
       this.currentTask = null;
-      if (this.scheduleRetry(finished, '执行失败')) return;
+      const reason = error ? `执行失败：${error}` : '执行失败';
+      if (this.scheduleRetry(finished, reason)) return;
+      this.emitLog(
+        'error',
+        `任务「${finished.name}」执行失败，重试已耗尽${error ? `：${error}` : ''}`,
+      );
       // 重试耗尽时，将失败轮计入次数并继续剩余轮次
       const nextRemaining = finished.unlimited
         ? 1
@@ -694,7 +715,12 @@ export class Scheduler {
         if (shouldStop) {
           this.emitLog('info', `任务「${finished.name}」满足停止条件，不再继续`);
           this.currentTask = null;
-          this.callbacks.onLogicalTaskCompleted?.(finished.logicalId, true, null);
+          this.callbacks.onLogicalTaskCompleted?.(
+            finished.logicalId,
+            true,
+            null,
+            false,
+          );
           this.consumeNext();
           return;
         }
@@ -711,7 +737,12 @@ export class Scheduler {
         this._taskQueue.insertByPriority(followUp, !finished.allowPolling);
       }
     } else {
-      this.callbacks.onLogicalTaskCompleted?.(finished.logicalId, true, null);
+      this.callbacks.onLogicalTaskCompleted?.(
+        finished.logicalId,
+        true,
+        null,
+        shouldCountRound,
+      );
     }
 
     this.currentTask = null;
@@ -1022,7 +1053,7 @@ export class Scheduler {
 
   // ── 内部: 远征触发 ──
 
-  /** 远征定时器回调 — 向队列插入远征任务，由调度器按优先级消费。 */
+  /** 远征定时器回调 — 排到队首，等待当前单轮完整结束后执行。 */
   private handleExpeditionTrigger(): void {
     if (!this.systemActive || !this.autoExpedition) return;
     if (this.currentTask?.type === 'expedition') return;

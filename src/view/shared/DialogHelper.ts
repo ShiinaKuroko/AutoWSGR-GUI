@@ -1,13 +1,12 @@
 /** 封装 Renderer 通用确认、提示和输入对话框。 */
 /**
  * DialogHelper —— 通用对话框工具类。
- * 封装通用对话框和页面顶部的保存成功提示。
+ * 封装通用对话框和页面顶部的非阻塞提示。
  */
 
-let saveSuccessTimer: number | null = null;
+let noticeTimer: number | null = null;
 
-/** 仅在数据确认写入成功后调用。 */
-export function showSaveSuccess(message = '保存成功'): void {
+function showNotice(message: string, warning: boolean): void {
   let notice = document.getElementById('save-success-notice');
   if (!notice) {
     notice = document.createElement('div');
@@ -19,7 +18,6 @@ export function showSaveSuccess(message = '保存成功'): void {
 
     const icon = document.createElement('span');
     icon.className = 'save-success-notice-icon';
-    icon.textContent = '✓';
     icon.setAttribute('aria-hidden', 'true');
 
     const text = document.createElement('span');
@@ -28,19 +26,32 @@ export function showSaveSuccess(message = '保存成功'): void {
     document.body.append(notice);
   }
 
+  const icon = notice.querySelector<HTMLElement>('.save-success-notice-icon');
+  if (icon) icon.textContent = warning ? '!' : '✓';
   const text = notice.querySelector<HTMLElement>('.save-success-notice-text');
   if (text) text.textContent = message;
+  notice.classList.toggle('is-warning', warning);
   notice.classList.add('is-visible');
   notice.setAttribute('aria-hidden', 'false');
 
-  if (saveSuccessTimer !== null) {
-    window.clearTimeout(saveSuccessTimer);
+  if (noticeTimer !== null) {
+    window.clearTimeout(noticeTimer);
   }
-  saveSuccessTimer = window.setTimeout(() => {
+  noticeTimer = window.setTimeout(() => {
     notice?.classList.remove('is-visible');
     notice?.setAttribute('aria-hidden', 'true');
-    saveSuccessTimer = null;
+    noticeTimer = null;
   }, 2400);
+}
+
+/** 仅在数据确认写入成功后调用。 */
+export function showSaveSuccess(message = '保存成功'): void {
+  showNotice(message, false);
+}
+
+/** 显示不阻塞当前操作的警告提示。 */
+export function showWarningNotice(message: string): void {
+  showNotice(message, true);
 }
 
 /** 弹出输入框，返回用户输入的字符串，取消返回 null */

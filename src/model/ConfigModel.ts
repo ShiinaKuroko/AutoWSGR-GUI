@@ -26,6 +26,7 @@ import {
   SYSTEM_DECISIVE_PRESET_ID,
   normalizeDecisiveAutomationSource,
 } from '../shared/decisiveAutomation.js';
+import { normalFightDailyLimit } from './scheduler/NormalFightDailyQuota.js';
 import { Logger } from '../utils/Logger';
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -537,7 +538,7 @@ export class ConfigModel {
           task.fleet_id = Math.max(1, Math.trunc(Number(item[1])));
         }
         if (item[2] != null && Number.isFinite(Number(item[2]))) {
-          task.times = Math.max(1, Math.trunc(Number(item[2])));
+          task.times = normalFightDailyLimit(item[2]);
         }
         output.push(task);
         continue;
@@ -558,7 +559,7 @@ export class ConfigModel {
         );
       }
       if (record.times != null && Number.isFinite(Number(record.times))) {
-        task.times = Math.max(1, Math.trunc(Number(record.times)));
+        task.times = normalFightDailyLimit(record.times);
       }
       output.push(task);
     }

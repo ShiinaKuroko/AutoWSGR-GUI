@@ -7,6 +7,10 @@ import {
   lootAutomationPlanKey,
   type LootAutomationPlan,
 } from '../../shared/lootPlans.js';
+import {
+  MAX_NORMAL_FIGHT_DAILY_EXECUTIONS,
+  normalFightDailyLimit,
+} from '../../model/scheduler/NormalFightDailyQuota.js';
 import { appendTeamPlanCardContent } from './TeamPlanListUi';
 
 export type BattlePlanLoaderPurpose =
@@ -26,6 +30,7 @@ export interface BattlePlanLoaderCallbacks {
   onSortFieldChange(field: BattlePlanSortField): void;
   onSelectPlan(file: string, source: PlanPresetSource): void;
   onSelectFleet(index: number): void;
+  onAutomationDailyMaxChange(value: number): void;
   onAddLootPlan(file: string, source: PlanPresetSource): void;
   onDeleteLootPlan(source: PlanPresetSource, file: string): void;
   onConfirm(): void;
@@ -44,6 +49,7 @@ export interface BattlePlanLoaderViewObject {
   selectedFleetIndex: number | null;
   purpose: BattlePlanLoaderPurpose;
   lootPlans: LootAutomationPlan[];
+  automationDailyMax: number;
 }
 
 export class BattlePlanLoaderView {
@@ -326,6 +332,7 @@ export class BattlePlanLoaderView {
         vo.selectedFleetIndex,
         vo.purpose,
         vo.lootPlans,
+        vo.automationDailyMax,
       );
     }
   }
@@ -335,6 +342,7 @@ export class BattlePlanLoaderView {
     selectedFleetIndex: number | null,
     purpose: BattlePlanLoaderPurpose,
     lootPlans: LootAutomationPlan[],
+    automationDailyMax: number,
   ): void {
     const title = document.getElementById('battle-plan-loader-preview-title');
     const badge = document.getElementById('battle-plan-loader-preview-source');
@@ -368,10 +376,12 @@ export class BattlePlanLoaderView {
       } else {
         const children: HTMLElement[] = [
           this.createPreviewField('章节关卡', this.battlePlanMapLabel(plan)),
-          this.createPreviewField(
-            '执行次数',
-            hasDetails ? `${plan.times} 次` : '重启后显示',
-          ),
+          purpose === 'automation'
+            ? this.createAutomationDailyMaxField(automationDailyMax)
+            : this.createPreviewField(
+                '执行次数',
+                hasDetails ? `${plan.times} 次` : '重启后显示',
+              ),
           this.createPreviewField(
             '维修方案',
             hasDetails
@@ -466,6 +476,40 @@ export class BattlePlanLoaderView {
     content.textContent = value;
     content.title = value;
     field.append(caption, content);
+    return field;
+  }
+
+  private createAutomationDailyMaxField(value: number): HTMLElement {
+    const field = document.createElement('label');
+    field.className = 'battle-plan-preview-field automation-daily-max-field';
+    const caption = document.createElement('span');
+    caption.textContent = '每日最大执行次数';
+    const editor = document.createElement('span');
+    editor.className = 'automation-daily-max-editor';
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.className = 'input';
+    input.min = '1';
+    input.max = String(MAX_NORMAL_FIGHT_DAILY_EXECUTIONS);
+    input.step = '1';
+    input.value = String(normalFightDailyLimit(value));
+    input.addEventListener('input', () => {
+      if (
+        input.valueAsNumber >= 1
+        && input.valueAsNumber <= MAX_NORMAL_FIGHT_DAILY_EXECUTIONS
+      ) {
+        this.callbacks?.onAutomationDailyMaxChange(input.valueAsNumber);
+      }
+    });
+    input.addEventListener('change', () => {
+      const normalized = normalFightDailyLimit(input.valueAsNumber);
+      input.value = String(normalized);
+      this.callbacks?.onAutomationDailyMaxChange(normalized);
+    });
+    const unit = document.createElement('strong');
+    unit.textContent = '次';
+    editor.append(input, unit);
+    field.append(caption, editor);
     return field;
   }
 

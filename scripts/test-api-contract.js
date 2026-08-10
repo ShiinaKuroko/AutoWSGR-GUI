@@ -8,6 +8,9 @@ const {
   buildPlanQueueRequest,
 } = require('../dist/src/controller/taskGroup/queueLoader.js');
 const {
+  initialSelectedNodesForNewPlan,
+} = require('../dist/src/controller/plan/selectedNodes.js');
+const {
   executePresetFlow,
 } = require('../dist/src/controller/plan/presetFlow.js');
 const {
@@ -234,6 +237,27 @@ assert.deepEqual(aliasPlanRequest.plan.fleet_rules[0], {
   name: '85工程',
   search_name: '契卡洛夫',
 });
+assert.deepEqual(
+  aliasPlanRequest.plan.selected_nodes,
+  [],
+  '旧计划的空节点白名单必须保持原有语义',
+);
+assert.deepEqual(
+  initialSelectedNodesForNewPlan(),
+  ['0'],
+  '新建计划必须只开启起始节点',
+);
+const startOnlyPlan = PlanModel.fromYaml([
+  'chapter: 1',
+  'map: 1',
+  'selected_nodes: ["0"]',
+  '',
+].join('\n'), 'start-only.yaml');
+assert.throws(
+  () => buildPlanQueueRequest({}, startOnlyPlan, 'start-only.yaml'),
+  /请至少开启一个路线节点/,
+  '只有起始节点的未完成计划不得进入战斗队列',
+);
 
 const nodeFormationPlan = PlanModel.fromYaml([
   'chapter: 7',

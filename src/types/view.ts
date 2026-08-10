@@ -33,6 +33,7 @@ export interface ConfigViewObject {
   battleTimes: number;
   autoNormalFight: boolean;
   normalFightTasks: NormalFightTaskConfig[];
+  normalFightRemaining: number | null;
   autoDecisive: boolean;
   decisiveTemplateId: DecisiveAutomationSource;
   autoLoot: boolean;

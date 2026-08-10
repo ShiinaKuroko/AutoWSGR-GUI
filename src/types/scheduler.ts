@@ -106,8 +106,16 @@ export interface SchedulerCallbacks {
   onProgressUpdate?: (taskId: string, progress: { current: number; total: number; node: string | null }) => void;
   /** 任务完成 (单轮) */
   onTaskCompleted?: (taskId: string, success: boolean, result?: TaskResult | null, error?: string | null) => void;
-  /** Emitted only when the logical task has no follow-up round. */
-  onLogicalTaskCompleted?: (logicalId: string, success: boolean, error?: string | null) => void;
+  /**
+   * Emitted only when the logical task has no follow-up round.
+   * countedRound 仅在 Scheduler 确认本轮满足终点/战果要求时为 true。
+   */
+  onLogicalTaskCompleted?: (
+    logicalId: string,
+    success: boolean,
+    error?: string | null,
+    countedRound?: boolean,
+  ) => void;
   /** 逻辑任务被删除、清空或随系统停止，不等同于完成或失败。 */
   onLogicalTaskCanceled?: (
     logicalId: string,

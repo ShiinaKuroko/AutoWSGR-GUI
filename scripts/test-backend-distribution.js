@@ -62,8 +62,13 @@ try {
   assert.match(installer, /\$R1 < 20/);
   assert.match(
     installer,
-    /"\$INSTDIR\\adb\\adb\.exe" kill-server/,
-    '覆盖安装前必须停止旧版内置 ADB server',
+    /Get-Process -Name adb[\s\S]*\$\$_.Path[\s\S]*\$INSTDIR\\adb\\adb\.exe/,
+    '覆盖安装前只能停止安装目录内置的 ADB server',
+  );
+  assert.doesNotMatch(
+    installer,
+    /adb\\adb\.exe" kill-server/,
+    '安装器不得通过共享 ADB 端口关闭其他工具的 server',
   );
   assert.match(
     installer,

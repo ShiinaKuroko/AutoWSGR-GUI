@@ -55,20 +55,50 @@ export class AdbService {
     },
   ) {}
 
-  /** 返回内置 ADB；不存在时继续使用系统命令。 */
-  executable(): string {
-    const bundledAdb = path.join(
+  private bundledExecutable(): string {
+    return path.join(
       this.appPaths.appRoot(),
       'adb',
       'adb.exe',
     );
+  }
+
+  /** 返回内置 ADB；不存在时继续使用系统命令。 */
+  executable(): string {
+    const bundledAdb = this.bundledExecutable();
     return fs.existsSync(bundledAdb) ? bundledAdb : 'adb';
   }
 
-  /** 停止 ADB server，避免 GUI 退出后 adb.exe 继续占用安装目录。 */
-  async stopServer(): Promise<void> {
+  /** 仅停止由 GUI 目录内置 adb.exe 启动的 server。 */
+  async stopServer(): Promise<boolean> {
+    const bundledAdb = this.bundledExecutable();
+    if (!fs.existsSync(bundledAdb)) return false;
+
+    const escapedPath = bundledAdb.replace(/'/g, "''");
+    const processQuery = [
+      `$target = [IO.Path]::GetFullPath('${escapedPath}')`,
+      '$running = Get-CimInstance Win32_Process'
+        + ' -Filter "Name = \'adb.exe\'"'
+        + ' -ErrorAction SilentlyContinue'
+        + ' | Where-Object {'
+        + ' $_.ExecutablePath'
+        + ' -and [IO.Path]::GetFullPath($_.ExecutablePath) -eq $target'
+        + ' }',
+      "if ($running) { [Console]::Out.Write('1') }",
+    ].join('; ');
+    const { stdout } = await this.dependencies.execute(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', processQuery],
+      {
+        windowsHide: true,
+        timeout: 5000,
+        encoding: 'utf8',
+      },
+    );
+    if (String(stdout).trim() !== '1') return false;
+
     await this.dependencies.execute(
-      this.executable(),
+      bundledAdb,
       ['kill-server'],
       {
         windowsHide: true,
@@ -76,6 +106,7 @@ export class AdbService {
         encoding: 'utf8',
       },
     );
+    return true;
   }
 
   /** 读取并解析 adb devices 的当前设备列表。 */

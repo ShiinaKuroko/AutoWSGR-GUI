@@ -165,23 +165,36 @@ function testCombatPlanServices() {
     '            relaxed: true',
     '',
   ].join('\n');
+  const editableSplit = combatCodec.normalizeFleetPresets(
+    yaml.load(editableContent),
+    'user',
+    true,
+  );
+  const editableTeamPath = path.join(
+    appPaths.userTeamPlansDir(),
+    'team-测试舰队.yaml',
+  );
+  const editableTeamContent = [
+    '# 独立编队是唯一数据来源',
+    teamCodec.serialize(editableSplit.teams[0]),
+  ].join('\n');
+  teamRepository.write(editableTeamPath, editableTeamContent);
+
   const saved = management.saveManaged(
     '测试计划',
-    editableContent,
+    editableContent.replace('重庆', '长春'),
     false,
   );
   assert.equal(saved.success, true);
-  assert.deepEqual(saved.teamFiles, ['team-测试舰队.yaml']);
+  assert.deepEqual(saved.teamFiles, []);
   const savedMap = combatRepository.read(saved.path);
   assert.match(savedMap, /^# 编辑器注释\n/);
   assert.equal(yaml.load(savedMap).customRoot, 'keep');
   assert.deepEqual(yaml.load(savedMap).fleet_presets, [{
     name: '测试舰队',
   }]);
-  const savedTeamContent = fs.readFileSync(path.join(
-    appPaths.userTeamPlansDir(),
-    'team-测试舰队.yaml',
-  ), 'utf8');
+  const savedTeamContent = fs.readFileSync(editableTeamPath, 'utf8');
+  assert.equal(savedTeamContent, editableTeamContent);
   const savedTeam = yaml.load(savedTeamContent);
   assert.equal(savedTeamContent.includes([
     '  - name: 重庆',
@@ -254,6 +267,29 @@ function testCombatPlanServices() {
   assert.equal(preparedSlot.candidates[0].max_level, 80);
   assert.equal(preparedSlot.candidates[0].relaxed, true);
 
+  const storedPlanBeforeTeamEdit = combatRepository.read(saved.path);
+  teamRepository.write(
+    editableTeamPath,
+    teamCodec.serialize({
+      ...savedTeam,
+      ships: [{ name: '长春' }],
+    }),
+  );
+  const preparedAfterTeamEdit = management.readManaged(
+    'user',
+    saved.file,
+  );
+  assert.equal(preparedAfterTeamEdit.success, true);
+  assert.equal(
+    yaml.load(preparedAfterTeamEdit.content).fleet_presets[0].ships[0].name,
+    '长春',
+  );
+  assert.equal(
+    combatRepository.read(saved.path),
+    storedPlanBeforeTeamEdit,
+  );
+  teamRepository.write(editableTeamPath, editableTeamContent);
+
   const duplicate = management.saveManaged(
     '测试计划',
     editableContent.replace('重庆', '长春'),
@@ -264,8 +300,83 @@ function testCombatPlanServices() {
   assert.equal(duplicate.error, '存在同名配置');
   assert.deepEqual(duplicate.conflicts, [
     '地图：bettle-测试计划.yaml',
-    '舰队：测试舰队',
   ]);
+
+  const missingTeamSave = management.saveManaged(
+    '缺失编队仍可保存',
+    [
+      'chapter: 1',
+      'map: 1',
+      'fleet_presets:',
+      '  - name: 不存在编队',
+      '    ships:',
+      '      - name: 重庆',
+      '',
+    ].join('\n'),
+    false,
+  );
+  assert.equal(missingTeamSave.success, true);
+  assert.deepEqual(missingTeamSave.teamFiles, []);
+  assert.deepEqual(
+    yaml.load(combatRepository.read(missingTeamSave.path)).fleet_presets,
+    [{
+      name: '不存在编队',
+      ships: [{ name: '重庆' }],
+    }],
+  );
+  assert.equal(
+    fs.existsSync(path.join(
+      appPaths.userTeamPlansDir(),
+      'team-不存在编队.yaml',
+    )),
+    false,
+  );
+  const preparedMissingTeam = management.readManaged(
+    'user',
+    missingTeamSave.file,
+  );
+  assert.equal(preparedMissingTeam.success, true);
+  assert.deepEqual(preparedMissingTeam.missingTeamNames, ['不存在编队']);
+  assert.equal(
+    yaml.load(
+      preparedMissingTeam.content,
+    ).fleet_presets[0].ships[0].name,
+    '重庆',
+  );
+
+  const missingReferenceSave = management.saveManaged(
+    '缺失纯引用仍可保存',
+    [
+      'chapter: 1',
+      'map: 1',
+      'fleet_presets:',
+      '  - name: 不存在纯引用',
+      '',
+    ].join('\n'),
+    false,
+  );
+  assert.equal(missingReferenceSave.success, true);
+  assert.deepEqual(
+    yaml.load(combatRepository.read(
+      missingReferenceSave.path,
+    )).fleet_presets,
+    [{ name: '不存在纯引用' }],
+  );
+  assert.equal(
+    fs.existsSync(path.join(
+      appPaths.userTeamPlansDir(),
+      'team-不存在纯引用.yaml',
+    )),
+    false,
+  );
+  assert.deepEqual(
+    management.deleteUserCombat(missingTeamSave.file),
+    { success: true },
+  );
+  assert.deepEqual(
+    management.deleteUserCombat(missingReferenceSave.file),
+    { success: true },
+  );
 
   const localLegacyPlan = path.join(
     temporaryDirectory,

@@ -37,6 +37,41 @@ export function parseUiCount(msg: string, label: string): number | null {
   return m ? parseInt(m[1], 10) : null;
 }
 
+/**
+ * 将支持重复执行的后端请求拆成调度器管理的单轮任务。
+ * 兼容旧数据中写在 request.times 的总次数，并保留 GUI 的无限任务语义。
+ */
+export function normalizeRoundTask(
+  type: SchedulerTaskType,
+  request: TaskRequest,
+  times: number,
+): { request: TaskRequest; times: number } {
+  const schedulerTimes = times === Number.POSITIVE_INFINITY
+    ? times
+    : Number.isFinite(times)
+      ? Math.max(1, Math.trunc(times))
+      : 1;
+  const isRoundBased = type === 'normal_fight'
+    || type === 'event_fight'
+    || type === 'campaign';
+  const hasRoundRequest = request.type === 'normal_fight'
+    || request.type === 'event_fight'
+    || request.type === 'campaign';
+  if (!isRoundBased || !hasRoundRequest) {
+    return { request, times: schedulerTimes };
+  }
+
+  const requestTimes = Number.isFinite(request.times)
+    ? Math.max(1, Math.trunc(request.times ?? 1))
+    : 1;
+  return {
+    request: { ...request, times: 1 },
+    times: schedulerTimes === Number.POSITIVE_INFINITY
+      ? schedulerTimes
+      : Math.max(schedulerTimes, requestTimes),
+  };
+}
+
 // ════════════════════════════════════════
 // TaskQueue 实现
 // ════════════════════════════════════════
@@ -116,13 +151,14 @@ export class TaskQueue {
     sortKey?: number,
   ): string {
     const id = generateTaskId();
+    const normalized = normalizeRoundTask(type, request, times);
     const task = createSchedulerTask({
       id,
       name,
       type,
-      request,
+      request: normalized.request,
       priority,
-      times,
+      times: normalized.times,
       stopCondition,
       bathRepairConfig,
       fleetId,

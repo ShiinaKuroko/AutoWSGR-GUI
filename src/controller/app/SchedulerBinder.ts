@@ -3,12 +3,14 @@ import {
   TaskPriority,
   type CronScheduler,
   type LogicalTaskCancelReason,
+  type NormalFightDailyQuota,
   type Scheduler,
   type SchedulerStatus,
 } from '../../model/scheduler';
 import type { ApiClient } from '../../model/ApiClient';
 import type { ConfigModel } from '../../model/ConfigModel';
 import type { TemplateModel } from '../../model/TemplateModel';
+import type { NormalFightTaskConfig } from '../../types/model.js';
 import {
   type LootPlanSource,
 } from '../../shared/lootPlans.js';
@@ -30,7 +32,9 @@ export interface SchedulerBinderHost {
   readonly api: ApiClient;
   readonly templateModel: TemplateModel;
   readonly configModel: ConfigModel;
+  readonly normalFightDailyQuota: NormalFightDailyQuota;
   renderMain(): void;
+  refreshNormalFightRemaining(): void;
   updateOpsAvailability(connected: boolean): void;
   updateExpeditionTimer(text: string): void;
 }
@@ -41,6 +45,8 @@ export class SchedulerBinder {
   private pendingDecisiveTaskId: string | null = null;
   private pendingLootTaskId: string | null = null;
   private pendingNormalFightTaskIds = new Set<string>();
+  private pendingNormalFightConfigs =
+    new Map<string, NormalFightTaskConfig>();
 
   constructor(
     private readonly host: SchedulerBinderHost,
@@ -87,7 +93,12 @@ export class SchedulerBinder {
         this.host.renderMain();
       },
 
-      onLogicalTaskCompleted: (logicalId, success) => {
+      onLogicalTaskCompleted: (
+        logicalId,
+        success,
+        _error,
+        countedRound,
+      ) => {
         this.runtime.reset();
         if (logicalId === this.pendingExerciseTaskId) {
           if (success) {
@@ -109,9 +120,21 @@ export class SchedulerBinder {
           this.host.cronScheduler.markLootHandled();
           this.pendingLootTaskId = null;
         }
-        if (this.pendingNormalFightTaskIds.delete(logicalId)
-          && this.pendingNormalFightTaskIds.size === 0) {
-          this.host.cronScheduler.markNormalFightHandled();
+        const normalFightConfig =
+          this.pendingNormalFightConfigs.get(logicalId);
+        this.pendingNormalFightConfigs.delete(logicalId);
+        if (this.pendingNormalFightTaskIds.delete(logicalId)) {
+          if (success && countedRound === true && normalFightConfig) {
+            const remaining = this.host.normalFightDailyQuota
+              .markCompleted(normalFightConfig);
+            Logger.info(
+              `自动出征今日有效完成 1 次，当前计划剩余 ${remaining} 次`,
+            );
+            this.host.refreshNormalFightRemaining();
+          }
+          if (this.pendingNormalFightTaskIds.size === 0) {
+            this.host.cronScheduler.markNormalFightHandled();
+          }
         }
         this.host.renderMain();
       },
@@ -199,10 +222,9 @@ export class SchedulerBinder {
       }
       this.pendingLootTaskId = null;
     }
-    if (
-      this.pendingNormalFightTaskIds.delete(logicalId)
-      && this.pendingNormalFightTaskIds.size === 0
-    ) {
+    this.pendingNormalFightConfigs.delete(logicalId);
+    if (this.pendingNormalFightTaskIds.delete(logicalId)) {
+      if (this.pendingNormalFightTaskIds.size !== 0) return;
       if (allowRetry) {
         this.host.cronScheduler.clearNormalFightPending();
       } else {
@@ -255,7 +277,15 @@ export class SchedulerBinder {
         void this.enqueueLootTask(source, planId, stopCount);
       },
 
-      canStartNormalFight: () => this.host.scheduler.isCompletelyIdle,
+      canStartNormalFight: () => {
+        const hasRemaining = this.host.normalFightDailyQuota.hasRemaining(
+          this.host.configModel.current
+            .daily_automation
+            .normal_fight_tasks,
+        );
+        this.host.refreshNormalFightRemaining();
+        return this.host.scheduler.isCompletelyIdle && hasRemaining;
+      },
 
       onNormalFightDue: () => {
         void this.enqueueNormalFightTasks();
@@ -298,8 +328,12 @@ export class SchedulerBinder {
         this.host.cronScheduler.clearNormalFightPending();
         return;
       }
-      for (const taskId of result.taskIds) {
-        this.pendingNormalFightTaskIds.add(taskId);
+      for (const task of result.tasks) {
+        this.pendingNormalFightTaskIds.add(task.taskId);
+        this.pendingNormalFightConfigs.set(
+          task.taskId,
+          structuredClone(task.config),
+        );
       }
       this.host.scheduler.startConsuming();
     } catch (error) {

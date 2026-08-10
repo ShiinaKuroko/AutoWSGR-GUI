@@ -73,6 +73,7 @@ export class CombatPlanCodec {
     root: Record<string, unknown>,
     source: PlanPresetSource,
     requireEmbeddedShips: boolean,
+    allowMissingReferences = false,
   ): SplitCombatPlan {
     this.requireMapCoordinates(root);
     if (root.fleet_presets === undefined) {
@@ -111,7 +112,10 @@ export class CombatPlanCodec {
         if (requireEmbeddedShips) {
           throw new Error(`旧计划中的舰队「${name}」缺少 ships`);
         }
-        if (!this.teamRepository.find(name, source)) {
+        if (
+          !allowMissingReferences
+          && !this.teamRepository.find(name, source)
+        ) {
           throw new Error(`找不到舰队「${name}」的独立配置`);
         }
       }

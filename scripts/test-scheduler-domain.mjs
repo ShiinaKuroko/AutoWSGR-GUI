@@ -10,6 +10,9 @@ const entries = [
   'src/model/scheduler/RepairManager.ts',
   'src/model/scheduler/Scheduler.ts',
   'src/controller/app/ScheduledTaskLoader.ts',
+  'src/model/scheduler/StopConditionChecker.ts',
+  'src/model/scheduler/TaskQueue.ts',
+  'src/model/scheduler/NormalFightDailyQuota.ts',
 ];
 const modules = await Promise.all(entries.map(async entry => {
   const result = await esbuild.build({
@@ -30,6 +33,154 @@ const schedulerBinderModule = modules[4];
 const repairModule = modules[5];
 const schedulerModule = modules[6];
 const scheduledTaskLoaderModule = modules[7];
+const stopConditionModule = modules[8];
+const taskQueueModule = modules[9];
+const normalFightQuotaModule = modules[10];
+
+assert.equal(normalFightQuotaModule.normalFightDailyLimit(undefined), 1);
+assert.equal(normalFightQuotaModule.normalFightDailyLimit(0), 1);
+assert.equal(normalFightQuotaModule.normalFightDailyLimit(7.9), 7);
+assert.equal(normalFightQuotaModule.normalFightDailyLimit(1000), 999);
+
+const quotaValues = new Map();
+const quotaStorage = {
+  get: key => quotaValues.get(key) ?? null,
+  set: (key, value) => quotaValues.set(key, value),
+  remove: key => quotaValues.delete(key),
+};
+let quotaNow = new Date(2026, 7, 10, 12, 0, 0).getTime();
+const quotaTask = {
+  name: 'plans/daily.yaml',
+  fleet_id: 2,
+  fleet_preset_index: 1,
+  times: 2,
+};
+const dailyQuota = new normalFightQuotaModule.NormalFightDailyQuota(
+  quotaStorage,
+  () => quotaNow,
+);
+assert.equal(dailyQuota.remaining(quotaTask), 2);
+assert.equal(dailyQuota.markCompleted(quotaTask), 1);
+const restoredDailyQuota =
+  new normalFightQuotaModule.NormalFightDailyQuota(
+    quotaStorage,
+    () => quotaNow,
+  );
+assert.equal(
+  restoredDailyQuota.remaining(quotaTask),
+  1,
+  '自动出征今日完成次数必须跨 GUI 重启保留',
+);
+assert.equal(
+  restoredDailyQuota.totalRemaining([
+    quotaTask,
+    { ...quotaTask },
+  ]),
+  1,
+  '重复的自动出征计划和舰队不得重复计算剩余次数',
+);
+quotaNow = new Date(2026, 7, 11, 0, 0, 1).getTime();
+assert.equal(
+  restoredDailyQuota.remaining(quotaTask),
+  2,
+  '本地日期变化后自动出征次数必须重置',
+);
+
+let disabledStopConditionApiCalls = 0;
+const disabledStopConditionChecker =
+  new stopConditionModule.StopConditionChecker(
+    {
+      gameAcquisition: async () => {
+        disabledStopConditionApiCalls += 1;
+        return {
+          success: true,
+          data: { loot_count: -1, ship_count: -1 },
+        };
+      },
+      gameContext: async () => {
+        disabledStopConditionApiCalls += 1;
+        return {
+          success: true,
+          data: {
+            dropped_loot_count: -1,
+            dropped_ship_count: -1,
+          },
+        };
+      },
+    },
+    () => {},
+  );
+disabledStopConditionChecker.updateTracked(-1, -1);
+assert.equal(
+  disabledStopConditionChecker.checkRunning({
+    loot_count_ge: -1,
+    ship_count_ge: -1,
+  }),
+  false,
+  '关闭的停止条件不得被 -1 计数触发',
+);
+assert.equal(
+  await disabledStopConditionChecker.preflightCheck(
+    { loot_count_ge: -1, ship_count_ge: -1 },
+    '关闭停止条件测试',
+  ),
+  false,
+);
+assert.equal(
+  await disabledStopConditionChecker.checkCondition(
+    { loot_count_ge: -1, ship_count_ge: -1 },
+    '关闭停止条件测试',
+  ),
+  false,
+);
+assert.equal(
+  disabledStopConditionApiCalls,
+  0,
+  '关闭的停止条件不得发起 OCR 或上下文检查',
+);
+disabledStopConditionChecker.updateTracked(0, 0);
+assert.equal(
+  disabledStopConditionChecker.checkRunning({ loot_count_ge: 0 }),
+  true,
+  '阈值 0 必须保持原有的立即满足语义',
+);
+
+for (const [type, request] of [
+  ['normal_fight', { type: 'normal_fight', times: 4, gap: 0 }],
+  ['event_fight', { type: 'event_fight', times: 4, gap: 0, fleet_id: 1 }],
+  ['campaign', { type: 'campaign', campaign_name: '困难潜艇', times: 4 }],
+]) {
+  const normalized = taskQueueModule.normalizeRoundTask(type, request, 2);
+  assert.equal(
+    normalized.times,
+    4,
+    `${type} 应兼容旧请求中的总轮数`,
+  );
+  assert.equal(
+    normalized.request.times,
+    1,
+    `${type} 后端请求必须固定为单轮`,
+  );
+  assert.equal(request.times, 4, `${type} 归一化不得修改原请求`);
+}
+const unlimitedRound = taskQueueModule.normalizeRoundTask(
+  'normal_fight',
+  { type: 'normal_fight', times: 10, gap: 0 },
+  Number.POSITIVE_INFINITY,
+);
+assert.equal(unlimitedRound.times, Number.POSITIVE_INFINITY);
+assert.equal(
+  unlimitedRound.request.times,
+  1,
+  '无限任务也必须由 GUI 按单轮调度',
+);
+const invalidRound = taskQueueModule.normalizeRoundTask(
+  'campaign',
+  { type: 'campaign', campaign_name: '困难潜艇', times: Number.NaN },
+  Number.NaN,
+);
+assert.equal(invalidRound.times, 1, '非法轮数必须回退为 1');
+assert.equal(invalidRound.request.times, 1);
 
 const task = taskPolicy.createSchedulerTask({
   id: 'task-1', name: 'test', type: 'normal_fight', request: { type: 'normal_fight' },
@@ -288,6 +439,9 @@ let decisivePendingClears = 0;
 let decisiveHandledCalls = 0;
 let normalFightPendingClears = 0;
 let normalFightHandledCalls = 0;
+let normalFightQuotaAvailable = true;
+let normalFightQuotaMarks = 0;
+let normalFightRemainingRefreshes = 0;
 let lootPendingClears = 0;
 let lootHandledCalls = 0;
 let binderRunningTask = null;
@@ -298,6 +452,8 @@ const managedLootYaml = [
   'chapter: 9',
   'map: 2',
   'selected_nodes: [A]',
+  'endpoint_nodes: [A]',
+  'result: S',
   'fleet_id: 3',
   'gap: 4',
   'stop_condition:',
@@ -308,6 +464,7 @@ const managedLootYaml = [
 const automaticSortieCalls = [];
 let automaticSortieIdle = true;
 let automaticSortieStarts = 0;
+let automaticSortieRemaining = 99;
 const automaticSortieLoader =
   new scheduledTaskLoaderModule.ScheduledTaskLoader(
     {
@@ -324,6 +481,9 @@ const automaticSortieLoader =
         },
       },
       templateModel: {},
+      normalFightDailyQuota: {
+        remaining: () => automaticSortieRemaining,
+      },
       configModel: {
         current: {
           daily_automation: {
@@ -360,6 +520,21 @@ assert.equal(
   1,
   '自动出征逻辑任务不得使用 YAML 中遗留的重复次数',
 );
+assert.deepEqual(
+  automaticSortieCalls[0][12],
+  ['A'],
+  '自动出征必须把计划终点传给 Scheduler',
+);
+assert.equal(
+  automaticSortieCalls[0][13],
+  'S',
+  '自动出征必须把计划战果要求传给 Scheduler',
+);
+assert.equal(
+  automaticSortieResult.tasks[0].config.times,
+  99,
+  '加载器必须返回任务 ID 对应的每日额度配置',
+);
 assert.equal(
   automaticSortieStarts,
   0,
@@ -373,6 +548,36 @@ assert.equal(
   automaticSortieCalls.length,
   1,
   '计划加载期间队列变为忙碌时不得追加自动出征',
+);
+automaticSortieIdle = true;
+automaticSortieRemaining = 0;
+const exhaustedAutomaticSortieResult =
+  await automaticSortieLoader.loadNormalFightTasks();
+assert.equal(exhaustedAutomaticSortieResult.status, 'handled');
+assert.equal(
+  automaticSortieCalls.length,
+  1,
+  '今日额度用完后不得再追加自动出征',
+);
+automaticSortieRemaining = 99;
+automaticSortieLoader.host.configModel.current
+  .daily_automation.normal_fight_tasks.push({
+    name: 'idle-plan',
+    fleet_id: 2,
+    times: 99,
+  });
+const duplicateAutomaticSortieResult =
+  await automaticSortieLoader.loadNormalFightTasks();
+assert.equal(duplicateAutomaticSortieResult.status, 'queued');
+assert.equal(
+  duplicateAutomaticSortieResult.tasks.length,
+  1,
+  '相同计划和舰队的重复配置只能生成一个自动出征任务',
+);
+assert.equal(
+  automaticSortieCalls.length,
+  2,
+  '旧配置中的重复自动出征项不得重复加入队列',
 );
 globalThis.window = {
   electronBridge: {
@@ -454,7 +659,18 @@ const binder = new schedulerBinderModule.SchedulerBinder({
       },
     },
   },
+  normalFightDailyQuota: {
+    hasRemaining: () => normalFightQuotaAvailable,
+    remaining: () => normalFightQuotaAvailable ? 1 : 0,
+    markCompleted: () => {
+      normalFightQuotaMarks += 1;
+      return 0;
+    },
+  },
   renderMain: () => {},
+  refreshNormalFightRemaining: () => {
+    normalFightRemainingRefreshes += 1;
+  },
   updateOpsAvailability: () => {},
   updateExpeditionTimer: text => {
     expeditionTimerUpdates.push(text);
@@ -467,6 +683,13 @@ assert.equal(
   true,
   '空闲自动出征必须使用调度器的完整空闲状态',
 );
+normalFightQuotaAvailable = false;
+assert.equal(
+  cronCallbacks.canStartNormalFight(),
+  false,
+  '今日额度用完后不得触发自动出征',
+);
+normalFightQuotaAvailable = true;
 cronCallbacks.onDecisiveDue('user_plan');
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(decisiveQueueCalls.length, 1);
@@ -577,7 +800,9 @@ assert.deepEqual(automaticLootCall.slice(0, 6), [
     plan: {
       selected_nodes: ['A', '0'],
       node_defaults: {},
-      node_args: {},
+      node_args: {
+        A: { proceed: false },
+      },
       fleet_id: 3,
     },
   },
@@ -617,6 +842,49 @@ assert.equal(
   normalFightPendingClears,
   1,
   '系统停止本轮自动出征后应释放 cron pending，允许重启后重试',
+);
+const quotaRefreshBaseline = normalFightRemainingRefreshes;
+const pendingQuotaConfig = {
+  name: 'daily-plan.yaml',
+  fleet_preset_index: 0,
+  times: 3,
+};
+binder.pendingNormalFightTaskIds.add('normal-not-counted');
+binder.pendingNormalFightConfigs.set(
+  'normal-not-counted',
+  pendingQuotaConfig,
+);
+schedulerCallbacks.onLogicalTaskCompleted(
+  'normal-not-counted',
+  true,
+  null,
+  false,
+);
+assert.equal(
+  normalFightQuotaMarks,
+  0,
+  '停止条件等非有效轮次结束不得扣每日额度',
+);
+binder.pendingNormalFightTaskIds.add('normal-counted');
+binder.pendingNormalFightConfigs.set(
+  'normal-counted',
+  pendingQuotaConfig,
+);
+schedulerCallbacks.onLogicalTaskCompleted(
+  'normal-counted',
+  true,
+  null,
+  true,
+);
+assert.equal(
+  normalFightQuotaMarks,
+  1,
+  '仅 Scheduler 确认有效完成的轮次才扣每日额度',
+);
+assert.equal(
+  normalFightRemainingRefreshes,
+  quotaRefreshBaseline + 1,
+  '扣除额度后必须刷新设置页剩余次数',
 );
 binderRunningTask = {
   id: 'running-round',
@@ -767,7 +1035,7 @@ reconnectScheduler.startConsuming();
 await wait(0);
 assert.deepEqual(
   reconnectedTaskRequests,
-  [reconnectTaskRequest],
+  [{ ...reconnectTaskRequest, times: 1 }],
   '重连成功后 GUI 队列任务没有发送到后端',
 );
 assert.equal(reconnectScheduler.status, 'running');
@@ -803,6 +1071,45 @@ for (const [actualIndex, actual] of resultGrades.entries()) {
     );
   }
 }
+const endpointTask = {
+  type: 'normal_fight',
+  request: { type: 'normal_fight' },
+  endpointNodes: ['I'],
+  endpointResult: 'S',
+};
+const endpointRoundResult = actual => ({
+  details: [{
+    round: 1,
+    success: true,
+    nodes: ['C', 'F', 'I'],
+    grade: actual,
+    events: [{ type: 'RESULT', node: 'I', result: actual }],
+  }],
+});
+assert.equal(
+  endpointResultScheduler.shouldCountAsCompletedRound(
+    endpointTask,
+    endpointRoundResult('A'),
+  ),
+  false,
+  '启用终点战果判断时，未达标轮次不得计数',
+);
+assert.equal(
+  endpointResultScheduler.shouldCountAsCompletedRound(
+    endpointTask,
+    endpointRoundResult('S'),
+  ),
+  true,
+  '启用终点战果判断时，达标轮次必须计数',
+);
+assert.equal(
+  endpointResultScheduler.shouldCountAsCompletedRound(
+    { ...endpointTask, endpointResult: undefined },
+    endpointRoundResult('D'),
+  ),
+  true,
+  '未启用战果判断时，到达终点后不得比较战果等级',
+);
 
 // 决战完成一轮后必须继续执行用户设置的剩余轮次。
 let decisiveTaskStarts = 0;
@@ -968,6 +1275,42 @@ assert.deepEqual(
 );
 await retryScheduler.stop();
 
+const exhaustedRetryApi = createSchedulerApi({
+  taskStart: async () => ({
+    success: false,
+    error: '舰名与数据库不一致',
+  }),
+});
+const exhaustedRetryScheduler =
+  new schedulerModule.Scheduler(exhaustedRetryApi);
+exhaustedRetryScheduler.setAutoExpedition(false);
+const exhaustedRetryLogs = [];
+exhaustedRetryScheduler.setCallbacks({
+  onLog: message => exhaustedRetryLogs.push(message),
+});
+assert.equal(await exhaustedRetryScheduler.start(), true);
+const exhaustedRetryTask = taskPolicy.createSchedulerTask({
+  id: 'exhausted-retry',
+  name: '重试耗尽日志测试',
+  type: 'normal_fight',
+  request: { type: 'normal_fight' },
+  priority: 10,
+  times: 1,
+});
+exhaustedRetryTask.retryCount = exhaustedRetryTask.maxRetries;
+exhaustedRetryScheduler.currentTask = exhaustedRetryTask;
+await exhaustedRetryScheduler.executeTaskStart(exhaustedRetryTask);
+assert.ok(
+  exhaustedRetryLogs.some(
+    message => (
+      message.level === 'error'
+      && message.message.includes('舰名与数据库不一致')
+    ),
+  ),
+  '重试耗尽后必须记录后端返回的失败原因',
+);
+await exhaustedRetryScheduler.stop();
+
 // 清空和系统停止必须给每个父任务发送明确的取消原因。
 const clearApi = createSchedulerApi();
 const clearScheduler = new schedulerModule.Scheduler(clearApi);
@@ -1084,6 +1427,122 @@ assert.equal(
   '远征定时器触发后应通过 EXPEDITION 任务执行检查',
 );
 expeditionScheduler.setAutoExpedition(false);
+
+// 远征定时触发后应等待当前单轮自然结束，再检查并恢复剩余轮次。
+const expeditionQueueEvents = [];
+const expeditionQueueRequestTimes = [];
+let expeditionQueueStarts = 0;
+let expeditionQueueStops = 0;
+const expeditionQueueApi = createSchedulerApi({
+  taskStart: async (request) => {
+    expeditionQueueStarts += 1;
+    expeditionQueueEvents.push('task');
+    expeditionQueueRequestTimes.push(request.times);
+    return {
+      success: true,
+      data: {
+        task_id: `expedition-queue-${expeditionQueueStarts}`,
+        status: 'running',
+      },
+    };
+  },
+  taskStop: async () => {
+    expeditionQueueStops += 1;
+    return { success: true };
+  },
+  expeditionCheck: async () => {
+    expeditionQueueEvents.push('expedition');
+    return { success: true };
+  },
+});
+const expeditionQueueScheduler =
+  new schedulerModule.Scheduler(expeditionQueueApi);
+expeditionQueueScheduler.setAutoExpedition(false);
+assert.equal(await expeditionQueueScheduler.start(), true);
+const queuedTaskId = expeditionQueueScheduler.addTask(
+  '远征安全插队测试',
+  'normal_fight',
+  { type: 'normal_fight', times: 5 },
+  10,
+  2,
+);
+expeditionQueueScheduler.addTask(
+  '远征后的排队任务',
+  'normal_fight',
+  { type: 'normal_fight' },
+  10,
+  2,
+);
+expeditionQueueScheduler.startConsuming();
+await wait(0);
+const queuedLogicalId =
+  expeditionQueueScheduler.currentRunningTask?.logicalId;
+expeditionQueueScheduler.setAutoExpedition(true);
+expeditionQueueScheduler.handleExpeditionTrigger();
+expeditionQueueScheduler.handleExpeditionTrigger();
+await wait(0);
+assert.deepEqual(
+  expeditionQueueEvents,
+  ['task'],
+  '远征触发时不得打断尚未完成的当前轮',
+);
+assert.equal(
+  expeditionQueueStops,
+  0,
+  '远征插队不得向后端发送 taskStop',
+);
+assert.equal(
+  expeditionQueueScheduler.currentRunningTask?.id,
+  queuedTaskId,
+  '远征排队期间当前任务必须继续运行',
+);
+assert.equal(
+  expeditionQueueScheduler.currentRunningTask?.remainingTimes,
+  5,
+  '旧请求中的总轮数必须迁移到 GUI 队列',
+);
+assert.deepEqual(
+  expeditionQueueRequestTimes,
+  [1],
+  '远征等待期间后端只能执行当前单轮',
+);
+expeditionQueueApi.callbacks.onTaskCompleted({
+  type: 'task_completed',
+  success: true,
+  result: null,
+  error: null,
+});
+await wait(20);
+assert.deepEqual(
+  expeditionQueueEvents,
+  ['task', 'expedition', 'task'],
+  '当前轮完成后应先执行远征，再恢复原逻辑任务',
+);
+assert.equal(
+  expeditionQueueScheduler.currentRunningTask?.logicalId,
+  queuedLogicalId,
+  '远征检查不得改变父任务身份',
+);
+assert.equal(
+  expeditionQueueScheduler.currentRunningTask?.remainingTimes,
+  4,
+  '当前轮自然完成后应只扣减本轮一次',
+);
+assert.deepEqual(
+  expeditionQueueRequestTimes,
+  [1, 1],
+  '远征后的后续任务仍必须按单轮发送',
+);
+assert.equal(
+  expeditionQueueScheduler.taskQueue.reduce(
+    (total, task) => total + task.remainingTimes,
+    expeditionQueueScheduler.currentRunningTask?.remainingTimes ?? 0,
+  ),
+  6,
+  '远征检查后必须保留已完成轮次之外的全部任务次数',
+);
+expeditionQueueScheduler.setAutoExpedition(false);
+await expeditionQueueScheduler.stop();
 
 async function createRunningScheduler(api) {
   const scheduler = new schedulerModule.Scheduler(api);

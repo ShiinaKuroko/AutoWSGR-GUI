@@ -15,7 +15,11 @@ import {
 } from '../../view/theme';
 import { ConfigModel } from '../../model/ConfigModel';
 import { ApiClient } from '../../model/ApiClient';
-import { Scheduler, CronScheduler } from '../../model/scheduler';
+import {
+  CronScheduler,
+  NormalFightDailyQuota,
+  Scheduler,
+} from '../../model/scheduler';
 import { TaskGroupModel } from '../../model/TaskGroupModel';
 import { TemplateModel } from '../../model/TemplateModel';
 import { Logger } from '../../utils/Logger';
@@ -59,6 +63,7 @@ export class AppController {
   private api: ApiClient;
   private scheduler: Scheduler;
   private cronScheduler: CronScheduler;
+  private normalFightDailyQuota: NormalFightDailyQuota;
   private schedulerBinder: SchedulerBinder;
   private configCtrl!: ConfigController;
   private navigationCtrl: NavigationController;
@@ -92,6 +97,7 @@ export class AppController {
     this.configModel = new ConfigModel();
     this.taskGroupModel = new TaskGroupModel();
     this.templateModel = new TemplateModel();
+    this.normalFightDailyQuota = new NormalFightDailyQuota();
     this.fleetPlannerCtrl.setTaskGroupsProvider(
       () => this.taskGroupModel.groups,
     );
@@ -139,7 +145,11 @@ export class AppController {
       api: this.api,
       templateModel: this.templateModel,
       configModel: this.configModel,
+      normalFightDailyQuota: this.normalFightDailyQuota,
       renderMain: () => this.renderMain(),
+      refreshNormalFightRemaining: () => (
+        this.configCtrl?.refreshNormalFightRemaining()
+      ),
       updateOpsAvailability: (c) => this.operationsCtrl.updateOpsAvailability(c),
       updateExpeditionTimer: (text) => (
         this.mainView.setExpeditionTimer(text)
@@ -214,6 +224,7 @@ export class AppController {
       mainView: this.mainView,
       scheduler: this.scheduler,
       cronScheduler: this.cronScheduler,
+      normalFightDailyQuota: this.normalFightDailyQuota,
       startupCtrl: null,
       configDir: this.configDir,
     });
@@ -221,11 +232,14 @@ export class AppController {
       configView: this.configView,
       getConfigDir: () => this.configDir,
       saveConfig: () => this.configCtrl.saveConfig(),
-      pickAutomationPlan: () => (
-        this.planCtrl.pickManagedBattlePlanForAutomation()
+      pickAutomationPlan: currentTask => (
+        this.planCtrl.pickManagedBattlePlanForAutomation(currentTask)
       ),
       pickLootAutomationPlans: currentPlans => (
         this.planCtrl.pickManagedLootPlans(currentPlans)
+      ),
+      getNormalFightRemaining: task => (
+        this.normalFightDailyQuota.remaining(task)
       ),
       reloadShipLibrary: async () => {
         await Promise.all([

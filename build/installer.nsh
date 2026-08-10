@@ -1,17 +1,22 @@
 ; AutoWSGR-GUI NSIS 自定义安装脚本
 ; 安装 VC++ Redistributable，并让新版 GUI 首次启动时更新指定后端。
 
+; 只结束安装目录内置 adb.exe，避免影响系统或其他工具的 ADB。
+!macro StopBundledAdb LABEL_SUFFIX
+  IfFileExists "$INSTDIR\adb\adb.exe" 0 BundledAdbStopped_${LABEL_SUFFIX}
+    DetailPrint "正在停止旧版内置 ADB server..."
+    nsExec::Exec 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$target=[IO.Path]::GetFullPath($$args[0]); Get-Process -Name adb -ErrorAction SilentlyContinue | Where-Object { $$_.Path -and [IO.Path]::GetFullPath($$_.Path) -eq $$target } | Stop-Process -Force" "$INSTDIR\adb\adb.exe"'
+    Pop $R2
+  BundledAdbStopped_${LABEL_SUFFIX}:
+!macroend
+
 ; 覆盖安装时先等待 GUI 正常停止后端，超时后再结束整棵进程树。
 !macro customCheckAppRunning
   !insertmacro IS_POWERSHELL_AVAILABLE
 
   RetryCloseApp:
-  IfFileExists "$INSTDIR\adb\adb.exe" 0 CheckRunningProcess
-    DetailPrint "正在停止旧版内置 ADB server..."
-    nsExec::Exec '"$INSTDIR\adb\adb.exe" kill-server'
-    Pop $R2
+  !insertmacro StopBundledAdb Initial
 
-  CheckRunningProcess:
   !insertmacro FIND_PROCESS "${APP_EXECUTABLE_FILENAME}" $R0
   ${If} $R0 == 0
     DetailPrint "正在关闭旧版 AutoWSGR-GUI..."
@@ -33,11 +38,8 @@
     DetailPrint "正常退出超时，正在结束 AutoWSGR-GUI 及其子进程..."
     nsExec::Exec '"$SYSDIR\taskkill.exe" /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
     Pop $R2
-    IfFileExists "$INSTDIR\adb\adb.exe" 0 VerifyClosed
-      nsExec::Exec '"$INSTDIR\adb\adb.exe" kill-server'
-      Pop $R2
+    !insertmacro StopBundledAdb Forced
 
-    VerifyClosed:
     Sleep 2000
     !insertmacro FIND_PROCESS "${APP_EXECUTABLE_FILENAME}" $R0
     ${If} $R0 == 0

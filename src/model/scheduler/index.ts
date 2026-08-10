@@ -8,6 +8,14 @@ export * from './SchedulerTaskPolicy';
 export * from './SchedulerRepairPolicy';
 export { CronScheduler } from './CronScheduler';
 export type { CronConfig, CronCallbacks, ScheduledTask } from './CronScheduler';
+export {
+  DEFAULT_NORMAL_FIGHT_DAILY_EXECUTIONS,
+  MAX_NORMAL_FIGHT_DAILY_EXECUTIONS,
+  NormalFightDailyQuota,
+  normalFightDailyLimit,
+  normalFightTaskKey,
+  uniqueNormalFightTasks,
+} from './NormalFightDailyQuota';
 
 // 类型 re-export（来自 types/scheduler.ts）
 export {
