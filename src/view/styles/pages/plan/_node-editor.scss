@@ -248,6 +248,8 @@
 .node-rules-textarea {
   resize: vertical;
   font-family: "Cascadia Code", "Consolas", "Courier New", monospace;
+  font-feature-settings: "liga" 0, "calt" 0;
+  font-variant-ligatures: none;
   min-height: 70px;
   line-height: 1.6;
 }
