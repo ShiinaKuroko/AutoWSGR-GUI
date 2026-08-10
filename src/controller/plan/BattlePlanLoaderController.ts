@@ -420,6 +420,7 @@ export class BattlePlanLoaderController {
     plan: ManagedBattlePlan,
     task: NormalFightTaskConfig,
   ): boolean {
+    if (task.source && task.source !== plan.source) return false;
     const taskPath = task.name
       .trim()
       .replace(/\\/g, '/')
@@ -428,7 +429,8 @@ export class BattlePlanLoaderController {
       .trim()
       .replace(/\\/g, '/')
       .toLocaleLowerCase();
-    return taskPath === planFile || taskPath.endsWith(`/${planFile}`);
+    return taskPath === planFile
+      || (!task.source && taskPath.endsWith(`/${planFile}`));
   }
 
   private selectFleet(index: number): void {

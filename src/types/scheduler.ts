@@ -88,6 +88,13 @@ export type LogicalTaskCancelReason =
   | 'queue_cleared'
   | 'system_stopped';
 
+/** 逻辑任务结束原因，供自动任务区分自然结束和停止条件达成。 */
+export type LogicalTaskCompletionReason =
+  | 'completed'
+  | 'failed'
+  | 'terminal'
+  | 'stop_condition';
+
 /** 尚未回到就绪队列的任务，例如轮次间隔或失败重试。 */
 export interface SchedulerWaitingTask {
   task: SchedulerTask;
@@ -115,6 +122,7 @@ export interface SchedulerCallbacks {
     success: boolean,
     error?: string | null,
     countedRound?: boolean,
+    reason?: LogicalTaskCompletionReason,
   ) => void;
   /** 逻辑任务被删除、清空或随系统停止，不等同于完成或失败。 */
   onLogicalTaskCanceled?: (

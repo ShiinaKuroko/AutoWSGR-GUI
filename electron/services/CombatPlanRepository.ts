@@ -26,6 +26,18 @@ export class CombatPlanRepository {
       : this.appPaths.userBattlePlansDir();
   }
 
+  /** 列出用户计划文件，保持原有过滤、映射和文件系统顺序。 */
+  listUserFiles(): { name: string; file: string }[] {
+    const directory = this.directory('user');
+    if (!fs.existsSync(directory)) return [];
+    return fs.readdirSync(directory)
+      .filter(file => /\.ya?ml$/i.test(file))
+      .map(file => ({
+        name: file.replace(/\.ya?ml$/i, ''),
+        file,
+      }));
+  }
+
   /** 返回经过文件名边界校验的受管计划路径。 */
   safeManagedPath(
     source: PlanPresetSource,

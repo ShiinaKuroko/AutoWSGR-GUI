@@ -97,6 +97,32 @@ function testCombatPlanServices() {
   combatRepository.initializeUserDirectory();
   teamRepository.initializeUserDirectory();
 
+  assert.deepEqual(combatRepository.listUserFiles(), []);
+  const listedFiles = [
+    'bettle-列表测试.yaml',
+    'bettle-列表测试-2.YML',
+    '忽略.txt',
+  ];
+  for (const file of listedFiles) {
+    fs.writeFileSync(
+      path.join(appPaths.userBattlePlansDir(), file),
+      '',
+      'utf8',
+    );
+  }
+  assert.deepEqual(
+    combatRepository.listUserFiles(),
+    fs.readdirSync(appPaths.userBattlePlansDir())
+      .filter(file => /\.ya?ml$/i.test(file))
+      .map(file => ({
+        name: file.replace(/\.ya?ml$/i, ''),
+        file,
+      })),
+  );
+  for (const file of listedFiles) {
+    fs.rmSync(path.join(appPaths.userBattlePlansDir(), file));
+  }
+
   const split = combatCodec.normalizeFleetPresets({
     chapter: 1,
     map: 2,

@@ -6,12 +6,22 @@
  */
 const { fs, temporaryDirectory } = require('./main-services/test-context');
 const { testAppPaths, testSecureFileService, testAtomicFileStore } = require('./main-services/test-path-and-file');
-const { testWindowService, testGuiSettingsStore, testGuiConfigurationService } = require('./main-services/test-configuration-and-window');
+const {
+  testWindowService,
+  testGuiSettingsStore,
+  testGuiConfigurationService,
+  testGuiSettingsCommitService,
+} = require('./main-services/test-configuration-and-window');
 const { testUserDataMigration } = require('./main-services/test-migration');
 const { testTeamPlanServices } = require('./main-services/test-team-plan');
 const { testCombatPlanServices } = require('./main-services/test-combat-plan');
 const { testPlanExportService } = require('./main-services/test-plan-export');
-const { testPythonEnvironmentService, testAdbService, testCudaEnvironmentService } = require('./main-services/test-environment-and-device');
+const {
+  testBackendShipNamesPath,
+  testPythonEnvironmentService,
+  testAdbService,
+  testCudaEnvironmentService,
+} = require('./main-services/test-environment-and-device');
 const {
   testShipLibraryService,
   testShipNameSynchronizer,
@@ -28,6 +38,8 @@ async function main() {
   testUserDataMigration();
   testGuiSettingsStore();
   testGuiConfigurationService();
+  testGuiSettingsCommitService();
+  testBackendShipNamesPath();
   await testPythonEnvironmentService();
   testAtomicFileStore();
   testTeamPlanServices();

@@ -92,7 +92,8 @@ AutoWSGR-GUI/
 │   │   ├── DailyPlanService.ts
 │   │   ├── ShipLibraryService.ts · ShipLibraryUpdater.ts
 │   │   ├── AdbService.ts · CudaEnvironmentService.ts
-│   │   ├── GuiConfigurationService.ts · PythonEnvironmentService.ts
+│   │   ├── GuiConfigurationService.ts · GuiSettingsCommitService.ts
+│   │   ├── PythonEnvironmentService.ts
 │   │   ├── LegacyPlanMigration.ts
 │   │   ├── BackendService.ts · BackendShutdownService.ts
 │   │   └── GuiUpdatePolicy.ts  # 更新版本和频道策略

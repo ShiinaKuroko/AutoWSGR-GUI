@@ -141,7 +141,7 @@ export class ScheduledTaskLoader {
     }> = [];
     for (const task of eligibleTasks) {
       try {
-        const resolved = await this.resolveNormalFightPlan(task.name);
+        const resolved = await this.resolveNormalFightPlan(task);
         if (!resolved) {
           throw new Error(`找不到出征计划: ${task.name}`);
         }
@@ -284,46 +284,25 @@ export class ScheduledTaskLoader {
   }
 
   private async resolveNormalFightPlan(
-    name: string,
+    task: NormalFightTaskConfig,
   ): Promise<{ path: string; content: string } | null> {
     if (!this.repository) return null;
-    const root = this.host.configModel.current.plan_root
-      ?.replace(/[\\/]$/, '');
-    const suffixes = /\.ya?ml$/i.test(name)
-      ? [name]
-      : [name, `${name}.yaml`];
-    const candidates = new Set<string>(suffixes);
-    for (const category of ['normal_fight', 'event']) {
-      for (const suffix of suffixes) {
-        if (root) {
-          candidates.add(`${root}/${category}/${suffix}`);
-        }
-        candidates.add(
-          `autowsgr/data/plan/${category}/${suffix}`,
-        );
-      }
-    }
-
-    for (const candidate of candidates) {
-      if (this.repository.readCombatPlanFile) {
-        const result = await this.repository
-          .readCombatPlanFile(candidate);
-        if (
-          result.success
-          && result.content?.trim()
-          && result.path
-        ) {
-          return {
-            path: result.runtimePath ?? result.path,
-            content: result.content,
-          };
-        }
-        continue;
-      }
-      const content = await this.repository.readFile(candidate);
-      if (content.trim()) {
-        return { path: candidate, content };
-      }
+    const planName = task.name.trim();
+    const result = task.source
+      ? await this.repository.readManagedCombatPlan(
+          task.source,
+          planName,
+        )
+      : await this.repository.readCombatPlanFile(planName);
+    if (
+      result.success
+      && result.content?.trim()
+      && result.path
+    ) {
+      return {
+        path: result.runtimePath ?? result.path,
+        content: result.content,
+      };
     }
     return null;
   }

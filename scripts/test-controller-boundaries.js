@@ -18,6 +18,10 @@ const forbidden = [
     pattern: /\bwindow\s*\.\s*electronBridge\b/,
   },
   {
+    name: 'direct browser storage',
+    pattern: /\blocalStorage\s*\./,
+  },
+  {
     name: 'browser event ownership',
     pattern: /\bwindow\s*\.\s*(?:addEventListener|matchMedia)\b/,
   },
@@ -59,4 +63,15 @@ assert.deepEqual(
   [],
   `Controller boundary violations:\n${violations.join('\n')}`,
 );
+
+const navigationSource = fs.readFileSync(
+  path.join(controllerRoot, 'app', 'NavigationController.ts'),
+  'utf8',
+);
+assert.doesNotMatch(
+  navigationSource,
+  /\b(?:PlanController|FleetPlannerController)\b/,
+  'NavigationController must depend on navigation capabilities, not concrete plan controllers',
+);
+
 console.log(`controller boundary tests passed (${files.length} files)`);

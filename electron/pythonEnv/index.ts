@@ -18,9 +18,11 @@ export {
 
 export {
   type BackendStartupMode,
+  type PythonSource,
   type PythonEnvironment,
   resolveExternalBackendRoot,
   resolvePythonEnvironment,
+  backendShipNamesPath,
   buildPythonProcessEnv,
   installTargetArgs,
 } from './environment';

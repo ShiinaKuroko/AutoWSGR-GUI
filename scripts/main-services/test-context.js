@@ -83,6 +83,9 @@ const {
   GuiConfigurationService,
 } = require('../../dist/electron/services/GuiConfigurationService.js');
 const {
+  GuiSettingsCommitService,
+} = require('../../dist/electron/services/GuiSettingsCommitService.js');
+const {
   PythonEnvironmentService,
 } = require('../../dist/electron/services/PythonEnvironmentService.js');
 
@@ -122,6 +125,7 @@ module.exports = {
   AdbService,
   CudaEnvironmentService,
   GuiConfigurationService,
+  GuiSettingsCommitService,
   PythonEnvironmentService,
   temporaryDirectory,
 };

@@ -354,7 +354,6 @@ export interface ElectronBridge {
   connectAdbDevice: (serial: string) => Promise<AdbOperationResult>;
   disconnectAdbDevice: (serial: string) => Promise<AdbOperationResult>;
   getAppRoot: () => Promise<string>;
-  resolveAppPath: (filePath: string) => Promise<string>;
   getPlansDir: () => Promise<string>;
   getConfigDir: () => Promise<string>;
   listPlanFiles: () => Promise<{ name: string; file: string }[]>;

@@ -3,6 +3,7 @@
  * envAndUpdates —— 环境检查、依赖安装、更新检查逻辑。
  */
 import type { StartupGateway } from '../../adapter/IpcAdapter.js';
+import { browserStorageStore } from '../../adapter/StorageAdapter.js';
 import { Logger } from '../../utils/Logger';
 
 function getUpdateMode(bridge?: StartupGateway): 'auto' | 'manual' {
@@ -10,7 +11,9 @@ function getUpdateMode(bridge?: StartupGateway): 'auto' | 'manual' {
   if (fromBridge === 'manual') return 'manual';
   if (fromBridge === 'auto') return 'auto';
   try {
-    return localStorage.getItem('updateMode') === 'manual' ? 'manual' : 'auto';
+    return browserStorageStore.get('updateMode') === 'manual'
+      ? 'manual'
+      : 'auto';
   } catch {
     return 'auto';
   }

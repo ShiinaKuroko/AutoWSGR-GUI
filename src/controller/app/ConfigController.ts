@@ -32,6 +32,7 @@ import {
   getConfigurationGateway,
   type ConfigurationGateway,
 } from '../../adapter/IpcAdapter';
+import { browserStorageStore } from '../../adapter/StorageAdapter';
 import { Logger } from '../../utils/Logger';
 import {
   applyTheme,
@@ -313,7 +314,9 @@ export class ConfigController {
       emulatorSerial: cfg.emulator.serial || '',
       gameApp: cfg.account.game_app,
       updateMode: this.gateway?.getUpdateMode()
-        ?? (localStorage.getItem('updateMode') === 'manual' ? 'manual' : 'auto'),
+        ?? (browserStorageStore.get('updateMode') === 'manual'
+          ? 'manual'
+          : 'auto'),
       autoExpedition: cfg.daily_automation.auto_expedition,
       expeditionInterval: gui.expeditionInterval,
       autoBattle: cfg.daily_automation.auto_battle,
@@ -339,7 +342,7 @@ export class ConfigController {
       logRoot: cfg.log.root,
       themeMode: getThemeMode(),
       accentColor: getAccentColor(),
-      debugMode: localStorage.getItem('debugMode') === 'true',
+      debugMode: browserStorageStore.get('debugMode') === 'true',
       backendPort: this.gateway?.getBackendPort() ?? 8438,
       backendStartupMode:
         this.gateway?.getBackendStartupMode() ?? 'managed',
@@ -452,10 +455,13 @@ export class ConfigController {
       this.host.configModel.replaceGuiAutomation(committed.automation);
       this.host.configModel.markLegacyGuiAutomationMigrated();
 
-      localStorage.setItem('themeMode', collected.themeMode);
-      localStorage.setItem('accentColor', collected.accentColor);
-      localStorage.setItem('debugMode', String(collected.debugMode));
-      localStorage.setItem('updateMode', collected.updateMode);
+      browserStorageStore.set('themeMode', collected.themeMode);
+      browserStorageStore.set('accentColor', collected.accentColor);
+      browserStorageStore.set(
+        'debugMode',
+        String(collected.debugMode),
+      );
+      browserStorageStore.set('updateMode', collected.updateMode);
       this.host.mainView.setDebugMode(collected.debugMode);
       applyTheme();
 
@@ -658,7 +664,7 @@ export class ConfigController {
           await bridge.saveFile('usersettings.yaml', this.host.configModel.toYaml());
         }
 
-        localStorage.setItem('setupComplete', 'true');
+        browserStorageStore.set('setupComplete', 'true');
         this.host.setupView.hide();
         Logger.info(`初始配置完成: 模拟器=${vals.emuType}, serial=${vals.serial}`);
         resolve();

@@ -7,7 +7,7 @@ import {
   initPythonEnv, clearPythonCache,
   isAllowedPythonVersion, findPython, checkEnvironment,
   installDependencies, installPortablePython,
-  resolvePythonEnvironment,
+  backendShipNamesPath,
 } from './pythonEnv';
 import { detectEmulator } from './emulatorDetect';
 import {
@@ -71,6 +71,9 @@ import { ShipNameSynchronizer } from './services/ShipNameSynchronizer';
 import { AdbService } from './services/AdbService';
 import { CudaEnvironmentService } from './services/CudaEnvironmentService';
 import { GuiConfigurationService } from './services/GuiConfigurationService';
+import {
+  GuiSettingsCommitService,
+} from './services/GuiSettingsCommitService';
 import { PythonEnvironmentService } from './services/PythonEnvironmentService';
 import { registerBackendIpc } from './ipc/BackendIpc';
 import { registerCombatPlanIpc } from './ipc/CombatPlanIpc';
@@ -259,6 +262,11 @@ const windowService = new WindowService(guiSettingsStore, {
     void dialog.showMessageBox(options);
   },
 });
+const guiSettingsCommitService = new GuiSettingsCommitService(
+  guiConfigurationService,
+  secureFileService,
+  windowService,
+);
 singleInstanceService.setMainWindowProvider(
   () => windowService.getMainWindow(),
 );
@@ -327,18 +335,6 @@ function appRoot(): string {
   return appPaths.appRoot();
 }
 
-/** 返回当前 managed 或 external 后端实际使用的舰名库路径。 */
-function backendShipNamesPath(pythonCmd: string): string {
-  const environment = resolvePythonEnvironment(pythonCmd);
-  const backendRoot = environment.backendRoot ?? environment.localSite;
-  return path.join(
-    backendRoot,
-    'autowsgr',
-    'data',
-    'shipnames.yaml',
-  );
-}
-
 /** 返回包含 resource 和 setup.bat 的 extraResources 目录。 */
 function resourceRoot(): string {
   return appPaths.resourceRoot();
@@ -368,9 +364,9 @@ registerConfigurationIpc(ipcMain, {
   getAppVersion: () => app.getVersion(),
   backendPort: BACKEND_PORT,
   configuration: guiConfigurationService,
+  settingsCommit: guiSettingsCommitService,
   cudaEnvironment: cudaEnvironmentService,
   pythonEnvironment: pythonEnvironmentService,
-  secureFiles: secureFileService,
   windows: windowService,
 });
 registerDailyPlanIpc(ipcMain, {

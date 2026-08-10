@@ -32,6 +32,7 @@ const {
   AdbService,
   CudaEnvironmentService,
   GuiConfigurationService,
+  GuiSettingsCommitService,
   PythonEnvironmentService,
   temporaryDirectory,
 } = context;
@@ -680,8 +681,109 @@ function testGuiConfigurationService() {
   assert.ok(defaults.level2.length > 0);
 }
 
+/** 验证跨文件设置提交成功，以及 JSON 写入失败时恢复 YAML。 */
+function testGuiSettingsCommitService() {
+  const actions = [];
+  let yamlContent = 'old: yaml\n';
+  let failGuiSettingsWrite = true;
+  const automation = {
+    expeditionInterval: 15,
+    battleTimes: 3,
+    autoDecisive: false,
+    decisiveTemplateId: 'builtin',
+    autoLoot: false,
+    lootPlanSource: 'system',
+    lootPlanId: 'loot.yaml',
+    lootPlans: [],
+    lootStopCount: 50,
+  };
+  const service = new GuiSettingsCommitService(
+    {
+      commitSettings: (_request, patch) => {
+        actions.push('commit-json');
+        assert.deepEqual(patch, {
+          default_window_width: 1280,
+          default_window_height: 720,
+          remember_window_bounds: true,
+        });
+        if (failGuiSettingsWrite) {
+          throw new Error('模拟 GUI JSON 写入失败');
+        }
+        return automation;
+      },
+    },
+    {
+      snapshot: () => {
+        actions.push('snapshot-yaml');
+        return { exists: true, content: yamlContent };
+      },
+      save: (_file, content) => {
+        actions.push('save-yaml');
+        yamlContent = content;
+      },
+      restore: (_file, snapshot) => {
+        actions.push('restore-yaml');
+        yamlContent = snapshot.content;
+      },
+    },
+    {
+      preparePreferences: preferences => {
+        actions.push('prepare-window');
+        return {
+          preferences,
+          settingsPatch: {
+            default_window_width: preferences.defaultWidth,
+            default_window_height: preferences.defaultHeight,
+            remember_window_bounds: preferences.rememberBounds,
+          },
+        };
+      },
+    },
+  );
+  const request = {
+    windowPreferences: {
+      defaultWidth: 1280,
+      defaultHeight: 720,
+      rememberBounds: true,
+    },
+    usersettingsYaml: 'new: yaml\n',
+  };
+
+  assert.throws(
+    () => service.commitAtomic(request),
+    /模拟 GUI JSON 写入失败/,
+  );
+  assert.equal(yamlContent, 'old: yaml\n');
+  assert.deepEqual(actions, [
+    'prepare-window',
+    'snapshot-yaml',
+    'save-yaml',
+    'commit-json',
+    'restore-yaml',
+  ]);
+
+  actions.length = 0;
+  failGuiSettingsWrite = false;
+  assert.deepEqual(service.commitAtomic(request), {
+    automation,
+    windowPreferences: request.windowPreferences,
+  });
+  assert.equal(yamlContent, 'new: yaml\n');
+  assert.deepEqual(actions, [
+    'prepare-window',
+    'snapshot-yaml',
+    'save-yaml',
+    'commit-json',
+  ]);
+  assert.throws(
+    () => service.commitAtomic(null),
+    /设置提交内容无效/,
+  );
+}
+
 module.exports = {
   testWindowService,
   testGuiSettingsStore,
   testGuiConfigurationService,
+  testGuiSettingsCommitService,
 };

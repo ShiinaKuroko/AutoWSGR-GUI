@@ -1,6 +1,8 @@
 /** 绑定 Scheduler 与 CronScheduler 回调并协调任务生命周期。 */
 import {
+  CAMPAIGN_OUT_OF_TIMES_RESULT,
   TaskPriority,
+  type CampaignDailyQuota,
   type CronScheduler,
   type LogicalTaskCancelReason,
   type NormalFightDailyQuota,
@@ -32,6 +34,7 @@ export interface SchedulerBinderHost {
   readonly api: ApiClient;
   readonly templateModel: TemplateModel;
   readonly configModel: ConfigModel;
+  readonly campaignDailyQuota: CampaignDailyQuota;
   readonly normalFightDailyQuota: NormalFightDailyQuota;
   renderMain(): void;
   refreshNormalFightRemaining(): void;
@@ -42,7 +45,14 @@ export interface SchedulerBinderHost {
 export class SchedulerBinder {
   private pendingExerciseTaskId: string | null = null;
   private pendingBattleTaskId: string | null = null;
+  private pendingBattleConfig: {
+    campaignName: string;
+    target: number;
+    remainingAtStart: number;
+  } | null = null;
+  private pendingBattleResult: string | null = null;
   private pendingDecisiveTaskId: string | null = null;
+  private pendingDecisiveResult: string | null = null;
   private pendingLootTaskId: string | null = null;
   private pendingNormalFightTaskIds = new Set<string>();
   private pendingNormalFightConfigs =
@@ -88,7 +98,45 @@ export class SchedulerBinder {
         this.host.renderMain();
       },
 
-      onTaskCompleted: (_taskId, _success, _result, _error) => {
+      onTaskCompleted: (taskId, success, result, _error) => {
+        const runningTask = this.host.scheduler.currentRunningTask;
+        if (
+          runningTask?.id === taskId
+          && runningTask.logicalId === this.pendingBattleTaskId
+          && runningTask.type === 'campaign'
+        ) {
+          const details = result?.details ?? [];
+          this.pendingBattleResult = details.some(
+            detail => detail.result === CAMPAIGN_OUT_OF_TIMES_RESULT,
+          )
+            ? CAMPAIGN_OUT_OF_TIMES_RESULT
+            : (details[details.length - 1]?.result ?? null);
+          if (
+            success
+            && (result?.success_runs ?? 0) > 0
+            && this.pendingBattleConfig
+          ) {
+            const remaining = this.host.campaignDailyQuota.markCompleted(
+              this.pendingBattleConfig.campaignName,
+              this.pendingBattleConfig.target,
+            );
+            Logger.info(
+              `自动战役今日确认成功 1 次，剩余 ${remaining} 次`,
+            );
+          }
+        }
+        if (
+          runningTask?.id === taskId
+          && runningTask.logicalId === this.pendingDecisiveTaskId
+          && runningTask.type === 'decisive'
+        ) {
+          const details = result?.details ?? [];
+          const decisiveResult = details[details.length - 1]?.result;
+          this.pendingDecisiveResult =
+            typeof decisiveResult === 'string'
+              ? decisiveResult
+              : (success ? null : 'error');
+        }
         this.runtime.reset();
         this.host.renderMain();
       },
@@ -98,6 +146,7 @@ export class SchedulerBinder {
         success,
         _error,
         countedRound,
+        completionReason,
       ) => {
         this.runtime.reset();
         if (logicalId === this.pendingExerciseTaskId) {
@@ -109,15 +158,65 @@ export class SchedulerBinder {
           this.pendingExerciseTaskId = null;
         }
         if (logicalId === this.pendingBattleTaskId) {
-          this.host.cronScheduler.markBattleHandled();
+          const config = this.pendingBattleConfig;
+          const remaining = config
+            ? this.host.campaignDailyQuota.remaining(
+                config.campaignName,
+                config.target,
+              )
+            : 0;
+          if (remaining === 0) {
+            this.host.cronScheduler.markBattleHandled();
+          } else if (
+            this.pendingBattleResult === CAMPAIGN_OUT_OF_TIMES_RESULT
+          ) {
+            const completed = config
+              ? Math.max(0, config.target - remaining)
+              : 0;
+            Logger.warn(
+              `自动战役次数已用完，今日确认成功 ${completed}/${config?.target ?? 0} 次，剩余游戏次数 0`,
+            );
+            this.host.cronScheduler.markBattleHandled();
+          } else if (
+            config
+            && remaining < config.remainingAtStart
+          ) {
+            Logger.warn(
+              `自动战役本批已有成功记录，今日仍缺少 ${remaining} 次，将在下次检查时补跑`,
+            );
+            this.host.cronScheduler.clearBattlePending();
+          } else {
+            Logger.warn(
+              '自动战役本批未确认成功，单轮重试已耗尽，今日停止补跑',
+            );
+            this.host.cronScheduler.markBattleHandled();
+          }
           this.pendingBattleTaskId = null;
+          this.pendingBattleConfig = null;
+          this.pendingBattleResult = null;
         }
         if (logicalId === this.pendingDecisiveTaskId) {
-          this.host.cronScheduler.markDecisiveHandled();
+          if (
+            this.pendingDecisiveResult === 'chapter_clear'
+            || this.pendingDecisiveResult === 'leave'
+          ) {
+            this.host.cronScheduler.markDecisiveHandled();
+          } else {
+            Logger.warn('自动决战未正常结束，单轮重试已耗尽，今日停止补跑');
+            this.host.cronScheduler.markDecisiveHandled();
+          }
           this.pendingDecisiveTaskId = null;
+          this.pendingDecisiveResult = null;
         }
         if (logicalId === this.pendingLootTaskId) {
-          this.host.cronScheduler.markLootHandled();
+          if (completionReason === 'stop_condition') {
+            this.host.cronScheduler.markLootHandled();
+          } else {
+            Logger.warn(
+              '自动战利品本批未达到停止数量，已到达批次或重试上限，今日停止补跑',
+            );
+            this.host.cronScheduler.markLootHandled();
+          }
           this.pendingLootTaskId = null;
         }
         const normalFightConfig =
@@ -205,6 +304,8 @@ export class SchedulerBinder {
         this.host.cronScheduler.markBattleHandled();
       }
       this.pendingBattleTaskId = null;
+      this.pendingBattleConfig = null;
+      this.pendingBattleResult = null;
     }
     if (logicalId === this.pendingDecisiveTaskId) {
       if (allowRetry) {
@@ -213,6 +314,7 @@ export class SchedulerBinder {
         this.host.cronScheduler.markDecisiveHandled();
       }
       this.pendingDecisiveTaskId = null;
+      this.pendingDecisiveResult = null;
     }
     if (logicalId === this.pendingLootTaskId) {
       if (allowRetry) {
@@ -257,15 +359,31 @@ export class SchedulerBinder {
       },
 
       onCampaignDue: (campaignName, times) => {
+        const remaining = this.host.campaignDailyQuota.remaining(
+          campaignName,
+          times,
+        );
+        if (remaining === 0) {
+          this.host.cronScheduler.markBattleHandled();
+          return;
+        }
         const id = this.host.scheduler.addTask(
           `自动战役·${campaignName}`,
           'campaign',
           { type: 'campaign', campaign_name: campaignName, times: 1 },
           TaskPriority.DAILY,
-          times,
+          remaining,
         );
         this.pendingBattleTaskId = id;
-        Logger.info(`自动战役已加入队列 (${campaignName} ×${times})`);
+        this.pendingBattleConfig = {
+          campaignName,
+          target: times,
+          remainingAtStart: remaining,
+        };
+        this.pendingBattleResult = null;
+        Logger.info(
+          `自动战役已加入队列 (${campaignName}，剩余成功 ${remaining} 次)`,
+        );
         this.host.scheduler.startConsuming();
       },
 

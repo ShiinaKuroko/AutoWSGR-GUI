@@ -20,7 +20,9 @@ export interface AccountConfig {
 }
 
 export interface NormalFightTaskConfig {
+  /** source 存在时 name 为受管计划文件名；缺省时兼容旧版路径配置。 */
   name: string;
+  source?: 'system' | 'user';
   fleet_id?: number;
   fleet_preset_index?: number;
   times?: number;

@@ -42,6 +42,59 @@ const {
 } = require(
   '../../dist/electron/services/BackendRuntimeContract.js',
 );
+const {
+  backendShipNamesPath,
+  initPythonEnv,
+} = require('../../dist/electron/pythonEnv/index.js');
+
+/** 验证 managed 和 external 模式使用各自后端的舰名库。 */
+function testBackendShipNamesPath() {
+  const appRoot = path.join(temporaryDirectory, 'python-environment');
+  const externalRoot = path.join(temporaryDirectory, 'external-backend');
+  fs.mkdirSync(
+    path.join(externalRoot, 'autowsgr', 'server'),
+    { recursive: true },
+  );
+  fs.writeFileSync(
+    path.join(externalRoot, 'autowsgr', 'server', 'main.py'),
+    '',
+  );
+
+  let startupMode = 'managed';
+  initPythonEnv({
+    appRoot: () => appRoot,
+    sendProgress: () => {},
+    getConfiguredPythonPath: () => null,
+    getUpdateMode: () => 'manual',
+    getBackendStartupMode: () => startupMode,
+    getBackendRepoPath: () => externalRoot,
+    getTempDir: () => temporaryDirectory,
+  });
+
+  assert.equal(
+    backendShipNamesPath('python.exe'),
+    path.join(
+      appRoot,
+      'python',
+      'site-packages',
+      'autowsgr',
+      'data',
+      'shipnames.yaml',
+    ),
+  );
+
+  startupMode = 'external';
+  assert.equal(
+    backendShipNamesPath('python.exe'),
+    path.join(
+      externalRoot,
+      'autowsgr',
+      'data',
+      'shipnames.yaml',
+    ),
+  );
+  startupMode = 'managed';
+}
 
 /** 验证 Python 校验、检查和安装入口的原有返回语义。 */
 async function testPythonEnvironmentService() {
@@ -565,6 +618,7 @@ async function testCudaEnvironmentService() {
 }
 
 module.exports = {
+  testBackendShipNamesPath,
   testPythonEnvironmentService,
   testAdbService,
   testCudaEnvironmentService,

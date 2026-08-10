@@ -47,8 +47,9 @@ export function normalFightDailyLimit(
 
 export function normalFightTaskKey(task: NormalFightTaskConfig): string {
   const name = task.name.trim().replace(/\\/g, '/').toLocaleLowerCase();
+  const plan = task.source ? `${task.source}:${name}` : name;
   return JSON.stringify([
-    name,
+    plan,
     task.fleet_id ?? null,
     task.fleet_preset_index ?? null,
   ]);

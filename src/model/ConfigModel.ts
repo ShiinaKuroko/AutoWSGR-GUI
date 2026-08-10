@@ -546,6 +546,9 @@ export class ConfigModel {
       const record = this.asRecord(item);
       if (!record || typeof record.name !== 'string' || !record.name.trim()) continue;
       const task: NormalFightTaskConfig = { name: record.name.trim() };
+      if (record.source === 'system' || record.source === 'user') {
+        task.source = record.source;
+      }
       if (record.fleet_id != null && Number.isFinite(Number(record.fleet_id))) {
         task.fleet_id = Math.max(1, Math.trunc(Number(record.fleet_id)));
       }

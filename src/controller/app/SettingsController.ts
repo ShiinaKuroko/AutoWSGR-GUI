@@ -17,6 +17,7 @@ import {
   getSettingsGateway,
   type SettingsGateway,
 } from '../../adapter/IpcAdapter.js';
+import { browserStorageStore } from '../../adapter/StorageAdapter.js';
 
 export interface SettingsControllerHost {
   readonly configView: ConfigView;
@@ -90,15 +91,15 @@ export class SettingsController {
       onCheckAdb: () => void this.checkAdbDevices(),
       onResetAccent: () => {
         configView.resetAccentColor('#0f7dff');
-        localStorage.setItem('accentColor', '#0f7dff');
+        browserStorageStore.set('accentColor', '#0f7dff');
         applyTheme();
       },
       onThemeModeChange: (mode) => {
-        localStorage.setItem('themeMode', mode);
+        browserStorageStore.set('themeMode', mode);
         applyTheme();
       },
       onAccentColorInput: (color) => {
-        localStorage.setItem('accentColor', color);
+        browserStorageStore.set('accentColor', color);
         applyTheme();
       },
     });
@@ -246,7 +247,8 @@ export class SettingsController {
       const fleetName = selected.plan.fleets[fleetPresetIndex]?.name;
       if (!fleetName) throw new Error('所选使用舰队不存在');
       const task: NormalFightTaskConfig = {
-        name: result.path,
+        name: selected.plan.file,
+        source: selected.plan.source,
         fleet_preset_index: fleetPresetIndex,
         times: normalFightDailyLimit(selected.dailyMaxExecutions),
       };

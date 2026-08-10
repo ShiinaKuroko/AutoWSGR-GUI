@@ -21,7 +21,8 @@ export function registerDeviceIpc(
   ipc.handle('check-adb-devices', async () => {
     try {
       return await dependencies.adb.listDevices();
-    } catch {
+    } catch (error) {
+      console.warn('[ADB] 设备查询失败:', error);
       return [];
     }
   });

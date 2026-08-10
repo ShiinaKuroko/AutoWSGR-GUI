@@ -1,6 +1,6 @@
 /** 提供任务完成、重试、轮询和后续任务构造的纯规则。 */
 /** Pure scheduler task construction and queue ordering policies. */
-import type { TaskRequest } from '../../types/api.js';
+import type { TaskRequest, TaskResult } from '../../types/api.js';
 import type {
   StopCondition,
   BathRepairConfig,
@@ -8,6 +8,20 @@ import type {
   BattleResultGrade,
 } from '../../types/model.js';
 import { TaskPriority, type SchedulerTaskType, type SchedulerTask } from '../../types/scheduler';
+
+export const CAMPAIGN_OUT_OF_TIMES_RESULT = 'out of times';
+
+export function getNonRetryableTaskResult(
+  task: Pick<SchedulerTask, 'type'>,
+  result?: TaskResult | null,
+): string | null {
+  if (task.type !== 'campaign') return null;
+  return result?.details.some(
+    detail => detail.result === CAMPAIGN_OUT_OF_TIMES_RESULT,
+  )
+    ? CAMPAIGN_OUT_OF_TIMES_RESULT
+    : null;
+}
 
 export function findPriorityInsertionIndex(
   queue: ReadonlyArray<SchedulerTask>,

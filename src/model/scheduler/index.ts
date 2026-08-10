@@ -8,6 +8,7 @@ export * from './SchedulerTaskPolicy';
 export * from './SchedulerRepairPolicy';
 export { CronScheduler } from './CronScheduler';
 export type { CronConfig, CronCallbacks, ScheduledTask } from './CronScheduler';
+export { CampaignDailyQuota } from './CampaignDailyQuota';
 export {
   DEFAULT_NORMAL_FIGHT_DAILY_EXECUTIONS,
   MAX_NORMAL_FIGHT_DAILY_EXECUTIONS,
@@ -25,5 +26,6 @@ export {
   type SchedulerStatus,
   type SchedulerCallbacks,
   type LogicalTaskCancelReason,
+  type LogicalTaskCompletionReason,
   type SchedulerWaitingTask,
 } from '../../types/scheduler';

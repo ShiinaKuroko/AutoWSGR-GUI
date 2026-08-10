@@ -341,10 +341,6 @@ const electronBridge = {
     return ipcRenderer.invoke('get-app-root');
   },
 
-  resolveAppPath: (filePath: string) => {
-    return ipcRenderer.invoke('resolve-app-path', filePath);
-  },
-
   getPlansDir: () => {
     return ipcRenderer.invoke('get-plans-dir');
   },

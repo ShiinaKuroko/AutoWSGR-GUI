@@ -42,6 +42,7 @@ import {
 import { toBackendName } from '../../shared/shipNameNormalizer.js';
 import {
   buildFollowUpTask as createFollowUpTask,
+  getNonRetryableTaskResult,
 } from './SchedulerTaskPolicy.js';
 
 const RESULT_GRADE_ORDER: BattleResultGrade[] = ['D', 'C', 'B', 'A', 'S', 'SS'];
@@ -431,6 +432,7 @@ export class Scheduler {
       true,
       null,
       false,
+      'stop_condition',
     );
     this.setStatus('idle');
     this.notifyQueueChange();
@@ -525,6 +527,7 @@ export class Scheduler {
           true,
           null,
           false,
+          'stop_condition',
         );
         this.currentTask = null;
         this.consumeNext();
@@ -600,7 +603,13 @@ export class Scheduler {
           `任务「${task.name}」启动失败，重试已耗尽：${reason}`,
         );
         this.callbacks.onTaskCompleted?.(task.id, false, null, reason);
-        this.callbacks.onLogicalTaskCompleted?.(task.logicalId, false, reason);
+        this.callbacks.onLogicalTaskCompleted?.(
+          task.logicalId,
+          false,
+          reason,
+          false,
+          'failed',
+        );
         this.consumeNext();
       }
     } catch (e) {
@@ -613,7 +622,13 @@ export class Scheduler {
         `任务「${task.name}」启动异常，重试已耗尽：${reason}`,
       );
       this.callbacks.onTaskCompleted?.(task.id, false, null, reason);
-      this.callbacks.onLogicalTaskCompleted?.(task.logicalId, false, reason);
+      this.callbacks.onLogicalTaskCompleted?.(
+        task.logicalId,
+        false,
+        reason,
+        false,
+        'failed',
+      );
       this.consumeNext();
     }
   }
@@ -664,6 +679,22 @@ export class Scheduler {
     if (!success) {
       this.callbacks.onTaskCompleted?.(finished.id, false, result, error);
       this.currentTask = null;
+      const terminalResult = getNonRetryableTaskResult(finished, result);
+      if (terminalResult) {
+        this.emitLog(
+          'warn',
+          `任务「${finished.name}」返回不可重试结果：${terminalResult}，逻辑任务已结束`,
+        );
+        this.callbacks.onLogicalTaskCompleted?.(
+          finished.logicalId,
+          false,
+          error,
+          false,
+          'terminal',
+        );
+        this.consumeNext();
+        return;
+      }
       const reason = error ? `执行失败：${error}` : '执行失败';
       if (this.scheduleRetry(finished, reason)) return;
       this.emitLog(
@@ -678,7 +709,13 @@ export class Scheduler {
         const followUp = this.buildFollowUpTask(finished, nextRemaining);
         this._taskQueue.insertByPriority(followUp, !finished.allowPolling);
       } else {
-        this.callbacks.onLogicalTaskCompleted?.(finished.logicalId, false, error);
+        this.callbacks.onLogicalTaskCompleted?.(
+          finished.logicalId,
+          false,
+          error,
+          false,
+          'failed',
+        );
       }
       this.consumeNext();
       return;
@@ -720,6 +757,7 @@ export class Scheduler {
             true,
             null,
             false,
+            'stop_condition',
           );
           this.consumeNext();
           return;
@@ -742,6 +780,7 @@ export class Scheduler {
         true,
         null,
         shouldCountRound,
+        'completed',
       );
     }
 

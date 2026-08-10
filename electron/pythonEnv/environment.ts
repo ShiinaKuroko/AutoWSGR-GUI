@@ -7,10 +7,12 @@ import { getCtx } from './context';
 import { isLocalPython, localSitePackages } from './utils';
 
 export type BackendStartupMode = 'managed' | 'external';
+export type PythonSource = 'configured' | 'bundled' | 'system';
 
 /** 安装、检查和启动共同使用的 Python 环境。 */
 export interface PythonEnvironment {
   startupMode: BackendStartupMode;
+  pythonSource: PythonSource;
   pythonCmd: string;
   backendRoot: string | null;
   localSite: string;
@@ -62,11 +64,21 @@ export function resolveExternalBackendRoot(): string | null {
 export function resolvePythonEnvironment(
   pythonCmd: string,
 ): PythonEnvironment {
-  const startupMode = getCtx().getBackendStartupMode();
+  const ctx = getCtx();
+  const startupMode = ctx.getBackendStartupMode();
   const backendRoot = resolveExternalBackendRoot();
   const localSite = localSitePackages();
   const useLocalSite = startupMode === 'managed' || isLocalPython(pythonCmd);
   const installTarget = useLocalSite ? localSite : null;
+  const configuredPython = ctx.getConfiguredPythonPath();
+  const bundledPython = path.join(ctx.appRoot(), 'python', 'python.exe');
+  const pythonSource: PythonSource = (
+    configuredPython && isSamePath(pythonCmd, configuredPython)
+  )
+    ? 'configured'
+    : isSamePath(pythonCmd, bundledPython)
+      ? 'bundled'
+      : 'system';
   const identity = JSON.stringify({
     startupMode,
     pythonCmd: normalizeIdentityPath(pythonCmd),
@@ -76,6 +88,7 @@ export function resolvePythonEnvironment(
 
   return {
     startupMode,
+    pythonSource,
     pythonCmd,
     backendRoot,
     localSite,
@@ -83,6 +96,18 @@ export function resolvePythonEnvironment(
     installTarget,
     identity,
   };
+}
+
+/** 返回当前 managed 或 external 后端实际使用的舰名库路径。 */
+export function backendShipNamesPath(pythonCmd: string): string {
+  const environment = resolvePythonEnvironment(pythonCmd);
+  const backendRoot = environment.backendRoot ?? environment.localSite;
+  return path.join(
+    backendRoot,
+    'autowsgr',
+    'data',
+    'shipnames.yaml',
+  );
 }
 
 /** 构造子进程环境，并隔离外部解释器与 managed 包目录。 */

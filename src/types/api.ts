@@ -119,6 +119,8 @@ export interface CombatEvent {
 export interface RoundResult {
   round: number;
   success: boolean;
+  /** 任务业务结果，例如 chapter_clear、leave、error、out of times。 */
+  result?: string;
   nodes?: string[];
   mvp?: string | null;
   ship_damage?: number[];

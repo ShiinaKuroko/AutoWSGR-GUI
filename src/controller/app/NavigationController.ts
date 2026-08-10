@@ -1,11 +1,10 @@
 /** 处理主页面导航、标签切换和当前页面状态。 */
-import { FleetPlannerController } from '../plan/FleetPlannerController';
-import { PlanController } from '../plan/PlanController';
 import { NavigationView } from '../../view/main/NavigationView';
 
 export interface NavigationControllerHost {
-  readonly fleetPlannerController: FleetPlannerController;
-  getPlanController(): PlanController;
+  loadFleetPlanner(): Promise<void>;
+  ensureDefaultPlan(): Promise<void>;
+  loadPlanManagement(): Promise<void>;
   refreshAdbStatus(): Promise<void>;
   refreshShipLibraryStatus(): Promise<void>;
 }
@@ -27,11 +26,11 @@ export class NavigationController {
   showPlanTab(tabId: string): void {
     this.view.showPlanTab(tabId);
     if (tabId === 'fleet') {
-      void this.host.fleetPlannerController.load();
+      void this.host.loadFleetPlanner();
     } else if (tabId === 'scheme') {
-      void this.host.getPlanController().ensureDefaultPlan();
+      void this.host.ensureDefaultPlan();
     } else if (tabId === 'manage') {
-      void this.host.fleetPlannerController.loadManagement();
+      void this.host.loadPlanManagement();
     }
   }
 
@@ -41,7 +40,7 @@ export class NavigationController {
       if (planTab) this.showPlanTab(planTab);
       const activeTab = this.view.getActivePlanTab();
       if (activeTab === 'fleet') {
-        void this.host.fleetPlannerController.load();
+        void this.host.loadFleetPlanner();
       }
     }
     if (pageId === 'config') {

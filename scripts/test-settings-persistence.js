@@ -138,7 +138,8 @@ async function runRendererTest(root, tempDirectory) {
     autoNormalFight: true,
     normalFightTasks: [
       {
-        name: 'C:\\SettingsTest\\battle.yaml',
+        name: 'battle.yaml',
+        source: 'user',
         fleet_id: 3,
         fleet_preset_index: 1,
         times: 2,
@@ -861,7 +862,8 @@ async function runRendererTest(root, tempDirectory) {
   const pickedAutomationPlanPromise = loaderController.pick(
     'automation',
     {
-      name: 'C:\\SettingsTest\\bettle-用户胖次测试.yaml',
+      name: 'bettle-用户胖次测试.yaml',
+      source: 'user',
       fleet_preset_index: 0,
       times: 7,
     },
@@ -911,6 +913,45 @@ async function runRendererTest(root, tempDirectory) {
     pickedAutomationPlan?.plan.file,
     'bettle-用户胖次测试.yaml',
     '自动出征浮窗确认后没有返回当前已加载计划',
+  );
+
+  let savedAutomationTask = null;
+  const selectedManagedPlan = managedBattlePlans.find(plan => (
+    plan.source === 'user'
+    && plan.file === 'bettle-用户胖次测试.yaml'
+  ));
+  const automationSettingsController = new SettingsController(
+    {
+      configView: {
+        getNormalFightTasks: () => [],
+        setNormalFightPlan: (task) => {
+          savedAutomationTask = task;
+        },
+      },
+      pickAutomationPlan: async () => ({
+        plan: selectedManagedPlan,
+        fleetPresetIndex: 0,
+        dailyMaxExecutions: 7,
+      }),
+      getNormalFightRemaining: () => 7,
+    },
+    {
+      readManagedCombatPlan: async () => ({
+        success: true,
+        path: 'runtime-only-path',
+      }),
+    },
+  );
+  await automationSettingsController.selectAutomationPlan();
+  rendererAssert.deepEqual(
+    savedAutomationTask,
+    {
+      name: 'bettle-用户胖次测试.yaml',
+      source: 'user',
+      fleet_preset_index: 0,
+      times: 7,
+    },
+    '自动出征配置必须保存受管计划来源和文件名，不得保存物理路径',
   );
 
   const globalScrollButtonRule = Array.from(document.styleSheets)

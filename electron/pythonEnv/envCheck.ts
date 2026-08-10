@@ -271,6 +271,12 @@ async function probeCoreDependencies(
 
 // 环境检查主流程
 
+function environmentSourceMessage(
+  environment: PythonEnvironment,
+): string {
+  return `运行环境来源: 后端 ${environment.startupMode}, Python ${environment.pythonSource} (${environment.pythonCmd})`;
+}
+
 /** 检查 Python 环境和所需包。 */
 export async function checkEnvironment(): Promise<EnvCheckResult> {
   const ctx = getCtx();
@@ -281,6 +287,7 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
   const marker = readEnvMarker();
   if (marker) {
     setCachedPythonCmd(marker.pythonCmd);
+    ctx.sendProgress(environmentSourceMessage(marker.environment));
     const certFile = await ensureSslCertForPython(marker.pythonCmd);
     if (certFile) ctx.sendProgress(`TLS 证书已就绪: ${certFile}`);
     else ctx.sendProgress('WARNING 未检测到 TLS 根证书，后续联网操作可能失败');
@@ -353,6 +360,7 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
       allReady: false,
     };
   }
+  ctx.sendProgress(environmentSourceMessage(environment));
   if (environment.useLocalSite) ensurePthFile();
 
   const certFile = await ensureSslCertForPython(pythonCmd);

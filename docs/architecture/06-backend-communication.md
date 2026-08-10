@@ -114,7 +114,6 @@ Adapter 允许处理 Electron 对话框、同步 `event.returnValue` 和边界�
 | `getPlansDir()` | `string` | 方案文件目录 |
 | `getConfigDir()` | `string` | 配置文件目录 |
 | `listPlanFiles()` | `{name, file}[]` | 列出方案文件 |
-| `resolveAppPath(path)` | `string` | 仅解析 `userData` 或只读 `resource/` 内的路径 |
 | `openFolder(path)` | `void` | 仅打开 `userData` 内经过 canonical 校验的目录 |
 
 #### 环境管理

@@ -16,6 +16,7 @@ import {
 import { ConfigModel } from '../../model/ConfigModel';
 import { ApiClient } from '../../model/ApiClient';
 import {
+  CampaignDailyQuota,
   CronScheduler,
   NormalFightDailyQuota,
   Scheduler,
@@ -28,6 +29,7 @@ import {
   getAppRuntimeGateway,
   type AppRuntimeGateway,
 } from '../../adapter/IpcAdapter';
+import { browserStorageStore } from '../../adapter/StorageAdapter';
 import { TemplateController } from '../template/TemplateController';
 import { TaskGroupController } from '../taskGroup/TaskGroupController';
 import { loadManagedPlanToQueue } from '../taskGroup/queueLoader';
@@ -63,6 +65,7 @@ export class AppController {
   private api: ApiClient;
   private scheduler: Scheduler;
   private cronScheduler: CronScheduler;
+  private campaignDailyQuota: CampaignDailyQuota;
   private normalFightDailyQuota: NormalFightDailyQuota;
   private schedulerBinder: SchedulerBinder;
   private configCtrl!: ConfigController;
@@ -97,6 +100,7 @@ export class AppController {
     this.configModel = new ConfigModel();
     this.taskGroupModel = new TaskGroupModel();
     this.templateModel = new TemplateModel();
+    this.campaignDailyQuota = new CampaignDailyQuota();
     this.normalFightDailyQuota = new NormalFightDailyQuota();
     this.fleetPlannerCtrl.setTaskGroupsProvider(
       () => this.taskGroupModel.groups,
@@ -113,8 +117,11 @@ export class AppController {
       () => this.configModel.current.ocr.ship_name_aliases,
     );
     this.navigationCtrl = new NavigationController({
-      fleetPlannerController: this.fleetPlannerCtrl,
-      getPlanController: () => this.planCtrl,
+      loadFleetPlanner: () => this.fleetPlannerCtrl.load(),
+      ensureDefaultPlan: () => this.planCtrl.ensureDefaultPlan(),
+      loadPlanManagement: () => (
+        this.fleetPlannerCtrl.loadManagement()
+      ),
       refreshAdbStatus: () => this.settingsCtrl.refreshAdbStatus(),
       refreshShipLibraryStatus: () => (
         this.settingsCtrl.refreshShipLibraryStatus()
@@ -145,6 +152,7 @@ export class AppController {
       api: this.api,
       templateModel: this.templateModel,
       configModel: this.configModel,
+      campaignDailyQuota: this.campaignDailyQuota,
       normalFightDailyQuota: this.normalFightDailyQuota,
       renderMain: () => this.renderMain(),
       refreshNormalFightRemaining: () => (
@@ -330,7 +338,9 @@ export class AppController {
         await this.templateModel.init(b);
         this.templateCtrl.renderLibrary();
         this.configCtrl.renderConfig();
-        this.mainView.setDebugMode(localStorage.getItem('debugMode') === 'true');
+        this.mainView.setDebugMode(
+          browserStorageStore.get('debugMode') === 'true',
+        );
         await this.taskGroupModel.load();
         this.taskGroupCtrl.render();
       },

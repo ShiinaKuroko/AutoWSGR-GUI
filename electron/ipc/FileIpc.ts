@@ -116,23 +116,12 @@ export function registerFileIpc(
 
   ipc.handle('get-app-root', () => dependencies.appRoot());
 
-  ipc.handle('resolve-app-path', (_event, filePath: string) => {
-    return dependencies.safePaths.resolveAppPath(filePath);
-  });
-
   ipc.handle('get-plans-dir', () => {
     return dependencies.combatPlans.directory('user');
   });
 
   ipc.handle('list-plan-files', () => {
-    const directory = dependencies.combatPlans.directory('user');
-    if (!fs.existsSync(directory)) return [];
-    return fs.readdirSync(directory)
-      .filter(file => /\.ya?ml$/i.test(file))
-      .map(file => ({
-        name: file.replace(/\.ya?ml$/i, ''),
-        file,
-      }));
+    return dependencies.combatPlans.listUserFiles();
   });
 
   ipc.handle('get-config-dir', () => dependencies.userDataRoot());

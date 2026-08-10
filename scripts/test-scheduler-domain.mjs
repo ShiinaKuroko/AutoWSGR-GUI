@@ -13,6 +13,7 @@ const entries = [
   'src/model/scheduler/StopConditionChecker.ts',
   'src/model/scheduler/TaskQueue.ts',
   'src/model/scheduler/NormalFightDailyQuota.ts',
+  'src/model/scheduler/CampaignDailyQuota.ts',
 ];
 const modules = await Promise.all(entries.map(async entry => {
   const result = await esbuild.build({
@@ -36,6 +37,7 @@ const scheduledTaskLoaderModule = modules[7];
 const stopConditionModule = modules[8];
 const taskQueueModule = modules[9];
 const normalFightQuotaModule = modules[10];
+const campaignQuotaModule = modules[11];
 
 assert.equal(normalFightQuotaModule.normalFightDailyLimit(undefined), 1);
 assert.equal(normalFightQuotaModule.normalFightDailyLimit(0), 1);
@@ -79,11 +81,59 @@ assert.equal(
   1,
   '重复的自动出征计划和舰队不得重复计算剩余次数',
 );
+assert.notEqual(
+  normalFightQuotaModule.normalFightTaskKey({
+    ...quotaTask,
+    name: 'daily.yaml',
+    source: 'system',
+  }),
+  normalFightQuotaModule.normalFightTaskKey({
+    ...quotaTask,
+    name: 'daily.yaml',
+    source: 'user',
+  }),
+  '系统和用户的同名计划必须使用不同的每日额度',
+);
 quotaNow = new Date(2026, 7, 11, 0, 0, 1).getTime();
 assert.equal(
   restoredDailyQuota.remaining(quotaTask),
   2,
   '本地日期变化后自动出征次数必须重置',
+);
+
+const campaignQuotaValues = new Map();
+const campaignQuotaStorage = {
+  get: key => campaignQuotaValues.get(key) ?? null,
+  set: (key, value) => campaignQuotaValues.set(key, value),
+  remove: key => campaignQuotaValues.delete(key),
+};
+let campaignQuotaNow = new Date(2026, 7, 10, 12, 0, 0).getTime();
+const campaignQuota = new campaignQuotaModule.CampaignDailyQuota(
+  campaignQuotaStorage,
+  () => campaignQuotaNow,
+);
+assert.equal(campaignQuota.remaining('困难潜艇', 3), 3);
+assert.equal(campaignQuota.markCompleted('困难潜艇', 3), 2);
+const restoredCampaignQuota =
+  new campaignQuotaModule.CampaignDailyQuota(
+    campaignQuotaStorage,
+    () => campaignQuotaNow,
+  );
+assert.equal(
+  restoredCampaignQuota.remaining('困难潜艇', 3),
+  2,
+  '自动战役确认成功次数必须跨 GUI 重启保留',
+);
+assert.equal(
+  restoredCampaignQuota.remaining('困难驱逐', 3),
+  3,
+  '不同战役类型必须分别记录每日成功次数',
+);
+campaignQuotaNow = new Date(2026, 7, 11, 0, 0, 1).getTime();
+assert.equal(
+  restoredCampaignQuota.remaining('困难潜艇', 3),
+  3,
+  '本地日期变化后自动战役成功次数必须重置',
 );
 
 let disabledStopConditionApiCalls = 0;
@@ -186,6 +236,7 @@ const task = taskPolicy.createSchedulerTask({
   id: 'task-1', name: 'test', type: 'normal_fight', request: { type: 'normal_fight' },
   priority: 10, times: 3, sortKey: 2,
 });
+assert.equal(task.maxRetries, 2, '单个物理轮次最多重试 2 次');
 const lower = { ...task, id: 'lower', priority: 0 };
 const same = { ...task, id: 'same', sortKey: 3 };
 assert.equal(taskPolicy.findPriorityInsertionIndex([lower, same], task), 1);
@@ -263,6 +314,68 @@ assert.equal(
   restoredDecisiveTriggers,
   0,
   '自动决战已处理日期必须跨实例持久化',
+);
+
+const boundaryTriggers = {
+  exercise: 0,
+  campaign: 0,
+  decisive: 0,
+  loot: 0,
+};
+const pendingBoundaryCron = new cronModule.CronScheduler({
+  ...cronConfig,
+  autoExercise: true,
+  autoBattle: true,
+  autoDecisive: true,
+  autoLoot: true,
+}, storage);
+pendingBoundaryCron.setCallbacks({
+  onExerciseDue: () => {
+    boundaryTriggers.exercise += 1;
+  },
+  onCampaignDue: () => {
+    boundaryTriggers.campaign += 1;
+  },
+  onDecisiveDue: () => {
+    boundaryTriggers.decisive += 1;
+  },
+  onLootDue: () => {
+    boundaryTriggers.loot += 1;
+  },
+});
+pendingBoundaryCron.checkExercise(
+  new Date(2026, 7, 10, 11, 59),
+);
+pendingBoundaryCron.checkCampaign(
+  new Date(2026, 7, 10, 23, 59),
+);
+pendingBoundaryCron.checkDecisive(
+  new Date(2026, 7, 10, 23, 59),
+);
+pendingBoundaryCron.checkLoot(
+  new Date(2026, 7, 10, 23, 59),
+);
+pendingBoundaryCron.checkExercise(
+  new Date(2026, 7, 10, 12, 0),
+);
+pendingBoundaryCron.checkCampaign(
+  new Date(2026, 7, 11, 0, 1),
+);
+pendingBoundaryCron.checkDecisive(
+  new Date(2026, 7, 11, 0, 1),
+);
+pendingBoundaryCron.checkLoot(
+  new Date(2026, 7, 11, 0, 1),
+);
+assert.deepEqual(
+  boundaryTriggers,
+  {
+    exercise: 1,
+    campaign: 1,
+    decisive: 1,
+    loot: 1,
+  },
+  '上一时段任务仍 pending 时，跨刷新时段或跨日不得重复入队',
 );
 
 const automationValues = new Map();
@@ -437,6 +550,10 @@ let decisivePlanReads = 0;
 let decisiveStartCalls = 0;
 let decisivePendingClears = 0;
 let decisiveHandledCalls = 0;
+let battlePendingClears = 0;
+let battleHandledCalls = 0;
+let campaignRemaining = 3;
+let campaignQuotaMarks = 0;
 let normalFightPendingClears = 0;
 let normalFightHandledCalls = 0;
 let normalFightQuotaAvailable = true;
@@ -465,6 +582,9 @@ const automaticSortieCalls = [];
 let automaticSortieIdle = true;
 let automaticSortieStarts = 0;
 let automaticSortieRemaining = 99;
+const automaticSortiePlanSource = 'user';
+const automaticSortiePlanFile = 'idle-plan.yaml';
+const automaticSortiePlanReads = [];
 const automaticSortieLoader =
   new scheduledTaskLoaderModule.ScheduledTaskLoader(
     {
@@ -488,7 +608,8 @@ const automaticSortieLoader =
         current: {
           daily_automation: {
             normal_fight_tasks: [{
-              name: 'idle-plan',
+              name: automaticSortiePlanFile,
+              source: automaticSortiePlanSource,
               fleet_id: 2,
               times: 99,
             }],
@@ -498,18 +619,26 @@ const automaticSortieLoader =
       },
     },
     {
-      readCombatPlanFile: async path => ({
-        success: true,
-        path,
-        runtimePath: `runtime://${path}`,
-        content: managedLootYaml,
-      }),
+      readManagedCombatPlan: async (source, file) => {
+        automaticSortiePlanReads.push([source, file]);
+        return {
+          success: true,
+          path: `managed://${source}/${file}`,
+          runtimePath: `runtime://${source}/${file}`,
+          content: managedLootYaml,
+        };
+      },
     },
   );
 const automaticSortieResult =
   await automaticSortieLoader.loadNormalFightTasks();
 assert.equal(automaticSortieResult.status, 'queued');
 assert.equal(automaticSortieCalls.length, 1);
+assert.deepEqual(
+  automaticSortiePlanReads,
+  [[automaticSortiePlanSource, automaticSortiePlanFile]],
+  '自动出征必须只读取用户指定的受管计划一次',
+);
 assert.equal(
   automaticSortieCalls[0][2].times,
   1,
@@ -562,7 +691,8 @@ assert.equal(
 automaticSortieRemaining = 99;
 automaticSortieLoader.host.configModel.current
   .daily_automation.normal_fight_tasks.push({
-    name: 'idle-plan',
+    name: automaticSortiePlanFile,
+    source: automaticSortiePlanSource,
     fleet_id: 2,
     times: 99,
   });
@@ -579,6 +709,101 @@ assert.equal(
   2,
   '旧配置中的重复自动出征项不得重复加入队列',
 );
+
+const legacyPlan = 'legacy-plan.yaml';
+const missingManagedPlan = 'missing-plan.yaml';
+const validManagedPlan = 'valid-plan.yaml';
+const legacyPlanReads = [];
+const managedPlanReadsForSortie = [];
+const strictPlanQueueCalls = [];
+const strictPlanLoader =
+  new scheduledTaskLoaderModule.ScheduledTaskLoader(
+    {
+      scheduler: {
+        isCompletelyIdle: true,
+        addTask: (...args) => {
+          strictPlanQueueCalls.push(args);
+          return `strict-plan-${strictPlanQueueCalls.length}`;
+        },
+      },
+      templateModel: {},
+      normalFightDailyQuota: {
+        remaining: () => 1,
+      },
+      configModel: {
+        current: {
+          daily_automation: {
+            normal_fight_tasks: [
+              { name: legacyPlan, fleet_id: 2 },
+              {
+                name: missingManagedPlan,
+                source: 'user',
+                fleet_id: 2,
+              },
+              {
+                name: validManagedPlan,
+                source: 'system',
+                fleet_id: 2,
+              },
+            ],
+          },
+          ocr: { ship_name_aliases: {} },
+        },
+      },
+    },
+    {
+      readCombatPlanFile: async path => {
+        legacyPlanReads.push(path);
+        return {
+          success: false,
+          error: '旧版出征计划不存在',
+        };
+      },
+      readManagedCombatPlan: async (source, file) => {
+        managedPlanReadsForSortie.push([source, file]);
+        if (file !== validManagedPlan) {
+          return {
+            success: false,
+            error: '出征计划不存在',
+          };
+        }
+        return {
+          success: true,
+          path: `managed://${source}/${file}`,
+          runtimePath: `runtime://${source}/${file}`,
+          content: managedLootYaml,
+        };
+      },
+    },
+  );
+const strictPlanResult = await strictPlanLoader
+  .loadNormalFightTasks();
+assert.equal(strictPlanResult.status, 'queued');
+assert.deepEqual(
+  legacyPlanReads,
+  [legacyPlan],
+  '旧版路径配置只能按原值精确读取一次',
+);
+assert.deepEqual(
+  managedPlanReadsForSortie,
+  [
+    ['user', missingManagedPlan],
+    ['system', validManagedPlan],
+  ],
+  '受管计划必须按来源和文件名精确读取，不得尝试目录兜底',
+);
+assert.equal(
+  strictPlanQueueCalls.length,
+  1,
+  '无效计划不得阻塞列表中后续的有效计划',
+);
+assert.equal(
+  strictPlanResult.tasks[0].config.name,
+  validManagedPlan,
+  '自动出征只能加入用户指定且实际存在的计划',
+);
+assert.equal(strictPlanResult.tasks[0].config.source, 'system');
+
 globalThis.window = {
   electronBridge: {
     getDecisivePlanSettings: async () => {
@@ -635,6 +860,12 @@ const binder = new schedulerBinderModule.SchedulerBinder({
     markDecisiveHandled: () => {
       decisiveHandledCalls += 1;
     },
+    clearBattlePending: () => {
+      battlePendingClears += 1;
+    },
+    markBattleHandled: () => {
+      battleHandledCalls += 1;
+    },
     clearNormalFightPending: () => {
       normalFightPendingClears += 1;
     },
@@ -657,6 +888,14 @@ const binder = new schedulerBinderModule.SchedulerBinder({
       daily_automation: {
         normal_fight_tasks: [],
       },
+    },
+  },
+  campaignDailyQuota: {
+    remaining: () => campaignRemaining,
+    markCompleted: () => {
+      campaignQuotaMarks += 1;
+      campaignRemaining = Math.max(0, campaignRemaining - 1);
+      return campaignRemaining;
     },
   },
   normalFightDailyQuota: {
@@ -714,9 +953,14 @@ schedulerCallbacks.onLogicalTaskCompleted(
   false,
 );
 assert.equal(
+  decisivePendingClears,
+  0,
+  '自动决战重试耗尽后不得形成分钟级无限重试',
+);
+assert.equal(
   decisiveHandledCalls,
   1,
-  '自动决战实际任务结束后，无论结果均应标记当天已处理',
+  '自动决战重试耗尽后必须停止当天补跑',
 );
 
 cronCallbacks.onDecisiveDue('system_preset');
@@ -772,6 +1016,71 @@ assert.equal(
   '自动决战入队前失败必须清除 pending',
 );
 
+binder.pendingDecisiveTaskId = 'decisive-chapter-clear';
+binderRunningTask = {
+  id: 'decisive-round-clear',
+  logicalId: 'decisive-chapter-clear',
+  type: 'decisive',
+};
+schedulerCallbacks.onTaskCompleted(
+  'decisive-round-clear',
+  true,
+  {
+    total_runs: 1,
+    success_runs: 1,
+    details: [{
+      round: 1,
+      success: true,
+      result: 'chapter_clear',
+    }],
+  },
+);
+schedulerCallbacks.onLogicalTaskCompleted(
+  'decisive-chapter-clear',
+  true,
+  null,
+  true,
+  'completed',
+);
+assert.equal(
+  decisiveHandledCalls,
+  3,
+  '自动决战通关后必须标记当天已处理',
+);
+
+binder.pendingDecisiveTaskId = 'decisive-leave';
+binderRunningTask = {
+  id: 'decisive-round-leave',
+  logicalId: 'decisive-leave',
+  type: 'decisive',
+};
+schedulerCallbacks.onTaskCompleted(
+  'decisive-round-leave',
+  true,
+  {
+    total_runs: 1,
+    success_runs: 1,
+    details: [{
+      round: 1,
+      success: true,
+      result: 'leave',
+    }],
+  },
+);
+schedulerCallbacks.onLogicalTaskCompleted(
+  'decisive-leave',
+  true,
+  null,
+  true,
+  'completed',
+);
+assert.equal(
+  decisiveHandledCalls,
+  4,
+  '自动决战主动离开后当天不得盲目重试',
+);
+binderRunningTask = null;
+
 cronCallbacks.onLootDue(
   'user',
   'bettle-用户胖次测试.yaml',
@@ -818,9 +1127,191 @@ assert.equal(
 schedulerCallbacks.onLogicalTaskCompleted(
   'automatic-decisive-task',
   true,
+  null,
+  true,
+  'completed',
 );
-assert.equal(lootHandledCalls, 1);
+assert.equal(
+  lootHandledCalls,
+  1,
+  '自动战利品跑满单批上限后必须停止当天补跑',
+);
 assert.equal(lootPendingClears, 0);
+
+binder.pendingLootTaskId = 'automatic-loot-stop-condition';
+schedulerCallbacks.onLogicalTaskCompleted(
+  'automatic-loot-stop-condition',
+  true,
+  null,
+  false,
+  'stop_condition',
+);
+assert.equal(
+  lootHandledCalls,
+  2,
+  '自动战利品命中停止数量后必须立即标记当天完成',
+);
+assert.equal(lootPendingClears, 0);
+
+campaignRemaining = 2;
+const firstCampaignCallIndex = decisiveQueueCalls.length;
+cronCallbacks.onCampaignDue('困难潜艇', 3);
+assert.equal(
+  decisiveQueueCalls[firstCampaignCallIndex][4],
+  2,
+  '自动战役必须只加入尚未成功的剩余次数',
+);
+binderRunningTask = {
+  id: 'campaign-round-1',
+  logicalId: 'automatic-decisive-task',
+  type: 'campaign',
+};
+schedulerCallbacks.onTaskCompleted(
+  'campaign-round-1',
+  false,
+  {
+    total_runs: 1,
+    success_runs: 0,
+    details: [{ round: 1, success: false }],
+  },
+);
+assert.equal(
+  campaignQuotaMarks,
+  0,
+  '自动战役失败轮次不得计入每日成功额度',
+);
+schedulerCallbacks.onTaskCompleted(
+  'campaign-round-1',
+  true,
+  {
+    total_runs: 1,
+    success_runs: 1,
+    details: [{ round: 1, success: true }],
+  },
+);
+assert.equal(campaignQuotaMarks, 1);
+schedulerCallbacks.onLogicalTaskCompleted(
+  'automatic-decisive-task',
+  true,
+  null,
+  true,
+  'completed',
+);
+assert.equal(
+  battlePendingClears,
+  1,
+  '自动战役已有进展但仍缺成功次数时必须释放 pending 以便补跑',
+);
+assert.equal(battleHandledCalls, 0);
+
+const secondCampaignCallIndex = decisiveQueueCalls.length;
+cronCallbacks.onCampaignDue('困难潜艇', 3);
+assert.equal(
+  decisiveQueueCalls[secondCampaignCallIndex][4],
+  1,
+  '自动战役再次触发时只能补最后一次成功额度',
+);
+binderRunningTask = {
+  id: 'campaign-round-2',
+  logicalId: 'automatic-decisive-task',
+  type: 'campaign',
+};
+schedulerCallbacks.onTaskCompleted(
+  'campaign-round-2',
+  true,
+  {
+    total_runs: 1,
+    success_runs: 1,
+    details: [{ round: 1, success: true }],
+  },
+);
+schedulerCallbacks.onLogicalTaskCompleted(
+  'automatic-decisive-task',
+  true,
+  null,
+  true,
+  'completed',
+);
+assert.equal(campaignQuotaMarks, 2);
+assert.equal(battleHandledCalls, 1);
+
+campaignRemaining = 2;
+cronCallbacks.onCampaignDue('困难潜艇', 3);
+binderRunningTask = {
+  id: 'campaign-out-of-times',
+  logicalId: 'automatic-decisive-task',
+  type: 'campaign',
+};
+schedulerCallbacks.onTaskCompleted(
+  'campaign-out-of-times',
+  false,
+  {
+    total_runs: 1,
+    success_runs: 0,
+    details: [{
+      round: 1,
+      success: false,
+      result: 'out of times',
+    }],
+  },
+);
+schedulerCallbacks.onLogicalTaskCompleted(
+  'automatic-decisive-task',
+  false,
+  '一个或多个任务轮次失败',
+  false,
+  'terminal',
+);
+assert.equal(
+  battleHandledCalls,
+  2,
+  '战役次数耗尽后必须结束当天自动战役',
+);
+assert.equal(
+  battlePendingClears,
+  1,
+  '战役次数耗尽后不得释放 pending 触发分钟级重试',
+);
+assert.equal(
+  campaignQuotaMarks,
+  2,
+  '战役次数耗尽不得计入成功额度',
+);
+
+campaignRemaining = 2;
+cronCallbacks.onCampaignDue('困难潜艇', 3);
+binderRunningTask = {
+  id: 'campaign-no-progress',
+  logicalId: 'automatic-decisive-task',
+  type: 'campaign',
+};
+schedulerCallbacks.onTaskCompleted(
+  'campaign-no-progress',
+  false,
+  {
+    total_runs: 1,
+    success_runs: 0,
+    details: [{ round: 1, success: false }],
+  },
+);
+schedulerCallbacks.onLogicalTaskCompleted(
+  'automatic-decisive-task',
+  false,
+  'OCR 识别失败',
+  false,
+  'failed',
+);
+assert.equal(
+  battleHandledCalls,
+  3,
+  '整批没有确认成功且单轮重试耗尽后必须停止当天补跑',
+);
+assert.equal(
+  battlePendingClears,
+  1,
+  '整批没有确认成功时不得形成分钟级无限重试',
+);
+binderRunningTask = null;
 
 binder.pendingNormalFightTaskIds.add('normal-parent-cleared');
 schedulerCallbacks.onLogicalTaskCanceled(
@@ -1261,6 +1752,12 @@ retryScheduler.startConsuming();
 await wait(0);
 assert.equal(retryScheduler.waitingTaskList.length, 1);
 assert.equal(retryScheduler.waitingTaskList[0].reason, 'retry');
+const retryDelayMs =
+  retryScheduler.waitingTaskList[0].readyAt - Date.now();
+assert.ok(
+  retryDelayMs > 4_000 && retryDelayMs <= 5_000,
+  '失败重试间隔必须保持为 5 秒',
+);
 assert.equal(
   retryScheduler.waitingTaskList[0].task.logicalId,
   retryParentId,
@@ -1310,6 +1807,75 @@ assert.ok(
   '重试耗尽后必须记录后端返回的失败原因',
 );
 await exhaustedRetryScheduler.stop();
+
+// 战役次数耗尽是业务终止结果，不得进入通用重试或继续剩余轮次。
+let terminalCampaignStarts = 0;
+const terminalCampaignApi = createSchedulerApi({
+  taskStart: async () => {
+    terminalCampaignStarts += 1;
+    return {
+      success: true,
+      data: {
+        task_id: `terminal-campaign-${terminalCampaignStarts}`,
+        status: 'running',
+      },
+    };
+  },
+});
+const terminalCampaignScheduler =
+  new schedulerModule.Scheduler(terminalCampaignApi);
+terminalCampaignScheduler.setAutoExpedition(false);
+const terminalCampaignEvents = [];
+terminalCampaignScheduler.setCallbacks({
+  onLogicalTaskCompleted: (
+    logicalId,
+    success,
+    _error,
+    _countedRound,
+    reason,
+  ) => {
+    terminalCampaignEvents.push([logicalId, success, reason]);
+  },
+});
+assert.equal(await terminalCampaignScheduler.start(), true);
+const terminalCampaignParentId = terminalCampaignScheduler.addTask(
+  '战役次数耗尽测试',
+  'campaign',
+  {
+    type: 'campaign',
+    campaign_name: '困难潜艇',
+    times: 1,
+  },
+  10,
+  3,
+);
+terminalCampaignScheduler.startConsuming();
+await wait(0);
+terminalCampaignApi.callbacks.onTaskCompleted({
+  type: 'task_completed',
+  success: false,
+  result: {
+    total_runs: 1,
+    success_runs: 0,
+    details: [{
+      round: 1,
+      success: false,
+      result: 'out of times',
+    }],
+  },
+  error: '一个或多个任务轮次失败',
+});
+await wait(0);
+assert.equal(terminalCampaignStarts, 1);
+assert.equal(terminalCampaignScheduler.waitingTaskList.length, 0);
+assert.equal(terminalCampaignScheduler.taskQueue.length, 0);
+assert.equal(terminalCampaignScheduler.currentRunningTask, null);
+assert.deepEqual(
+  terminalCampaignEvents,
+  [[terminalCampaignParentId, false, 'terminal']],
+  '战役次数耗尽必须直接结束逻辑任务',
+);
+await terminalCampaignScheduler.stop();
 
 // 清空和系统停止必须给每个父任务发送明确的取消原因。
 const clearApi = createSchedulerApi();
@@ -1362,8 +1928,14 @@ const conditionRoundEvents = [];
 const conditionLogicalEvents = [];
 conditionScheduler.setCallbacks({
   onTaskCompleted: taskId => conditionRoundEvents.push(taskId),
-  onLogicalTaskCompleted: (logicalId, success) => {
-    conditionLogicalEvents.push([logicalId, success]);
+  onLogicalTaskCompleted: (
+    logicalId,
+    success,
+    _error,
+    _countedRound,
+    reason,
+  ) => {
+    conditionLogicalEvents.push([logicalId, success, reason]);
   },
 });
 assert.equal(await conditionScheduler.start(), true);
@@ -1395,7 +1967,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   conditionLogicalEvents,
-  [[conditionParentId, true]],
+  [[conditionParentId, true, 'stop_condition']],
 );
 assert.equal(conditionScheduler.currentRunningTask, null);
 assert.equal(conditionScheduler.taskQueue.length, 0);

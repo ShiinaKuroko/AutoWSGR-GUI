@@ -7,6 +7,7 @@ import {
   getStartupGateway,
   type StartupGateway,
 } from '../../adapter/IpcAdapter.js';
+import { browserStorageStore } from '../../adapter/StorageAdapter.js';
 import { Logger } from '../../utils/Logger';
 import { checkAndPrepareEnv, checkForUpdates } from './envAndUpdates';
 import { waitForBackendAndConnect } from './connection';
@@ -51,7 +52,7 @@ export class StartupController {
     Logger.debug('模拟器检测完成');
 
     // 首次运行引导
-    if (!localStorage.getItem('setupComplete')) {
+    if (!browserStorageStore.get('setupComplete')) {
       await this.host.showSetupWizard();
     }
 

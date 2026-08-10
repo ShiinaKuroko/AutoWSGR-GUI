@@ -157,6 +157,11 @@ assert.deepEqual(
   [],
   '主进程存在 preload 未暴露的异步通道',
 );
+assert.equal(
+  preloadInvoke.has('resolve-app-path'),
+  false,
+  '不得向 renderer 暴露通用路径解析 IPC',
+);
 assert.match(
   updaterSource,
   /autoUpdater\.autoDownload\s*=\s*false/,
@@ -227,6 +232,32 @@ assert.match(
   /app\.on\('before-quit'[\s\S]*stopRuntimeResources\(\)/,
   '无论后端是否仍在运行，GUI 退出前都必须清理运行资源',
 );
+
+/** 验证 ADB 查询失败时保留空列表兼容行为并记录原因。 */
+async function testAdbDeviceQueryFailure() {
+  const deviceIpc = new MemoryIpcRegistrar();
+  const queryError = new Error('模拟 ADB 查询失败');
+  const warnings = [];
+  registerDeviceIpc(deviceIpc, {
+    adb: {
+      listDevices: async () => {
+        throw queryError;
+      },
+    },
+  });
+  const handler = deviceIpc.handles.get('check-adb-devices');
+  const originalConsoleWarn = console.warn;
+  console.warn = (...args) => warnings.push(args);
+  try {
+    assert.deepEqual(await handler({}), []);
+  } finally {
+    console.warn = originalConsoleWarn;
+  }
+
+  assert.equal(warnings.length, 1);
+  assert.equal(warnings[0][0], '[ADB] 设备查询失败:');
+  assert.equal(warnings[0][1], queryError);
+}
 
 /** 验证本地计划导入取消、冲突拒绝和确认覆盖流程。 */
 async function testLocalCombatPlanImport() {
@@ -355,97 +386,37 @@ async function testUserPlanExport() {
   ]]);
 }
 
-/** 验证设置批量提交失败时恢复 usersettings.yaml。 */
-function testSettingsCommitRollback() {
+/** 验证设置提交 IPC 只委托跨文件事务服务。 */
+function testSettingsCommitDelegation() {
   const settingsIpc = new MemoryIpcRegistrar();
-  let yamlContent = 'old: yaml\n';
-  let guiSettingsWritten = false;
-  let failGuiSettingsWrite = true;
+  let receivedRequest = null;
+  const expected = {
+    automation: { battleTimes: 3 },
+    windowPreferences: { rememberBounds: true },
+  };
   registerConfigurationIpc(settingsIpc, {
-    configuration: {
-      commitSettings: (_request, patch) => {
-        assert.deepEqual(patch, {
-          default_window_width: 1280,
-          default_window_height: 720,
-          remember_window_bounds: true,
-        });
-        if (failGuiSettingsWrite) {
-          throw new Error('模拟 GUI JSON 写入失败');
-        }
-        guiSettingsWritten = true;
-        return {
-          expeditionInterval: 15,
-          battleTimes: 3,
-          autoDecisive: false,
-          decisiveTemplateId: 'builtin',
-          autoLoot: false,
-          lootPlanSource: 'system',
-          lootPlanId: 'loot.yaml',
-          lootPlans: [],
-          lootStopCount: 50,
-        };
+    configuration: {},
+    settingsCommit: {
+      commitAtomic: (request) => {
+        receivedRequest = request;
+        return expected;
       },
-    },
-    secureFiles: {
-      snapshot: () => ({
-        exists: true,
-        content: yamlContent,
-      }),
-      save: (_file, content) => {
-        yamlContent = content;
-      },
-      restore: (_file, snapshot) => {
-        yamlContent = snapshot.content;
-      },
-    },
-    windows: {
-      preparePreferences: preferences => ({
-        preferences,
-        settingsPatch: {
-          default_window_width: preferences.defaultWidth,
-          default_window_height: preferences.defaultHeight,
-          remember_window_bounds: preferences.rememberBounds,
-        },
-      }),
     },
   });
   const handler = settingsIpc.handles.get('commit-gui-settings');
   const request = {
-    updateMode: 'manual',
-    backendPort: 8438,
-    backendStartupMode: 'managed',
-    backendRepoPath: null,
-    ocrGpuMode: 'auto',
-    cudaPath: null,
-    saveBackendScreenshots: false,
-    pythonPath: null,
-    windowPreferences: {
-      defaultWidth: 1280,
-      defaultHeight: 720,
-      rememberBounds: true,
-    },
-    automation: {},
     usersettingsYaml: 'new: yaml\n',
   };
 
-  assert.throws(
-    () => handler({}, request),
-    /模拟 GUI JSON 写入失败/,
-  );
-  assert.equal(yamlContent, 'old: yaml\n');
-  assert.equal(guiSettingsWritten, false);
-
-  failGuiSettingsWrite = false;
-  const result = handler({}, request);
-  assert.equal(yamlContent, 'new: yaml\n');
-  assert.equal(guiSettingsWritten, true);
-  assert.equal(result.windowPreferences.rememberBounds, true);
+  assert.equal(handler({}, request), expected);
+  assert.equal(receivedRequest, request);
 }
 
 async function main() {
+  await testAdbDeviceQueryFailure();
   await testLocalCombatPlanImport();
   await testUserPlanExport();
-  testSettingsCommitRollback();
+  testSettingsCommitDelegation();
 }
 
 main()

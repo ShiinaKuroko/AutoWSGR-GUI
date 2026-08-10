@@ -343,7 +343,7 @@ export class GuiConfigurationService {
 
   /**
    * 归一化设置页的全部 GUI 设置并合并为一次原子 JSON 写入。
-   * usersettings.yaml 由 IPC 层在调用本方法前写入并负责失败恢复。
+   * usersettings.yaml 由 GuiSettingsCommitService 负责写入和失败恢复。
    */
   commitSettings(
     settings: GuiSettingsCommitRequest,

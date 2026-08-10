@@ -83,6 +83,7 @@ const externalPackages = path.join(
 const state = {
   mode: 'managed',
   repoPath: repoRoot,
+  configuredPythonPath: null,
 };
 const previousRepoOverride = process.env.AUTOWSGR_BACKEND_REPO;
 
@@ -95,7 +96,7 @@ fs.writeFileSync(path.join(serverRoot, 'main.py'), '', 'utf8');
 initPythonEnv({
   appRoot: () => appRoot,
   sendProgress: () => {},
-  getConfiguredPythonPath: () => null,
+  getConfiguredPythonPath: () => state.configuredPythonPath,
   getUpdateMode: () => 'manual',
   getBackendStartupMode: () => state.mode,
   getBackendRepoPath: () => state.repoPath,
@@ -107,6 +108,7 @@ try {
 
   const managed = resolvePythonEnvironment(localPython);
   assert.equal(managed.startupMode, 'managed');
+  assert.equal(managed.pythonSource, 'bundled');
   assert.equal(managed.backendRoot, null);
   assert.equal(managed.useLocalSite, true);
   assert.equal(managed.installTarget, localSite);
@@ -187,11 +189,19 @@ try {
   );
 
   state.mode = 'external';
+  state.configuredPythonPath = externalPython;
   const external = resolvePythonEnvironment(externalPython);
+  assert.equal(external.startupMode, 'external');
+  assert.equal(external.pythonSource, 'configured');
   assert.equal(external.backendRoot, repoRoot);
   assert.equal(external.useLocalSite, false);
   assert.equal(external.installTarget, null);
   assert.notEqual(external.identity, managed.identity);
+
+  state.configuredPythonPath = null;
+  const system = resolvePythonEnvironment(externalPython);
+  assert.equal(system.startupMode, 'external');
+  assert.equal(system.pythonSource, 'system');
 
   const externalPlan = buildDependencyInstallPlan(external, repoRoot);
   assert.equal(externalPlan.buildArgs.includes('--target'), false);
