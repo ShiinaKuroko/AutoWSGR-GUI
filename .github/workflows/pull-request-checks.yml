@@ -84,6 +84,8 @@ jobs:
         run: node scripts/tests/test-main-services.js
 
       - name: Check fleet type snapshot
+        env:
+          AUTOWSGR_PYTHON: ${{ github.workspace }}/AutoWSGR/.venv/bin/python
         run: npm run check:fleet-types
 
       - name: Test GUI to AutoWSGR fleet contract
