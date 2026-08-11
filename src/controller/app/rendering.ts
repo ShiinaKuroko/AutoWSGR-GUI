@@ -41,6 +41,9 @@ export function buildMainViewObject(state: RenderingState): MainViewObject {
   } = state;
   const running = scheduler.currentRunningTask;
   const queue = scheduler.taskQueue;
+  const statusText = scheduler.status === 'idle' && queue.length > 0
+    ? '队列已暂停'
+    : (STATUS_TEXT[scheduler.status] ?? '未知');
 
   const taskQueueVo: TaskQueueItemVO[] = [];
 
@@ -96,7 +99,7 @@ export function buildMainViewObject(state: RenderingState): MainViewObject {
 
   return {
     status: scheduler.status === 'not_connected' ? 'not_connected' : scheduler.status,
-    statusText: STATUS_TEXT[scheduler.status] ?? '未知',
+    statusText,
     currentTask: running
       ? {
           name: running.name,

@@ -14,6 +14,7 @@ const entries = [
   'src/model/scheduler/TaskQueue.ts',
   'src/model/scheduler/NormalFightDailyQuota.ts',
   'src/model/scheduler/CampaignDailyQuota.ts',
+  'src/controller/app/rendering.ts',
 ];
 const modules = await Promise.all(entries.map(async entry => {
   const result = await esbuild.build({
@@ -38,6 +39,7 @@ const stopConditionModule = modules[8];
 const taskQueueModule = modules[9];
 const normalFightQuotaModule = modules[10];
 const campaignQuotaModule = modules[11];
+const renderingModule = modules[12];
 
 assert.equal(normalFightQuotaModule.normalFightDailyLimit(undefined), 1);
 assert.equal(normalFightQuotaModule.normalFightDailyLimit(0), 1);
@@ -2164,6 +2166,62 @@ assert.equal(stoppingScheduler.currentRunningTask, null);
 assert.equal(stoppingScheduler.taskQueue.length, 1);
 assert.equal(stoppingScheduler.taskQueue[0].id, stoppedTaskId);
 assert.equal(stoppingScheduler.taskQueue[0].backendTaskId, undefined);
+const stoppedQueueView = renderingModule.buildMainViewObject({
+  scheduler: stoppingScheduler,
+  currentFleet: [],
+  currentProgress: '',
+  trackedLoot: '',
+  trackedShip: '',
+  dailySortieStats: {},
+  wsConnected: true,
+  expeditionTimerText: '--:--',
+});
+assert.equal(stoppedQueueView.status, 'idle');
+assert.equal(
+  stoppedQueueView.statusText,
+  '队列已暂停',
+  '手动停止后保留任务时不得继续向用户显示为空闲',
+);
+
+let stoppedQueueNormalFightTriggers = 0;
+const stoppedQueueCron = new cronModule.CronScheduler({
+  ...cronConfig,
+  autoNormalFight: true,
+});
+stoppedQueueCron.setCallbacks({
+  canStartNormalFight: () => stoppingScheduler.isCompletelyIdle,
+  onNormalFightDue: () => {
+    stoppedQueueNormalFightTriggers += 1;
+  },
+});
+stoppedQueueCron.start();
+stoppedQueueCron.stop();
+assert.equal(
+  stoppingScheduler.isCompletelyIdle,
+  false,
+  '手动停止后保留的队列任务会阻止调度器进入完全空闲',
+);
+assert.equal(
+  stoppedQueueNormalFightTriggers,
+  0,
+  '手动停止后即使公开状态为 idle，自动出征也不会触发',
+);
+stoppingScheduler.clearQueue();
+const emptyQueueView = renderingModule.buildMainViewObject({
+  scheduler: stoppingScheduler,
+  currentFleet: [],
+  currentProgress: '',
+  trackedLoot: '',
+  trackedShip: '',
+  dailySortieStats: {},
+  wsConnected: true,
+  expeditionTimerText: '--:--',
+});
+assert.equal(
+  emptyQueueView.statusText,
+  '空闲',
+  '没有运行或排队任务时必须继续显示为空闲',
+);
 
 const wsStopApi = createSchedulerApi();
 const { scheduler: wsStoppingScheduler, taskId: wsStoppedTaskId } =
