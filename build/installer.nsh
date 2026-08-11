@@ -79,6 +79,14 @@
 !macroend
 
 !macro customInstall
+  ${If} ${isUpdated}
+    ${If} ${FileExists} "$newDesktopLink"
+      !insertmacro addDesktopLink "false"
+    ${EndIf}
+    ${If} ${FileExists} "$newStartMenuLink"
+      !insertmacro addStartMenuLink "false"
+    ${EndIf}
+  ${EndIf}
   ; 新前端写入完成后恢复依赖，后端版本仍由首次启动检查更新。
   IfFileExists "$INSTDIR.site-packages-update\*.*" 0 BackendEnvRestored
     CreateDirectory "$INSTDIR\python"
