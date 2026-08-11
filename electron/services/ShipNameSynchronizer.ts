@@ -6,7 +6,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import * as yaml from 'js-yaml';
+import { parseYaml } from '../../src/shared/yamlSerializer';
 import { AtomicFileStore } from './AtomicFileStore';
 
 export interface ShipNameSyncResult {
@@ -180,7 +180,7 @@ export class ShipNameSynchronizer {
   }
 
   private loadDocument(content: string): ShipNameDocument {
-    const value = yaml.load(content);
+    const value = parseYaml(content);
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throw new Error('后端舰名库不是有效的 YAML 映射');
     }

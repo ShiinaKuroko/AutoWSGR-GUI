@@ -80,6 +80,12 @@ async function runRendererTest(root, tempDirectory) {
     'dist/src/controller/app/SettingsController.js',
   ));
   const {
+    NavigationController,
+  } = require(rendererPath.join(
+    root,
+    'dist/src/controller/app/NavigationController.js',
+  ));
+  const {
     BattlePlanLoaderController,
   } = require(rendererPath.join(
     root,
@@ -1589,6 +1595,32 @@ async function runRendererTest(root, tempDirectory) {
     return notices;
   };
 
+  const runWithDialogChoice = async (action, buttonId) => {
+    let dialog = null;
+    const timer = window.setInterval(() => {
+      const overlay = document.getElementById('generic-prompt');
+      if (!overlay || overlay.style.display === 'none') return;
+      const title = document.getElementById(
+        'generic-prompt-title',
+      )?.textContent ?? '';
+      if (!title) return;
+      dialog = {
+        title,
+        message: document.getElementById(
+          'generic-prompt-message',
+        )?.textContent ?? '',
+      };
+      document.getElementById(buttonId)?.click();
+    }, 5);
+    try {
+      await action();
+    } finally {
+      window.clearInterval(timer);
+    }
+    rendererAssert.ok(dialog, '页面切换必须显示未保存设置提示框');
+    return dialog;
+  };
+
   const controller = new ConfigController(host);
   const yamlBeforeFailedCommit = rendererFs.readFileSync(
     rendererPath.join(tempDirectory, 'usersettings.yaml'),
@@ -1643,6 +1675,74 @@ async function runRendererTest(root, tempDirectory) {
   }, localStorageBeforeFailedCommit);
 
   await controller.saveConfig();
+  rendererAssert.equal(
+    controller.hasUnsavedChanges(),
+    false,
+    '成功保存后设置页不得被标记为未保存',
+  );
+  view.setNormalFightRemaining(sample.normalFightTasks, 1);
+  rendererAssert.equal(
+    controller.hasUnsavedChanges(),
+    false,
+    '今日剩余次数刷新不得被误判为用户修改设置',
+  );
+
+  const navigationController = new NavigationController({
+    loadFleetPlanner: async () => {},
+    ensureDefaultPlan: async () => {},
+    loadPlanManagement: async () => {},
+    refreshAdbStatus: async () => {},
+    refreshShipLibraryStatus: async () => {},
+    hasUnsavedConfigChanges: () => controller.hasUnsavedChanges(),
+  });
+  const activePage = () => (
+    document.querySelector('.nav-tab.active')?.dataset.page ?? ''
+  );
+  await navigationController.switchPage('config');
+  await navigationController.switchPage('main');
+  rendererAssert.equal(
+    activePage(),
+    'main',
+    '配置未修改时必须直接离开设置页',
+  );
+  await navigationController.switchPage('config');
+
+  const logRootInput = document.getElementById('cfg-log-root');
+  const savedLogRoot = logRootInput.value;
+  logRootInput.value = `${savedLogRoot}\\unsaved`;
+  rendererAssert.equal(
+    controller.hasUnsavedChanges(),
+    true,
+    '修改设置后必须被标记为未保存',
+  );
+
+  const canceledDialog = await runWithDialogChoice(
+    () => navigationController.switchPage('plan'),
+    'generic-prompt-cancel',
+  );
+  rendererAssert.equal(canceledDialog.title, '设置尚未保存');
+  rendererAssert.match(canceledDialog.message, /当前配置尚未保存/);
+  rendererAssert.equal(
+    activePage(),
+    'config',
+    '取消切换后必须留在设置页',
+  );
+
+  await runWithDialogChoice(
+    () => navigationController.switchPage('plan'),
+    'generic-prompt-ok',
+  );
+  rendererAssert.equal(
+    activePage(),
+    'plan',
+    '确认切换后必须进入目标页面',
+  );
+  logRootInput.value = savedLogRoot;
+  rendererAssert.equal(
+    controller.hasUnsavedChanges(),
+    false,
+    '恢复保存值后不得继续提示未保存',
+  );
 
   const savedYaml = yaml.load(rendererFs.readFileSync(
     rendererPath.join(tempDirectory, 'usersettings.yaml'),

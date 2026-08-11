@@ -2,6 +2,7 @@
 import type {
   ShipLibraryShip,
 } from '../../types/ipc.js';
+import { findShipLibraryShip } from '../../shared/shipLibrary.js';
 import type {
   TeamPlanListViewObject,
   TeamPlanShipRuleViewObject,
@@ -355,23 +356,19 @@ export class TeamPlanLoaderView {
       return card;
     }
 
-    card.title = name;
-    card.dataset['name'] = name;
     const ships = this.host.ships();
-    const ship = ships.find(item => item.name === name)
-      ?? ships.find(item => item.search_name === name)
-      ?? (
-        rule?.searchName
-          ? ships.find(
-              item => item.search_name === rule.searchName,
-            )
-          : undefined
-      );
+    const ship = findShipLibraryShip(ships, {
+      name: rule?.name ?? name,
+      searchName: rule?.searchName,
+    });
     if (ship) {
-      card.append(createShipArtwork(
-        ship,
-        this.host.shipTypeDisplay(ship),
-      ));
+      card.append(createShipArtwork(ship, {
+        shipTypeLabel: this.host.shipTypeDisplay(ship),
+        showNumber: false,
+        showName: true,
+        displayName: name,
+        nameStyle: size === 'backup' ? 'plain' : 'rarity',
+      }));
     } else {
       const unknown = document.createElement('span');
       unknown.className = 'fleet-team-card-empty fleet-team-card-unknown';

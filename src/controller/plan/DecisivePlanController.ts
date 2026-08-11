@@ -6,6 +6,12 @@ import type {
   DecisivePlanRepository,
 } from '../../adapter/IpcAdapter';
 import {
+  browserStorageStore,
+} from '../../adapter/StorageAdapter.js';
+import type {
+  StorageStore,
+} from '../../adapter/StorageAdapter.js';
+import {
   DecisiveFleetDraft,
   DEFAULT_DECISIVE_PLAN_SETTINGS,
 } from '../../model/fleet/DecisiveFleetDraft';
@@ -16,6 +22,12 @@ import type {
   DecisivePlanSaveResult,
   DecisivePlanViewState,
 } from '../../view/plan/DecisivePlanView';
+import {
+  loadGalleryViewState,
+  saveGalleryViewState,
+} from './galleryStateStorage.js';
+
+const GALLERY_STATE_STORAGE_KEY = 'decisivePlanGalleryState';
 
 export class DecisivePlanController {
   private readonly draft = new DecisiveFleetDraft();
@@ -24,9 +36,19 @@ export class DecisivePlanController {
   constructor(
     private readonly repository: DecisivePlanRepository =
       decisivePlanRepository,
+    private readonly storage: StorageStore = browserStorageStore,
   ) {
     this.view = new DecisivePlanView({
       getState: () => this.getViewState(),
+      getGalleryState: () => loadGalleryViewState(
+        this.storage,
+        GALLERY_STATE_STORAGE_KEY,
+      ),
+      setGalleryState: state => saveGalleryViewState(
+        this.storage,
+        GALLERY_STATE_STORAGE_KEY,
+        state,
+      ),
       setChapter: chapter => this.draft.setChapter(chapter),
       changeChapter: chapter => this.changeChapter(chapter),
       setUseQuickRepair: useQuickRepair => (

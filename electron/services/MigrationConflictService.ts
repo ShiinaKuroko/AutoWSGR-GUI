@@ -17,7 +17,6 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { isDeepStrictEqual } from 'util';
-import * as yaml from 'js-yaml';
 import type {
   MigrationConflictItem,
   MigrationConflictKind,
@@ -25,6 +24,7 @@ import type {
   MigrationConflictReason,
   MigrationConflictResolutionResult,
 } from '../../src/shared/migrationConflicts';
+import { parseYaml } from '../../src/shared/yamlSerializer';
 import { AppPaths } from './AppPaths';
 import { AtomicFileStore } from './AtomicFileStore';
 
@@ -287,7 +287,7 @@ export class MigrationConflictService {
         try {
           return [{
             file: entry.name,
-            value: yaml.load(
+            value: parseYaml(
               fs.readFileSync(path.join(directory, entry.name), 'utf-8'),
             ),
           }];

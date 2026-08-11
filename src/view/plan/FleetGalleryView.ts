@@ -1,5 +1,6 @@
 /** 将舰队规划的编辑契约接入共享舰船图库。 */
 import type { ShipLibraryShip } from '../../types/ipc.js';
+import type { ShipGalleryViewState } from '../../types/view.js';
 import {
   ShipGalleryView,
 } from './ShipGalleryView';
@@ -9,6 +10,8 @@ export const FLEET_DRAG_MIME = 'application/x-autowsgr-fleet';
 export interface FleetGalleryViewHost {
   getRefitFilter(): boolean;
   setRefitFilter(enabled: boolean): void;
+  getGalleryState(): ShipGalleryViewState | null;
+  setGalleryState(state: ShipGalleryViewState): void;
   activeSlotDescription(): string;
   selectedShips(): readonly ShipLibraryShip[];
   assignShip(ship: ShipLibraryShip): void;
@@ -44,6 +47,8 @@ export class FleetGalleryView extends ShipGalleryView {
     }, {
       getRefitFilter: () => host.getRefitFilter(),
       setRefitFilter: enabled => host.setRefitFilter(enabled),
+      getGalleryState: () => host.getGalleryState(),
+      setGalleryState: state => host.setGalleryState(state),
       activeSlotDescription: () => host.activeSlotDescription(),
       isExcluded: ship => (
         host.selectedShips().some(selected => selected.id === ship.id)

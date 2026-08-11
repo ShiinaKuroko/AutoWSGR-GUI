@@ -19,6 +19,10 @@ import type {
   ShipLibraryManifest,
   ShipLibraryShip,
 } from '../../types/ipc.js';
+import { findShipLibraryShip } from '../../shared/shipLibrary.js';
+import type {
+  ShipGalleryViewState,
+} from '../../types/view.js';
 import {
   showAlert,
   showConfirm,
@@ -50,6 +54,8 @@ export interface DecisivePlanSaveResult {
 
 export interface DecisivePlanViewHost {
   getState(): DecisivePlanViewState;
+  getGalleryState(): ShipGalleryViewState | null;
+  setGalleryState(state: ShipGalleryViewState): void;
   setChapter(chapter: number): void;
   changeChapter(chapter: number): Promise<DecisivePlanSaveResult>;
   setUseQuickRepair(useQuickRepair: boolean): void;
@@ -87,6 +93,13 @@ const MAIN_SLOT_COUNT = 6;
 const DEFAULT_BACKUP_SLOT_COUNT = 6;
 const DECISIVE_DRAG_MIME = 'application/x-autowsgr-decisive-ship';
 
+/** Keeps the exact normal, refit, or special variant selected in the gallery. */
+export function decisiveGalleryShipName(
+  ship: Pick<ShipLibraryShip, 'name'>,
+): string {
+  return ship.name;
+}
+
 function requiredElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
   if (!element) throw new Error(`缺少决战页面元素: #${id}`);
@@ -120,6 +133,7 @@ export class DecisivePlanView {
   );
   private readonly backupScroll = this.backupList.parentElement!;
   private readonly galleryView: ShipGalleryView;
+  private shipSearchNameByName = new Map<string, string>();
   private galleryLevel: DecisiveLevel = 'level1';
   private activeMainIndex = 0;
   private activeBackupIndex = 0;
@@ -152,13 +166,11 @@ export class DecisivePlanView {
       ),
     }, {
       activeSlotDescription: () => this.activeSlotDescription(),
-      isExcluded: ship => {
-        const state = this.host.getState();
-        return state.level1.includes(ship.search_name)
-          || state.level2.includes(ship.search_name);
-      },
+      isExcluded: ship => this.findConfiguredShip(ship) !== null,
       assignShip: ship => this.assignGalleryShip(ship),
-      shipDisplayName: ship => ship.search_name,
+      getGalleryState: () => this.host.getGalleryState(),
+      setGalleryState: state => this.host.setGalleryState(state),
+      shipDisplayName: ship => decisiveGalleryShipName(ship),
       isInteractionEnabled: () => this.editEnabled.checked,
       drag: {
         mime: DECISIVE_DRAG_MIME,
@@ -267,19 +279,24 @@ export class DecisivePlanView {
 
   private loadShipLibrary(manifest: ShipLibraryManifest | null): void {
     if (!manifest?.ships) {
+      this.shipSearchNameByName.clear();
       this.galleryView.clearLibrary();
       this.galleryView.showLoadError('舰船资料库不可用');
       return;
     }
 
+    const ships = manifest.ships.filter(ship => (
+      Number.isFinite(ship.id)
+      && Boolean(ship.name)
+      && Boolean(ship.search_name)
+      && Boolean(ship.portraitUrl)
+    ));
+    this.shipSearchNameByName = new Map(
+      ships.map(ship => [ship.name, ship.search_name]),
+    );
     this.galleryView.showLibrary({
       labels: manifest.labels,
-      ships: manifest.ships.filter(ship => (
-        Number.isFinite(ship.id)
-        && Boolean(ship.name)
-        && Boolean(ship.search_name)
-        && Boolean(ship.portraitUrl)
-      )),
+      ships,
     });
   }
 
@@ -290,7 +307,7 @@ export class DecisivePlanView {
     this.editEnabled.checked = false;
     this.renderEditState();
     this.renderQueues();
-    this.galleryView.render();
+    this.galleryView.render(false);
     this.renderGalleryTarget();
   }
 
@@ -361,10 +378,10 @@ export class DecisivePlanView {
     if (name) {
       const ship = this.findDisplayShip(name);
       if (ship) {
-        slot.append(createShipArtwork(
-          ship,
-          this.galleryView.shipTypeDisplay(ship),
-        ));
+        slot.append(createShipArtwork(ship, {
+          shipTypeLabel: this.galleryView.shipTypeDisplay(ship),
+          displayName: name,
+        }));
       } else {
         const fallback = document.createElement('span');
         fallback.className = 'fleet-slot-empty';
@@ -453,7 +470,7 @@ export class DecisivePlanView {
 
   private assignGalleryShip(ship: ShipLibraryShip): void {
     if (!this.editEnabled.checked) return;
-    const existing = this.findConfiguredShip(ship.search_name);
+    const existing = this.findConfiguredShip(ship);
     if (existing) {
       this.selectSlot(existing.level, existing.index);
       return;
@@ -492,7 +509,7 @@ export class DecisivePlanView {
     advanceToNextEmpty: boolean,
   ): void {
     if (!this.editEnabled.checked) return;
-    const existing = this.findConfiguredShip(ship.search_name);
+    const existing = this.findConfiguredShip(ship);
     if (existing) {
       this.selectSlot(existing.level, existing.index);
       return;
@@ -502,7 +519,7 @@ export class DecisivePlanView {
       ? MAIN_SLOT_COUNT - 1
       : this.backupSlotCount - 1;
     const target = this.host.placeShip(
-      ship.search_name,
+      decisiveGalleryShipName(ship),
       level,
       requestedIndex,
       maxIndex,
@@ -636,15 +653,22 @@ export class DecisivePlanView {
   }
 
   private findDisplayShip(name: string): ShipLibraryShip | undefined {
-    return this.galleryView.ships().find(ship => (
-      ship.search_name === name && ship.variant === 'normal'
-    )) ?? this.galleryView.ships().find(ship => ship.search_name === name);
+    return findShipLibraryShip(this.galleryView.ships(), { name });
   }
 
   private findConfiguredShip(
-    name: string,
+    ship: ShipLibraryShip,
   ): { level: DecisiveLevel; index: number } | null {
-    return this.host.findShip(name);
+    const exact = this.host.findShip(ship.name);
+    if (exact) return exact;
+    const state = this.host.getState();
+    for (const level of LEVELS) {
+      const index = state[level].findIndex(name => (
+        (this.shipSearchNameByName.get(name) ?? name) === ship.search_name
+      ));
+      if (index >= 0) return { level, index };
+    }
+    return null;
   }
 
   private renderGalleryTarget(): void {

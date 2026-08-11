@@ -54,9 +54,14 @@ import {
 import {
   PlanManagementController,
 } from './PlanManagementController.js';
+import {
+  loadGalleryViewState,
+  saveGalleryViewState,
+} from './galleryStateStorage.js';
 
 const REFIT_FILTER_STORAGE_KEY = 'fleetPlannerRefitFilter';
 const BACKUP_FOLLOW_MODE_STORAGE_KEY = 'fleetPlannerBackupFollowMode';
+const GALLERY_STATE_STORAGE_KEY = 'fleetPlannerGalleryState';
 
 export class FleetPlannerController {
   private draft = createFleetDraft();
@@ -88,6 +93,15 @@ export class FleetPlannerController {
       ),
       setRefitFilter: enabled => (
         this.storage.set(REFIT_FILTER_STORAGE_KEY, String(enabled))
+      ),
+      getGalleryState: () => loadGalleryViewState(
+        this.storage,
+        GALLERY_STATE_STORAGE_KEY,
+      ),
+      setGalleryState: state => saveGalleryViewState(
+        this.storage,
+        GALLERY_STATE_STORAGE_KEY,
+        state,
       ),
       getBackupFollowMode: (): BackupFollowMode => (
         this.storage.get(BACKUP_FOLLOW_MODE_STORAGE_KEY) === 'position'

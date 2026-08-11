@@ -79,8 +79,13 @@ export class ScheduledTaskLoader {
       if (!this.repository?.getDecisivePlanSettings) {
         throw new Error('决战计划读取接口不可用');
       }
+      const [plan, shipLibrary] = await Promise.all([
+        this.repository.getDecisivePlanSettings(),
+        this.repository.getShipLibraryManifest(),
+      ]);
       request = buildAutomaticDecisivePlanRequest(
-        await this.repository.getDecisivePlanSettings(),
+        plan,
+        shipLibrary.ships,
       );
       label = '用户计划';
     } else {

@@ -1,10 +1,13 @@
 /**
  * 校验、拆分、展开并序列化出征计划。
  */
-import * as yaml from 'js-yaml';
 import {
   normalizeLegacyNodeDecisionFields,
 } from '../../src/shared/nodeDecision';
+import {
+  parseYaml,
+  serializePlanYaml,
+} from '../../src/shared/yamlSerializer';
 import {
   type PlanPresetSource,
   TeamPlanCodec,
@@ -36,7 +39,7 @@ export class CombatPlanCodec {
     content: string,
     invalidRootMessage: string,
   ): Record<string, unknown> {
-    const parsed = yaml.load(content);
+    const parsed = parseYaml(content);
     if (!this.isPlainObject(parsed)) {
       throw new Error(invalidRootMessage);
     }
@@ -57,18 +60,12 @@ export class CombatPlanCodec {
       }
       break;
     }
-    const body = yaml.dump(root, {
-      lineWidth: -1,
-      noCompatMode: true,
-      noRefs: true,
-      sortKeys: false,
-    });
     const prefix = leadingComments.some(
       line => line.trimStart().startsWith('#'),
     )
       ? `${leadingComments.join('\n').replace(/\s+$/, '')}\n`
       : '';
-    return `${prefix}${body}`;
+    return `${prefix}${serializePlanYaml(root)}`;
   }
 
   /** 把内嵌舰队拆成独立编队，并在地图中只保留名称引用。 */
@@ -139,6 +136,23 @@ export class CombatPlanCodec {
         fleet_presets: references,
       },
       teams,
+    };
+  }
+
+  /** 拆分旧计划，并让其中缺少校验模式的内嵌舰队默认使用弱校验。 */
+  normalizeLegacyFleetPresets(
+    root: Record<string, unknown>,
+    source: PlanPresetSource,
+    requireEmbeddedShips: boolean,
+  ): SplitCombatPlan {
+    const split = this.normalizeFleetPresets(
+      root,
+      source,
+      requireEmbeddedShips,
+    );
+    return {
+      ...split,
+      teams: split.teams.map(team => this.teamCodec.normalizeLegacy(team)),
     };
   }
 

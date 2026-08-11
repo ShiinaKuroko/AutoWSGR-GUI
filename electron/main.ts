@@ -432,7 +432,7 @@ const legacyPlanMigration = new LegacyPlanMigration<UserTeamPlan>(
   {
     yamlFiles: directory => combatPlanRepository.yamlFiles(directory),
     safePlanBaseName: value => combatPlanCodec.safeBaseName(value),
-    normalizeUserTeamPlan: raw => teamPlanCodec.normalize(raw),
+    normalizeUserTeamPlan: raw => teamPlanCodec.normalizeLegacy(raw),
     teamPlanMatches: (filePath, team) => (
       teamPlanRepository.matches(filePath, team)
     ),
@@ -445,7 +445,7 @@ const legacyPlanMigration = new LegacyPlanMigration<UserTeamPlan>(
       root,
       source,
       requireEmbeddedShips,
-    ) => combatPlanCodec.normalizeFleetPresets(
+    ) => combatPlanCodec.normalizeLegacyFleetPresets(
       root,
       source,
       requireEmbeddedShips,

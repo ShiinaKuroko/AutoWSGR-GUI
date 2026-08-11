@@ -1,5 +1,3 @@
-# 周常第2章 — 地图 2-1
-# 默认复纵阵
 chapter: 2
 map: 1
 selected_nodes: ['0', B, D, F]
@@ -8,92 +6,23 @@ fight_condition: 1
 repair_mode: 1
 node_defaults: {formation: 2, night: false, proceed: true}
 node_args:
-  F: {formation: 2, night: true, long_missile_support: false, proceed: true, detour: false}
+  B:
+    enemy_rules:
+      - [SS >= 1, 5]
+  D:
+    enemy_rules:
+      - [SS >= 1, 5]
+  F:
+    formation: 2
+    night: true
+    long_missile_support: false
+    proceed: true
+    detour: false
+    enemy_rules:
+      - [SS >= 1, 5]
 times: 3
 result: S
 fleet_id: 3
 fleet_presets:
   - name: 4日驱周常队
-    ships:
-      - name: 岛风(岛风型驱逐舰)·改
-        candidates:
-          - {name: 绫波·改, search_name: 绫波, ship_type: [dd], min_level: 100}
-          - {name: 吹雪·改, search_name: 吹雪, ship_type: [dd], min_level: 100}
-          - {name: 早春·改, search_name: 早春, ship_type: [dd], min_level: 100}
-          - {name: 敷波·改, search_name: 敷波, ship_type: [dd], min_level: 100}
-          - {name: 黑潮·改, search_name: 黑潮, ship_type: [dd], min_level: 100}
-        search_name: 岛风
-        ship_type: [dd]
-        min_level: 100
-      - name: 初夏·改
-        candidates:
-          - {name: 绫波·改, search_name: 绫波, ship_type: [dd], min_level: 100}
-          - {name: 吹雪·改, search_name: 吹雪, ship_type: [dd], min_level: 100}
-          - {name: 早春·改, search_name: 早春, ship_type: [dd], min_level: 100}
-          - {name: 敷波·改, search_name: 敷波, ship_type: [dd], min_level: 100}
-          - {name: 黑潮·改, search_name: 黑潮, ship_type: [dd], min_level: 100}
-        search_name: 初夏
-        ship_type: [dd]
-        min_level: 100
-      - name: 高波·改
-        candidates:
-          - {name: 绫波·改, search_name: 绫波, ship_type: [dd], min_level: 100}
-          - {name: 吹雪·改, search_name: 吹雪, ship_type: [dd], min_level: 100}
-          - {name: 早春·改, search_name: 早春, ship_type: [dd], min_level: 100}
-          - {name: 敷波·改, search_name: 敷波, ship_type: [dd], min_level: 100}
-          - {name: 黑潮·改, search_name: 黑潮, ship_type: [dd], min_level: 100}
-        search_name: 高波
-        ship_type: [dd]
-        min_level: 100
-      - name: 阳炎·改
-        candidates:
-          - {name: 绫波·改, search_name: 绫波, ship_type: [dd], min_level: 100}
-          - {name: 吹雪·改, search_name: 吹雪, ship_type: [dd], min_level: 100}
-          - {name: 早春·改, search_name: 早春, ship_type: [dd], min_level: 100}
-          - {name: 敷波·改, search_name: 敷波, ship_type: [dd], min_level: 100}
-          - {name: 黑潮·改, search_name: 黑潮, ship_type: [dd], min_level: 100}
-        search_name: 阳炎
-        ship_type: [dd]
-        min_level: 100
   - name: 4德驱周常队
-    ships:
-      - name: Z28·改
-        candidates:
-          - {name: Z1·改, search_name: Z1, ship_type: [dd], min_level: 100}
-          - {name: Z16·改, search_name: Z16, ship_type: [dd], min_level: 100}
-          - {name: Z21·改, search_name: Z21, ship_type: [dd], min_level: 100}
-          - {name: Z22·改, search_name: Z22, ship_type: [dd], min_level: 100}
-          - {name: Z31·改, search_name: Z31, ship_type: [dd], min_level: 100}
-        search_name: Z28
-        ship_type: [dd]
-        min_level: 100
-      - name: T-23·改
-        candidates:
-          - {name: Z1·改, search_name: Z1, ship_type: [dd], min_level: 100}
-          - {name: Z16·改, search_name: Z16, ship_type: [dd], min_level: 100}
-          - {name: Z21·改, search_name: Z21, ship_type: [dd], min_level: 100}
-          - {name: Z22·改, search_name: Z22, ship_type: [dd], min_level: 100}
-          - {name: Z31·改, search_name: Z31, ship_type: [dd], min_level: 100}
-        search_name: T-23
-        ship_type: [dd]
-        min_level: 100
-      - name: 吕贝克·改
-        candidates:
-          - {name: Z1·改, search_name: Z1, ship_type: [dd], min_level: 100}
-          - {name: Z16·改, search_name: Z16, ship_type: [dd], min_level: 100}
-          - {name: Z21·改, search_name: Z21, ship_type: [dd], min_level: 100}
-          - {name: Z22·改, search_name: Z22, ship_type: [dd], min_level: 100}
-          - {name: Z31·改, search_name: Z31, ship_type: [dd], min_level: 100}
-        search_name: 吕贝克
-        ship_type: [dd]
-        min_level: 100
-      - name: Z46·改
-        candidates:
-          - {name: Z1·改, search_name: Z1, ship_type: [dd], min_level: 100}
-          - {name: Z16·改, search_name: Z16, ship_type: [dd], min_level: 100}
-          - {name: Z21·改, search_name: Z21, ship_type: [dd], min_level: 100}
-          - {name: Z22·改, search_name: Z22, ship_type: [dd], min_level: 100}
-          - {name: Z31·改, search_name: Z31, ship_type: [dd], min_level: 100}
-        search_name: Z46
-        ship_type: [dd]
-        min_level: 100

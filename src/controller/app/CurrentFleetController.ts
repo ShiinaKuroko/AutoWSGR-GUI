@@ -5,8 +5,8 @@ import {
 } from '../../adapter/IpcAdapter.js';
 import type {
   ShipLibraryManifest,
-  ShipLibraryShip,
 } from '../../types/ipc.js';
+import { findShipLibraryShip } from '../../shared/shipLibrary.js';
 import type {
   SchedulerTaskRequest,
 } from '../../types/scheduler.js';
@@ -68,8 +68,8 @@ function requestedFleet(
   for (let index = 0; index < slotCount; index += 1) {
     const fleetName = normalizedShipName(fleet[index]);
     const candidates = [
-      ...(fleetName ? [{ name: fleetName }] : []),
       fleetRuleShip(rules[index]),
+      ...(fleetName ? [{ name: fleetName }] : []),
       ...candidateShips(rules[index]),
     ].filter((ship): ship is RequestedFleetShip => ship !== null);
     const ship = candidates.find(candidate => (
@@ -80,31 +80,6 @@ function requestedFleet(
     ships.push(ship);
   }
   return ships;
-}
-
-function findShip(
-  manifest: ShipLibraryManifest | null,
-  preview: RequestedFleetShip,
-): ShipLibraryShip | undefined {
-  const ships = manifest?.ships ?? [];
-  const exactNames = [preview.name, preview.searchName].filter(
-    (name): name is string => Boolean(name),
-  );
-  for (const name of exactNames) {
-    const match = ships.find(ship => ship.name === name)
-      ?? ships.find(ship => ship.search_name === name);
-    if (match) return match;
-  }
-
-  const baseNames = exactNames
-    .map(name => name.split('·')[0].trim())
-    .filter((name, index, names) => name && names.indexOf(name) === index);
-  for (const name of baseNames) {
-    const match = ships.find(ship => ship.name === name)
-      ?? ships.find(ship => ship.search_name === name);
-    if (match) return match;
-  }
-  return undefined;
 }
 
 /** 主页当前舰队的唯一资料库读取者和 ViewObject 生成器。 */
@@ -139,7 +114,11 @@ export class CurrentFleetController {
 
   resolve(request: SchedulerTaskRequest): CurrentFleetShipVO[] {
     return requestedFleet(request).map(preview => {
-      const ship = findShip(this.manifest, preview);
+      const ship = findShipLibraryShip(this.manifest?.ships ?? [], {
+        name: preview.name,
+        searchName: preview.searchName,
+        allowBaseNameFallback: true,
+      });
       return {
         name: preview.name,
         ship,

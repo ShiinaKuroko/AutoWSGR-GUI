@@ -660,10 +660,9 @@ export class FleetEditorView {
     }
 
     if (ship) {
-      const artwork = createShipArtwork(
-        ship,
-        this.host.shipTypeDisplay(ship),
-      );
+      const artwork = createShipArtwork(ship, {
+        shipTypeLabel: this.host.shipTypeDisplay(ship),
+      });
       const validationPreview = document.createElement('span');
       validationPreview.className = 'fleet-validation-preview';
       const validationBadge = document.createElement('span');

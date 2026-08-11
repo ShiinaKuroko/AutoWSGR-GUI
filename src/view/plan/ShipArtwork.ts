@@ -1,18 +1,37 @@
-/** 创建舰船立绘元素并处理资源路径和加载失败回退。 */
 /**
  * 舰娘图鉴展示框。
  *
- * 舰队规划、编队预览和决战图鉴共用同一套图片层级。
- * 背景、立绘、边框、编号、舰型图标和名称的样式由舰队规划样式统一维护。
+ * 背景、立绘、边框和舰型图标是所有场景共用的基础图层。
+ * 编号和舰名按页面需要开启，业务标记与交互由页面外层负责。
  */
 import type { ShipLibraryShip } from '../../types/ipc.js';
 
+export type ShipArtworkNameStyle = 'rarity' | 'plain';
+
+export interface ShipArtworkOptions {
+  readonly shipTypeLabel?: string;
+  readonly showNumber?: boolean;
+  readonly showName?: boolean;
+  readonly displayName?: string;
+  readonly nameStyle?: ShipArtworkNameStyle;
+}
+
+/** 创建共用舰船图片层，可按场景关闭编号和舰名。 */
 export function createShipArtwork(
   ship: ShipLibraryShip,
-  shipTypeLabel = ship.ship_type,
+  options: ShipArtworkOptions = {},
 ): HTMLSpanElement {
+  const {
+    shipTypeLabel = ship.ship_type,
+    showNumber = true,
+    showName = true,
+    displayName = ship.name,
+    nameStyle = 'rarity',
+  } = options;
   const artwork = document.createElement('span');
   artwork.className = 'fleet-ship-artwork';
+  artwork.dataset['shipName'] = ship.name;
+  artwork.dataset['searchName'] = ship.search_name;
 
   if (ship.backgroundUrl) {
     const background = document.createElement('img');
@@ -45,10 +64,12 @@ export function createShipArtwork(
     artwork.append(frame);
   }
 
-  const number = document.createElement('span');
-  number.className = 'fleet-ship-number';
-  number.textContent = `No.${String(ship.id).padStart(3, '0')}`;
-  artwork.append(number);
+  if (showNumber) {
+    const number = document.createElement('span');
+    number.className = 'fleet-ship-number';
+    number.textContent = `No.${String(ship.id).padStart(3, '0')}`;
+    artwork.append(number);
+  }
 
   if (ship.typeIconUrl) {
     const typeIcon = document.createElement('img');
@@ -60,14 +81,21 @@ export function createShipArtwork(
     artwork.append(typeIcon);
   }
 
-  const name = document.createElement('span');
-  name.className = 'fleet-ship-name';
-  const nameText = document.createElement('strong');
-  nameText.className = `fleet-ship-name-text rarity-${
-    Math.max(1, Math.min(6, ship.rarity))
-  }`;
-  nameText.textContent = ship.name;
-  name.append(nameText);
-  artwork.append(name);
+  if (showName) {
+    const name = document.createElement('span');
+    name.className = [
+      'fleet-ship-name',
+      nameStyle === 'plain' ? 'is-plain' : '',
+    ].filter(Boolean).join(' ');
+    const nameText = document.createElement('strong');
+    nameText.className = nameStyle === 'plain'
+      ? 'fleet-ship-name-text'
+      : `fleet-ship-name-text rarity-${
+        Math.max(1, Math.min(6, ship.rarity))
+      }`;
+    nameText.textContent = displayName;
+    name.append(nameText);
+    artwork.append(name);
+  }
   return artwork;
 }

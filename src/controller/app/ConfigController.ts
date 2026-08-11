@@ -77,6 +77,8 @@ export interface ConfigControllerHost {
 }
 
 export class ConfigController {
+  private savedConfigSnapshot: string | null = null;
+
   constructor(
     private readonly host: ConfigControllerHost,
     private readonly gateway: ConfigurationGateway | undefined =
@@ -89,6 +91,16 @@ export class ConfigController {
 
   setStartupController(startupCtrl: StartupController): void {
     this.host.startupCtrl = startupCtrl;
+  }
+
+  /** 当前表单是否与最近一次加载或成功保存的配置不同。 */
+  hasUnsavedChanges(): boolean {
+    if (this.savedConfigSnapshot === null) return false;
+    try {
+      return this.configSnapshot() !== this.savedConfigSnapshot;
+    } catch {
+      return true;
+    }
   }
 
   /** 从磁盘加载 usersettings.yaml */
@@ -376,6 +388,7 @@ export class ConfigController {
       planRoot: cfg.plan_root ?? '',
     };
     this.host.configView.render(vo);
+    this.savedConfigSnapshot = this.configSnapshot();
   }
 
   /** 保存配置并同步各组件 */
@@ -484,6 +497,7 @@ export class ConfigController {
       this.host.scheduler.setAutoExpedition(da.auto_expedition);
       this.host.scheduler.setExpeditionInterval(gui.expeditionInterval);
       this.refreshNormalFightRemaining();
+      this.savedConfigSnapshot = this.configSnapshot(collected);
 
       Logger.info('设置已保存，后端启动项将在重启后生效');
     } catch (error) {
@@ -516,6 +530,16 @@ export class ConfigController {
       tasks,
       this.host.normalFightDailyQuota.totalRemaining(tasks),
     );
+  }
+
+  /** 使用统一的表单收集结果生成可比较快照。 */
+  private configSnapshot(
+    collected = this.host.configView.collect(),
+  ): string {
+    return JSON.stringify({
+      ...collected,
+      normalFightRemaining: null,
+    });
   }
 
   /** 把设置页输入应用到指定模型，供候选配置和正式提交复用。 */

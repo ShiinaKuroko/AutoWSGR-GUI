@@ -452,6 +452,29 @@
   white-space: nowrap;
 }
 
+.fleet-ship-name.is-plain {
+  right: 4px;
+  bottom: 4px;
+  left: 4px;
+  min-height: 0;
+  padding: 3px 6px;
+  background: rgba(0, 0, 0, 0.9);
+  border-color: rgba(255, 255, 255, 0.24);
+  border-radius: 4px;
+  backdrop-filter: none;
+
+  .fleet-ship-name-text {
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+    text-shadow: none;
+    -webkit-text-stroke: 0;
+    white-space: normal;
+  }
+}
+
 .rarity-1 {
   color: #fff;
 }

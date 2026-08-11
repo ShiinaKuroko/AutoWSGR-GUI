@@ -126,6 +126,9 @@ export class AppController {
       refreshShipLibraryStatus: () => (
         this.settingsCtrl.refreshShipLibraryStatus()
       ),
+      hasUnsavedConfigChanges: () => (
+        this.configCtrl?.hasUnsavedChanges() ?? false
+      ),
     });
     this.operationsCtrl = new OperationsController(this.api, this.mainView, Logger);
 

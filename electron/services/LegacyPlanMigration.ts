@@ -4,7 +4,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as yaml from 'js-yaml';
+import { parseYaml } from '../../src/shared/yamlSerializer';
 import { AppPaths } from './AppPaths';
 import { AtomicFileStore } from './AtomicFileStore';
 import {
@@ -193,7 +193,7 @@ export class LegacyPlanMigration<TTeam> {
         summary.total += 1;
         try {
           const team = this.dependencies.normalizeUserTeamPlan(
-            yaml.load(content),
+            parseYaml(content),
           );
           const resolved = this.resolveTeamWrite(
             team,
@@ -250,7 +250,7 @@ export class LegacyPlanMigration<TTeam> {
           continue;
         }
         try {
-          const parsed = yaml.load(content);
+          const parsed = parseYaml(content);
           if (!this.isPlainObject(parsed)) {
             throw new Error('旧计划根节点必须是对象');
           }
@@ -311,7 +311,7 @@ export class LegacyPlanMigration<TTeam> {
       }
       summary.total += 1;
       try {
-        const parsed = yaml.load(content);
+        const parsed = parseYaml(content);
         if (!this.isPlainObject(parsed)) {
           throw new Error('旧日常任务根节点必须是对象');
         }
@@ -410,7 +410,7 @@ export class LegacyPlanMigration<TTeam> {
       const content = fs.readFileSync(source, 'utf-8');
       let parsed: unknown;
       try {
-        parsed = yaml.load(content);
+        parsed = parseYaml(content);
       } catch {
         // 非计划目录中的普通 YAML 不属于用户迁移失败。
         continue;
@@ -849,7 +849,7 @@ export class LegacyPlanMigration<TTeam> {
     return this.dependencies.yamlFiles(directory).flatMap(file => {
       const source = path.join(directory, file);
       try {
-        const parsed = yaml.load(fs.readFileSync(source, 'utf-8'));
+        const parsed = parseYaml(fs.readFileSync(source, 'utf-8'));
         return (
           this.isPlainObject(parsed)
           && this.dependencies.isStandaloneTaskPreset?.(parsed) === true

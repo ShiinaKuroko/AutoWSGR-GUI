@@ -1,5 +1,3 @@
-# 周常第3章 — 地图 3-1
-# 默认复纵阵
 chapter: 3
 map: 1
 selected_nodes: ['0', A, B, C, E, F, H, I]
@@ -8,82 +6,34 @@ fight_condition: 1
 repair_mode: 1
 node_defaults: {formation: 2, night: false, proceed: true}
 node_args:
-  I: {formation: 4, night: true, long_missile_support: false, proceed: true, detour: false}
+  A:
+    enemy_rules:
+      - [SS >= 1, 5]
+  B:
+    enemy_rules:
+      - [SS >= 1, 5]
+  C:
+    enemy_rules:
+      - [SS >= 1, 5]
+  E:
+    enemy_rules:
+      - [SS >= 1, 5]
+  F:
+    enemy_rules:
+      - [SS >= 1, 5]
+  H:
+    enemy_rules:
+      - [SS >= 1, 5]
+  I:
+    formation: 4
+    night: true
+    long_missile_support: false
+    proceed: true
+    detour: false
+    enemy_rules:
+      - [SS >= 1, 5]
 times: 3
 fleet_id: 3
 result: S
 fleet_presets:
   - name: 6日驱队
-    ships:
-      - name: 岛风(岛风型驱逐舰)·改
-        candidates:
-          - {name: 黑潮·改, search_name: 黑潮, ship_type: [dd], min_level: 100}
-          - {name: 不知火·改, search_name: 不知火, ship_type: [dd], min_level: 100}
-          - {name: 敷波·改, search_name: 敷波, ship_type: [dd], min_level: 100}
-          - {name: 绫波·改, search_name: 绫波, ship_type: [dd], min_level: 100}
-          - {name: 初雪·改, search_name: 初雪, ship_type: [dd], min_level: 100}
-          - {name: 深雪·改, search_name: 深雪, ship_type: [dd], min_level: 100}
-          - {name: 白雪·改, search_name: 白雪, ship_type: [dd], min_level: 100}
-        search_name: 岛风
-        ship_type: [dd]
-        min_level: 100
-      - name: 初夏·改
-        candidates:
-          - {name: 黑潮·改, search_name: 黑潮, ship_type: [dd], min_level: 100}
-          - {name: 不知火·改, search_name: 不知火, ship_type: [dd], min_level: 100}
-          - {name: 敷波·改, search_name: 敷波, ship_type: [dd], min_level: 100}
-          - {name: 绫波·改, search_name: 绫波, ship_type: [dd], min_level: 100}
-          - {name: 初雪·改, search_name: 初雪, ship_type: [dd], min_level: 100}
-          - {name: 深雪·改, search_name: 深雪, ship_type: [dd], min_level: 100}
-          - {name: 白雪·改, search_name: 白雪, ship_type: [dd], min_level: 100}
-        search_name: 初夏
-        ship_type: [dd]
-        min_level: 100
-      - name: 高波·改
-        candidates:
-          - {name: 黑潮·改, search_name: 黑潮, ship_type: [dd], min_level: 100}
-          - {name: 不知火·改, search_name: 不知火, ship_type: [dd], min_level: 100}
-          - {name: 敷波·改, search_name: 敷波, ship_type: [dd], min_level: 100}
-          - {name: 绫波·改, search_name: 绫波, ship_type: [dd], min_level: 100}
-          - {name: 初雪·改, search_name: 初雪, ship_type: [dd], min_level: 100}
-          - {name: 深雪·改, search_name: 深雪, ship_type: [dd], min_level: 100}
-          - {name: 白雪·改, search_name: 白雪, ship_type: [dd], min_level: 100}
-        search_name: 高波
-        ship_type: [dd]
-        min_level: 100
-      - name: 早春·改
-        candidates:
-          - {name: 黑潮·改, search_name: 黑潮, ship_type: [dd], min_level: 100}
-          - {name: 不知火·改, search_name: 不知火, ship_type: [dd], min_level: 100}
-          - {name: 敷波·改, search_name: 敷波, ship_type: [dd], min_level: 100}
-          - {name: 绫波·改, search_name: 绫波, ship_type: [dd], min_level: 100}
-          - {name: 初雪·改, search_name: 初雪, ship_type: [dd], min_level: 100}
-          - {name: 深雪·改, search_name: 深雪, ship_type: [dd], min_level: 100}
-          - {name: 白雪·改, search_name: 白雪, ship_type: [dd], min_level: 100}
-        search_name: 早春
-        ship_type: [dd]
-        min_level: 100
-      - name: 吹雪·改
-        candidates:
-          - {name: 黑潮·改, search_name: 黑潮, ship_type: [dd], min_level: 100}
-          - {name: 不知火·改, search_name: 不知火, ship_type: [dd], min_level: 100}
-          - {name: 敷波·改, search_name: 敷波, ship_type: [dd], min_level: 100}
-          - {name: 绫波·改, search_name: 绫波, ship_type: [dd], min_level: 100}
-          - {name: 初雪·改, search_name: 初雪, ship_type: [dd], min_level: 100}
-          - {name: 深雪·改, search_name: 深雪, ship_type: [dd], min_level: 100}
-          - {name: 白雪·改, search_name: 白雪, ship_type: [dd], min_level: 100}
-        search_name: 吹雪
-        ship_type: [dd]
-        min_level: 100
-      - name: 阳炎·改
-        candidates:
-          - {name: 黑潮·改, search_name: 黑潮, ship_type: [dd], min_level: 100}
-          - {name: 不知火·改, search_name: 不知火, ship_type: [dd], min_level: 100}
-          - {name: 敷波·改, search_name: 敷波, ship_type: [dd], min_level: 100}
-          - {name: 绫波·改, search_name: 绫波, ship_type: [dd], min_level: 100}
-          - {name: 初雪·改, search_name: 初雪, ship_type: [dd], min_level: 100}
-          - {name: 深雪·改, search_name: 深雪, ship_type: [dd], min_level: 100}
-          - {name: 白雪·改, search_name: 白雪, ship_type: [dd], min_level: 100}
-        search_name: 阳炎
-        ship_type: [dd]
-        min_level: 100

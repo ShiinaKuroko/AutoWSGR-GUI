@@ -7,6 +7,7 @@
 import type {
   FleetDraftViewObject,
   FleetShipLibraryViewObject,
+  ShipGalleryViewState,
   TeamPlanListViewObject,
 } from '../../types/view.js';
 import type {
@@ -37,6 +38,8 @@ export interface FleetPlannerViewHost {
   }>;
   getRefitFilter(): boolean;
   setRefitFilter(enabled: boolean): void;
+  getGalleryState(): ShipGalleryViewState | null;
+  setGalleryState(state: ShipGalleryViewState): void;
   getBackupFollowMode(): BackupFollowMode;
   setBackupFollowMode(mode: BackupFollowMode): void;
   currentDraft(): FleetDraftViewObject;
@@ -74,6 +77,8 @@ export class FleetPlannerView {
     this.galleryView = new FleetGalleryView({
       getRefitFilter: () => this.host.getRefitFilter(),
       setRefitFilter: enabled => this.host.setRefitFilter(enabled),
+      getGalleryState: () => this.host.getGalleryState(),
+      setGalleryState: state => this.host.setGalleryState(state),
       activeSlotDescription: () => (
         this.editorView.activeSlotDescription()
       ),

@@ -3,7 +3,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import * as yaml from 'js-yaml';
+import { parseYaml } from '../../src/shared/yamlSerializer';
 import { AppPaths } from './AppPaths';
 import { AtomicFileStore } from './AtomicFileStore';
 import {
@@ -44,7 +44,7 @@ export class TeamPlanRepository {
   /** 读取并归一化一份编队 YAML。 */
   read(filePath: string): UserTeamPlan {
     return this.codec.normalize(
-      yaml.load(this.readContent(filePath)),
+      parseYaml(this.readContent(filePath)),
     );
   }
 

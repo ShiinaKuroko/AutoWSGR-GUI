@@ -5,6 +5,7 @@
  */
 import { yamlCodec } from '../adapter/index.js';
 import { normalizeLegacyNodeDecisionFields } from '../shared/nodeDecision.js';
+import { serializePlanYaml } from '../shared/yamlSerializer.js';
 import type {
   PlanData,
   NodeArgs,
@@ -16,123 +17,7 @@ import type {
   BattleResultGrade,
 } from '../types/model.js';
 
-type YamlPath = string[];
 const BATTLE_RESULT_GRADES = new Set<BattleResultGrade>(['D', 'C', 'B', 'A', 'S', 'SS']);
-
-function isYamlMapping(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isYamlScalar(value: unknown): boolean {
-  return value === null || ['string', 'number', 'boolean'].includes(typeof value);
-}
-
-/** 使用 YAML 流式语法输出单个值，不改变值本身。 */
-function dumpFlowYaml(value: unknown): string {
-  return yamlCodec.stringify(value, {
-    flowLevel: 0,
-    lineWidth: -1,
-    noCompatMode: true,
-    noRefs: true,
-    sortKeys: false,
-  }).trimEnd();
-}
-
-function shouldInlineMapping(path: YamlPath): boolean {
-  return (
-    (path.length === 1 && path[0] === 'node_defaults')
-    || (path.length === 2 && path[0] === 'node_args')
-  );
-}
-
-function canInlineValue(value: unknown, path: YamlPath): boolean {
-  if (isYamlScalar(value)) return true;
-  if (Array.isArray(value)) {
-    return value.length === 0 || value.every(isYamlScalar);
-  }
-  if (isYamlMapping(value)) {
-    return Object.keys(value).length === 0 || shouldInlineMapping(path);
-  }
-  return false;
-}
-
-function serializeYamlSequence(
-  values: unknown[],
-  indent: number,
-  path: YamlPath,
-): string[] {
-  const padding = ' '.repeat(indent);
-  const lines: string[] = [];
-  const inlineItems = path[path.length - 1] === 'candidates';
-
-  for (const value of values) {
-    if (
-      isYamlScalar(value)
-      || (Array.isArray(value) && value.every(isYamlScalar))
-      || (inlineItems && isYamlMapping(value))
-    ) {
-      lines.push(`${padding}- ${dumpFlowYaml(value)}`);
-      continue;
-    }
-
-    if (Array.isArray(value)) {
-      lines.push(`${padding}-`);
-      lines.push(...serializeYamlSequence(value, indent + 2, [...path, '[]']));
-      continue;
-    }
-
-    if (isYamlMapping(value)) {
-      const itemLines = serializeYamlMapping(value, indent + 2, [...path, '[]']);
-      if (itemLines.length === 0) {
-        lines.push(`${padding}- {}`);
-        continue;
-      }
-      const itemPadding = ' '.repeat(indent + 2);
-      lines.push(`${padding}- ${itemLines[0].slice(itemPadding.length)}`);
-      lines.push(...itemLines.slice(1));
-      continue;
-    }
-
-    lines.push(`${padding}- ${dumpFlowYaml(value)}`);
-  }
-
-  return lines;
-}
-
-function serializeYamlMapping(
-  value: Record<string, unknown>,
-  indent: number,
-  path: YamlPath,
-): string[] {
-  const padding = ' '.repeat(indent);
-  const lines: string[] = [];
-
-  for (const [key, item] of Object.entries(value)) {
-    if (item === undefined) continue;
-    const itemPath = [...path, key];
-    const yamlKey = dumpFlowYaml(key);
-
-    if (canInlineValue(item, itemPath)) {
-      lines.push(`${padding}${yamlKey}: ${dumpFlowYaml(item)}`);
-      continue;
-    }
-
-    lines.push(`${padding}${yamlKey}:`);
-    if (Array.isArray(item)) {
-      lines.push(...serializeYamlSequence(item, indent + 2, itemPath));
-    } else if (isYamlMapping(item)) {
-      lines.push(...serializeYamlMapping(item, indent + 2, itemPath));
-    } else {
-      lines.push(`${' '.repeat(indent + 2)}${dumpFlowYaml(item)}`);
-    }
-  }
-
-  return lines;
-}
-
-function serializePlanYaml(value: Record<string, unknown>): string {
-  return `${serializeYamlMapping(value, 0, []).join('\n')}\n`;
-}
 
 export class PlanModel {
   data: PlanData;

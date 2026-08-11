@@ -163,6 +163,19 @@ export interface FleetShipLibraryViewObject {
   colorfulBackgroundUrl: string;
 }
 
+export interface ShipGalleryViewState {
+  searchText: string;
+  groupFilter: string | null;
+  typeFilters: string[];
+  countryFilters: string[];
+  refitOnly: boolean;
+  sortField: 'type' | 'name' | 'id';
+  descending: boolean;
+  scrollTop: number;
+  scrollLeft: number;
+  renderedShipCount: number;
+}
+
 export interface TeamPlanShipRuleViewObject {
   name: string;
   searchName?: string;

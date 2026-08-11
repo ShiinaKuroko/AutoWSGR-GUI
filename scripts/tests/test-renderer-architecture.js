@@ -163,6 +163,7 @@ const previousDocument = global.document;
 const previousResizeObserver = global.ResizeObserver;
 let observedElement = null;
 let disconnectCount = 0;
+let savedGalleryState = null;
 global.document = fakeElement();
 global.ResizeObserver = class {
   observe(element) {
@@ -178,27 +179,51 @@ try {
   const {
     ShipGalleryView,
   } = require('../../dist/src/view/plan/ShipGalleryView.js');
-  const galleryElement = fakeElement();
+  const galleryElement = fakeElement({
+    scrollTop: 321,
+    scrollLeft: 0,
+  });
+  const searchInput = fakeElement({ value: '' });
+  const refitFilter = fakeElement();
+  const sortDescending = fakeElement();
   const gallery = new ShipGalleryView({
     gallery: galleryElement,
     countLabel: fakeElement(),
-    searchInput: fakeElement(),
+    searchInput,
     filterButtons: [fakeElement()],
     filterCount: fakeElement(),
     filterPopover: fakeElement(),
     typeOptions: fakeElement(),
     countryOptions: fakeElement(),
-    refitFilter: fakeElement(),
-    sortDescending: fakeElement(),
+    refitFilter,
+    sortDescending,
     resetButton: fakeElement(),
     confirmButton: fakeElement(),
   }, {
     activeSlotDescription: () => 'test slot',
     isExcluded: () => false,
     assignShip: () => {},
+    getGalleryState: () => ({
+      searchText: 'U-47',
+      groupFilter: null,
+      typeFilters: ['ss'],
+      countryFilters: ['de'],
+      refitOnly: true,
+      sortField: 'name',
+      descending: true,
+      scrollTop: 321,
+      scrollLeft: 0,
+      renderedShipCount: 36,
+    }),
+    setGalleryState: state => {
+      savedGalleryState = state;
+    },
   });
 
   assert.equal(observedElement, galleryElement);
+  assert.equal(searchInput.value, 'U-47');
+  assert.equal(refitFilter.checked, true);
+  assert.equal(sortDescending.checked, true);
   assert.ok(listenerSignals.length > 0, 'gallery listeners must use AbortSignal');
   const signal = listenerSignals[0];
   assert.equal(
@@ -211,6 +236,8 @@ try {
   gallery.dispose();
   assert.equal(signal.aborted, true);
   assert.equal(disconnectCount, 1);
+  assert.equal(savedGalleryState.searchText, 'U-47');
+  assert.equal(savedGalleryState.scrollTop, 321);
   gallery.dispose();
   assert.equal(disconnectCount, 1, 'gallery disposal must be idempotent');
 } finally {

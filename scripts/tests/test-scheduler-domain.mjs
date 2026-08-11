@@ -15,6 +15,8 @@ const entries = [
   'src/model/scheduler/NormalFightDailyQuota.ts',
   'src/model/scheduler/CampaignDailyQuota.ts',
   'src/controller/app/rendering.ts',
+  'src/controller/taskGroup/queueLoader.ts',
+  'src/controller/taskGroup/addItems.ts',
 ];
 const modules = await Promise.all(entries.map(async entry => {
   const result = await esbuild.build({
@@ -40,6 +42,8 @@ const taskQueueModule = modules[9];
 const normalFightQuotaModule = modules[10];
 const campaignQuotaModule = modules[11];
 const renderingModule = modules[12];
+const queueLoaderModule = modules[13];
+const addItemsModule = modules[14];
 
 assert.equal(normalFightQuotaModule.normalFightDailyLimit(undefined), 1);
 assert.equal(normalFightQuotaModule.normalFightDailyLimit(0), 1);
@@ -806,6 +810,15 @@ assert.equal(
 );
 assert.equal(strictPlanResult.tasks[0].config.source, 'system');
 
+const decisiveYaml = level2 => [
+  'task_type: decisive',
+  'chapter: 5',
+  'level1: [当前主力·改]',
+  `level2: [${level2}]`,
+  'flagship_priority: [当前主力·改]',
+  'use_quick_repair: true',
+  '',
+].join('\n');
 globalThis.window = {
   electronBridge: {
     getDecisivePlanSettings: async () => {
@@ -813,10 +826,16 @@ globalThis.window = {
       return {
         chapter: 5,
         useQuickRepair: false,
-        level1: ['当前主力'],
+        level1: ['当前主力·改'],
         level2: ['当前替补'],
       };
     },
+    getShipLibraryManifest: async () => ({
+      ships: [
+        { name: '当前主力·改', search_name: '当前主力' },
+        { name: '当前替补', search_name: '当前替补' },
+      ],
+    }),
     readManagedCombatPlan: async (source, file) => {
       managedPlanReads.push([source, file]);
       return {
@@ -826,11 +845,146 @@ globalThis.window = {
         content: managedLootYaml,
       };
     },
+    readDailyPlan: async (source, file) => ({
+      success: true,
+      path: `daily://${source}/${file}`,
+      content: decisiveYaml('未收录舰名'),
+    }),
+    readCombatPlanFile: async path => ({
+      success: true,
+      path,
+      content: decisiveYaml('当前替补'),
+    }),
     saveFile: async () => {
       managedPlanWrites += 1;
     },
   },
 };
+const directDecisiveQueueCalls = [];
+const directDecisiveHost = {
+  scheduler: {
+    addTask: (...args) => {
+      directDecisiveQueueCalls.push(args);
+    },
+  },
+  getShipNameAliases: () => ({}),
+  renderMain: () => {},
+};
+const dailyDecisiveSelection = source => ({
+  plan: {
+    source,
+    file: `decisive-${source}.yaml`,
+    name: `${source} 决战`,
+    taskType: 'decisive',
+    times: 1,
+    chapter: 5,
+    useQuickRepair: true,
+  },
+  times: 1,
+  useQuickRepair: true,
+});
+const assertLatestDecisiveNames = (expected, message) => {
+  const request = directDecisiveQueueCalls.at(-1)[2];
+  assert.deepEqual({
+    level1: request.level1,
+    level2: request.level2,
+    flagship_priority: request.flagship_priority,
+  }, expected, message);
+};
+const decisiveNameCases = [
+  {
+    source: 'user',
+    expected: {
+      level1: ['当前主力'],
+      level2: ['未收录舰名'],
+      flagship_priority: ['当前主力'],
+    },
+  },
+  {
+    source: 'system',
+    expected: {
+      level1: ['当前主力·改'],
+      level2: ['未收录舰名'],
+      flagship_priority: ['当前主力·改'],
+    },
+  },
+];
+for (const { source, expected } of decisiveNameCases) {
+  await queueLoaderModule.loadDailyPlanToQueue(
+    dailyDecisiveSelection(source),
+    directDecisiveHost,
+  );
+  assertLatestDecisiveNames(expected, `${source} 日常决战舰名转换错误`);
+}
+const decisiveTemplateFixture = {
+  type: 'decisive',
+  chapter: 5,
+  level1: ['当前主力·改'],
+  level2: ['未收录舰名'],
+  flagship_priority: ['当前主力·改'],
+};
+const decisiveTemplateModel = builtin => ({
+  get: () => decisiveTemplateFixture,
+  isBuiltin: () => builtin,
+});
+for (const { source, expected } of decisiveNameCases) {
+  const builtin = source === 'system';
+  const label = builtin ? '内置决战模板' : '用户决战模板';
+  const item = {
+    kind: 'template',
+    templateId: `decisive-${builtin ? 'builtin' : 'user'}`,
+    times: 1,
+    label,
+  };
+  await queueLoaderModule.loadSingleItemToQueue(
+    0,
+    { getActiveGroup: () => ({ items: [item] }) },
+    decisiveTemplateModel(builtin),
+    directDecisiveHost,
+  );
+  assertLatestDecisiveNames(expected, `${label}舰名转换错误`);
+}
+const systemPresetItems = [];
+const systemPresetGroup = {
+  name: '系统预设来源',
+  items: systemPresetItems,
+};
+const systemPresetGroupModel = {
+  getActiveGroup: () => systemPresetGroup,
+  addItem: (_groupName, item) => systemPresetItems.push(item),
+  save: () => {},
+};
+addItemsModule.addPresetToGroup(
+  systemPresetGroupModel,
+  () => ({
+    preset: {
+      task_type: 'decisive',
+      chapter: 5,
+      level1: ['当前主力·改'],
+    },
+    filePath: 'system-direct.yaml',
+    source: 'system',
+  }),
+  1,
+  () => {},
+);
+assert.equal(
+  systemPresetItems[0].managedSource,
+  'system',
+  '从系统预设详情加入任务组时必须保存来源',
+);
+const systemPresetQueueIndex = directDecisiveQueueCalls.length;
+await queueLoaderModule.loadSingleItemToQueue(
+  0,
+  systemPresetGroupModel,
+  decisiveTemplateModel(false),
+  directDecisiveHost,
+);
+assert.deepEqual(
+  directDecisiveQueueCalls[systemPresetQueueIndex][2].level1,
+  ['当前主力·改'],
+  '系统预设加入任务组后立即执行仍必须保持原始舰名',
+);
 const binder = new schedulerBinderModule.SchedulerBinder({
   scheduler: {
     setCallbacks: callbacks => {

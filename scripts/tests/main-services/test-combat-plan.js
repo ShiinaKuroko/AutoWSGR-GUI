@@ -8,6 +8,10 @@ const {
   createDirectories,
 } = require('../test-support/directories');
 const {
+  serializePlanYaml,
+  serializeTeamYaml,
+} = require('../../../dist/src/shared/yamlSerializer.js');
+const {
   assert,
   EventEmitter,
   fs,
@@ -40,8 +44,134 @@ const {
   temporaryDirectory,
 } = context;
 
+/** 生产代码只能通过共享模块编解码 YAML，避免各功能重复维护实现。 */
+function testYamlSerializerOwnership() {
+  const projectRoot = path.resolve(__dirname, '../../..');
+  const serializerPath = path.join(
+    projectRoot,
+    'src/shared/yamlSerializer.ts',
+  );
+  const pending = [
+    path.join(projectRoot, 'src'),
+    path.join(projectRoot, 'electron'),
+  ];
+
+  while (pending.length > 0) {
+    const current = pending.pop();
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const entryPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(entryPath);
+        continue;
+      }
+      if (!entry.name.endsWith('.ts') || entryPath === serializerPath) {
+        continue;
+      }
+      const content = fs.readFileSync(entryPath, 'utf8');
+      assert.doesNotMatch(
+        content,
+        /\byaml\.dump\s*\(/,
+        `${path.relative(projectRoot, entryPath)} 应使用共享 YAML 生成器`,
+      );
+      assert.doesNotMatch(
+        content,
+        /\byaml\.load\s*\(/,
+        `${path.relative(projectRoot, entryPath)} 应使用共享 YAML 解析器`,
+      );
+      assert.equal(
+        content.includes('shared/planYaml'),
+        false,
+        `${path.relative(projectRoot, entryPath)} 不应引用旧计划生成器`,
+      );
+    }
+  }
+}
+
+/** 系统作战预设使用统一格式，并为每个启用作战节点设置反潜阵型规则。 */
+function testSystemBattlePlanResources() {
+  const teamsDirectory = path.resolve(
+    __dirname,
+    '../../../resource/system_team_plans',
+  );
+  const teamNames = new Set();
+  fs.readdirSync(teamsDirectory)
+    .filter(file => file.endsWith('.yaml'))
+    .forEach((file) => {
+      const content = fs.readFileSync(path.join(teamsDirectory, file), 'utf8');
+      const team = yaml.load(content);
+      teamNames.add(team.name);
+      assert.equal(
+        content,
+        serializeTeamYaml(team),
+        `${file} 应使用统一的 YAML 格式`,
+      );
+      team.ships.forEach((slot, slotIndex) => {
+        if (slot.name !== undefined) {
+          assert.equal(
+            slot.relaxed,
+            false,
+            `${file} 的位置 ${slotIndex + 1} 主选应默认强校验`,
+          );
+        }
+        (slot.candidates ?? []).forEach((candidate, candidateIndex) => {
+          assert.equal(
+            candidate.relaxed,
+            false,
+            `${file} 的位置 ${slotIndex + 1} 备选 `
+              + `${candidateIndex + 1} 应默认强校验`,
+          );
+        });
+      });
+    });
+
+  const plansDirectory = path.resolve(
+    __dirname,
+    '../../../resource/system_battle_plans',
+  );
+  const files = fs.readdirSync(plansDirectory)
+    .filter(file => file.endsWith('.yaml'));
+  assert.ok(files.length > 0);
+
+  files.forEach((file) => {
+    const content = fs.readFileSync(path.join(plansDirectory, file), 'utf8');
+    const plan = yaml.load(content);
+    const body = content.replace(/^(?:#.*\r?\n)+/, '');
+    assert.equal(
+      body,
+      serializePlanYaml(plan),
+      `${file} 应使用统一的 YAML 格式`,
+    );
+    (plan.fleet_presets ?? []).forEach((preset) => {
+      assert.deepEqual(
+        Object.keys(preset),
+        ['name'],
+        `${file} 的舰队预设应只保存名称引用`,
+      );
+      assert.equal(
+        teamNames.has(preset.name),
+        true,
+        `${file} 引用的系统舰队不存在: ${preset.name}`,
+      );
+    });
+
+    plan.selected_nodes
+      .map(String)
+      .filter(node => node !== '0')
+      .forEach((node) => {
+        assert.deepEqual(
+          plan.node_args?.[node]?.enemy_rules?.[0],
+          ['SS >= 1', 5],
+          `${file} 的 ${node} 节点应在敌方有潜艇时使用单横阵`,
+        );
+      });
+    assert.equal(plan.node_args?.['0']?.enemy_rules, undefined);
+  });
+}
+
 /** 验证出征计划格式、运行时展开和管理流程保持既有语义。 */
 function testCombatPlanServices() {
+  testYamlSerializerOwnership();
+  testSystemBattlePlanResources();
   const projectRoot = path.join(temporaryDirectory, 'combat-project');
   const userData = path.join(temporaryDirectory, 'combat-user-data');
   const tempDirectory = path.join(temporaryDirectory, 'combat-temp');
@@ -150,6 +280,63 @@ function testCombatPlanServices() {
   );
   assert.match(serialized, /^# 保留注释\n/);
   assert.equal(yaml.load(serialized).rootExtension.preserved, true);
+  const compactPlan = {
+    chapter: 10,
+    map: 1,
+    selected_nodes: ['0', 'O', 'A', 'I', 'K', 'N'],
+    endpoint_nodes: ['O', 'A'],
+    node_defaults: {
+      formation: 2,
+      night: false,
+    },
+    node_args: {
+      O: {
+        formation: 1,
+        enemy_rules: [
+          ['SS >= 1', 5],
+          ['CV >= 2', 3],
+        ],
+      },
+      A: {
+        formation: 2,
+        proceed: true,
+      },
+    },
+    fleet_presets: [{
+      name: '测试舰队',
+      ships: [{
+        name: '主选舰',
+        candidates: [{
+          name: '备选舰',
+          ship_type: ['ca'],
+          min_level: 10,
+        }],
+      }],
+    }],
+  };
+  const compactContent = combatCodec.serialize(compactPlan);
+  assert.match(
+    compactContent,
+    /selected_nodes: \['0', O, A, I, K, N\]/,
+  );
+  assert.match(compactContent, /endpoint_nodes: \[O, A\]/);
+  assert.match(
+    compactContent,
+    /enemy_rules:\n      - \[SS >= 1, 5\]\n      - \[CV >= 2, 3\]/,
+  );
+  assert.match(
+    compactContent,
+    /node_defaults: {formation: 2, night: false}/,
+  );
+  assert.match(
+    compactContent,
+    /  A: {formation: 2, proceed: true}/,
+  );
+  assert.match(
+    compactContent,
+    /- {name: 备选舰, ship_type: \[ca\], min_level: 10}/,
+  );
+  assert.deepEqual(yaml.load(compactContent), compactPlan);
   assert.equal(combatCodec.safeBaseName('bettle-测试?.yaml'), '测试_');
 
   assert.equal(
@@ -439,12 +626,12 @@ function testCombatPlanServices() {
   assert.deepEqual(
     yaml.load(fs.readFileSync(importedTeamPath, 'utf8')).ships,
     [
-      { name: 'U-47' },
+      { name: 'U-47', relaxed: false },
       {
         ship_type: ['ss'],
         candidates: [
-          { name: 'U-96', ship_type: ['ss'] },
-          { name: 'U-81', ship_type: ['ss'] },
+          { name: 'U-96', ship_type: ['ss'], relaxed: false },
+          { name: 'U-81', ship_type: ['ss'], relaxed: false },
         ],
       },
       {

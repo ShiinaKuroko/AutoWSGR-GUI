@@ -1,29 +1,31 @@
 /** 分别从用户计划和系统预设构造自动决战请求。 */
 import type { DecisiveReq } from '../../types/api.js';
-import type { DecisivePlanSettings } from '../../types/ipc.js';
+import type {
+  DecisivePlanSettings,
+  ShipLibraryShip,
+} from '../../types/ipc.js';
 import type { TaskTemplate } from '../../types/model.js';
-
-function nonEmptyNames(value: string[] | undefined): string[] {
-  return Array.isArray(value)
-    ? value.map(name => name.trim()).filter(Boolean)
-    : [];
-}
+import { toBackendDecisiveShipNames } from '../../shared/shipNameNormalizer.js';
 
 function buildRequest(
   chapterValue: unknown,
   useQuickRepair: boolean,
-  level1Value: string[] | undefined,
-  level2Value: string[] | undefined,
-  flagshipValue?: string[],
+  names: Pick<
+    DecisiveReq,
+    'level1' | 'level2' | 'flagship_priority'
+  >,
+  ships: readonly Pick<ShipLibraryShip, 'name' | 'search_name'>[] = [],
 ): DecisiveReq {
   const chapter = Math.trunc(Number(chapterValue));
   if (!Number.isFinite(chapter) || chapter < 1 || chapter > 6) {
     throw new Error(`决战章节无效: ${String(chapterValue)}`);
   }
 
-  const level1 = nonEmptyNames(level1Value);
-  const level2 = nonEmptyNames(level2Value);
-  const flagshipPriority = nonEmptyNames(flagshipValue);
+  const {
+    level1,
+    level2,
+    flagship_priority: flagshipPriority,
+  } = toBackendDecisiveShipNames(names, ships);
   const request: DecisiveReq = {
     type: 'decisive',
     chapter,
@@ -41,12 +43,13 @@ function buildRequest(
 /** 使用计划页面当前保存的用户方案。 */
 export function buildAutomaticDecisivePlanRequest(
   plan: DecisivePlanSettings,
+  ships: readonly Pick<ShipLibraryShip, 'name' | 'search_name'>[] = [],
 ): DecisiveReq {
   return buildRequest(
     plan.chapter,
     plan.useQuickRepair,
-    plan.level1,
-    plan.level2,
+    plan,
+    ships,
   );
 }
 
@@ -60,8 +63,6 @@ export function buildAutomaticDecisivePresetRequest(
   return buildRequest(
     template.chapter,
     template.use_quick_repair ?? true,
-    template.level1,
-    template.level2,
-    template.flagship_priority,
+    template,
   );
 }

@@ -12,7 +12,9 @@ const result = esbuild.buildSync({
       "export { PlanFleetPresetController } from './src/controller/plan/PlanFleetPresetController.ts';",
       "export { PlanManagementController } from './src/controller/plan/PlanManagementController.ts';",
       "export { buildPlanManagementViewObject } from './src/controller/plan/planManagementViewObjects.ts';",
+      "export * from './src/controller/plan/galleryStateStorage.ts';",
       "export * from './src/view/plan/GalleryShipCollection.ts';",
+      "export { decisiveGalleryShipName } from './src/view/plan/DecisivePlanView.ts';",
     ].join('\n'),
     loader: 'ts',
     resolveDir: process.cwd(),
@@ -38,6 +40,7 @@ const {
   compactFleetDraftSlots,
   createFleetCandidateDraft,
   createFleetDraft,
+  decisiveGalleryShipName,
   fleetDraftFromTeamPlan,
   fleetDraftToTeamPlan,
   fleetPresetIdentityKey,
@@ -46,6 +49,7 @@ const {
   insertFleetCandidate,
   insertFleetPrimary,
   isFleetSlotEmpty,
+  loadGalleryViewState,
   moveFleetPrimary,
   normalizeGallerySearch,
   removeFleetPrimary,
@@ -54,6 +58,7 @@ const {
   resolveGalleryFormationDropTarget,
   resolveFleetPresetRules,
   resolveFleetPreset,
+  saveGalleryViewState,
   toBackendName,
 } = module.exports;
 
@@ -113,6 +118,10 @@ const galleryTypeLabels = {
   dd: '驱逐舰',
   ss: '潜艇',
 };
+assert.equal(
+  decisiveGalleryShipName(galleryShips[2]),
+  galleryShips[2].name,
+);
 const refitGalleryShips = filterAndSortGalleryShips(galleryShips, {
   searchText: 'U.47',
   typeFilters: new Set(['ss']),
@@ -155,6 +164,33 @@ assert.deepEqual(typeSearchShips.map(ship => ship.id), [1]);
 
 assert.equal(calculateGalleryBatchSize(0, 0), 12);
 assert.equal(calculateGalleryBatchSize(664, 612), 25);
+});
+
+await runScenario('ship gallery state persists filters and scroll position', () => {
+const values = new Map();
+const storage = {
+  get: key => values.get(key) ?? null,
+  set: (key, value) => values.set(key, value),
+  remove: key => values.delete(key),
+};
+const state = {
+  searchText: 'U-47',
+  groupFilter: null,
+  typeFilters: ['ss'],
+  countryFilters: ['de'],
+  refitOnly: true,
+  sortField: 'name',
+  descending: true,
+  scrollTop: 824,
+  scrollLeft: 0,
+  renderedShipCount: 48,
+};
+
+saveGalleryViewState(storage, 'gallery', state);
+assert.deepEqual(loadGalleryViewState(storage, 'gallery'), state);
+
+values.set('gallery', '{invalid');
+assert.equal(loadGalleryViewState(storage, 'gallery'), null);
 });
 
 const createFollowModeDraft = () => {

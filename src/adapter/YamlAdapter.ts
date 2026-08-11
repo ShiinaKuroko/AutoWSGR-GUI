@@ -1,5 +1,10 @@
 /** 统一 YAML 编解码和结构校验。 */
-import * as yaml from 'js-yaml';
+import type * as yaml from 'js-yaml';
+
+import {
+  parseYaml,
+  serializeYaml,
+} from '../shared/yamlSerializer';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return (
@@ -16,11 +21,11 @@ export interface YamlCodec {
 
 export const yamlCodec: YamlCodec = {
   parse<T>(content: string): T {
-    return yaml.load(content) as T;
+    return parseYaml<T>(content);
   },
 
   stringify(value: unknown, options?: yaml.DumpOptions): string {
-    return yaml.dump(value, options);
+    return serializeYaml(value, options);
   },
 };
 

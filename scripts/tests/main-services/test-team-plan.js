@@ -120,10 +120,7 @@ function testTeamPlanServices() {
     codec.serialize(relaxedRules),
   ).ships[0];
   assert.equal(serializedRelaxedRule.relaxed, true);
-  assert.equal(
-    Object.hasOwn(serializedRelaxedRule.candidates[0], 'relaxed'),
-    false,
-  );
+  assert.equal(serializedRelaxedRule.candidates[0].relaxed, false);
   assert.equal(serializedRelaxedRule.candidates[1].relaxed, true);
   const orderedRelaxedContent = codec.serialize(codec.normalize({
     name: '宽泛字段顺序',
@@ -162,7 +159,45 @@ function testTeamPlanServices() {
       candidates: [{ name: '昆西', relaxed: false }],
     }],
   }));
-  assert.doesNotMatch(disabledRelaxedContent, /relaxed/);
+  const disabledRelaxedRule = yaml.load(
+    disabledRelaxedContent,
+  ).ships[0];
+  assert.equal(disabledRelaxedRule.relaxed, false);
+  assert.equal(disabledRelaxedRule.candidates[0].relaxed, false);
+  const migratedLegacyRules = codec.normalizeLegacy({
+    name: '兼容升级弱校验',
+    ships: [
+      'U-47',
+      {
+        name: '重庆',
+        relaxed: false,
+        candidates: [
+          '长春',
+          { name: '昆西', relaxed: false },
+          { name: '亚特兰大', relaxed: true },
+        ],
+      },
+      {
+        candidates: [{ name: 'U-505' }],
+      },
+    ],
+  });
+  assert.equal(migratedLegacyRules.ships[0].relaxed, true);
+  assert.equal(migratedLegacyRules.ships[1].relaxed, false);
+  assert.deepEqual(
+    migratedLegacyRules.ships[1].candidates.map(rule => rule.relaxed),
+    [true, false, true],
+  );
+  assert.equal(migratedLegacyRules.ships[2].relaxed, undefined);
+  assert.equal(
+    migratedLegacyRules.ships[2].candidates[0].relaxed,
+    true,
+  );
+  const newPlanRule = yaml.load(codec.serialize(codec.normalize({
+    name: '新建强校验',
+    ships: [{ name: 'U-96' }],
+  }))).ships[0];
+  assert.equal(newPlanRule.relaxed, false);
   const loadedRelaxedPath = path.join(
     appPaths.userTeamPlansDir(),
     'team-加载宽泛校验.yaml',
@@ -281,7 +316,10 @@ function testTeamPlanServices() {
   assert.equal(serializedLegacy.ships[2].search_name, undefined);
   assert.deepEqual(
     serializedLegacy.ships[2].candidates,
-    legacyCandidateOnly.ships[2].candidates,
+    legacyCandidateOnly.ships[2].candidates.map(rule => ({
+      ...rule,
+      relaxed: false,
+    })),
   );
   const nativeShipTypes = [
     'aadg', 'ap', 'asdg', 'av', 'bb', 'bbg', 'bbv', 'bc', 'bg', 'bm',
@@ -363,7 +401,10 @@ function testTeamPlanServices() {
       appPaths.userTeamPlansDir(),
       systemCopyFile,
     )),
-    systemCopyPlan,
+    {
+      ...systemCopyPlan,
+      ships: [{ name: '系统原版', relaxed: false }],
+    },
   );
   const systemCopy = service.save({
     name: '系统另存',

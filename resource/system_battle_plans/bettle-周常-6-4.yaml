@@ -1,5 +1,3 @@
-# 周常第6章 — 地图 6-4
-# 默认复纵阵
 chapter: 6
 map: 4
 selected_nodes: ['0', A, C, F, H, J, K]
@@ -8,61 +6,31 @@ fight_condition: 1
 repair_mode: 1
 node_defaults: {formation: 2, night: false, proceed: true}
 node_args:
-  K: {formation: 2, night: true, long_missile_support: false, proceed: true, detour: false}
+  A:
+    enemy_rules:
+      - [SS >= 1, 5]
+  C:
+    enemy_rules:
+      - [SS >= 1, 5]
+  F:
+    enemy_rules:
+      - [SS >= 1, 5]
+  H:
+    enemy_rules:
+      - [SS >= 1, 5]
+  J:
+    enemy_rules:
+      - [SS >= 1, 5]
+  K:
+    formation: 2
+    night: true
+    long_missile_support: false
+    proceed: true
+    detour: false
+    enemy_rules:
+      - [SS >= 1, 5]
 times: 3
 fleet_id: 3
 result: S
 fleet_presets:
   - name: 3驱克劳85工程队
-    ships:
-      - name: Z28·改
-        candidates:
-          - {name: Z1·改, search_name: Z1, ship_type: [dd], min_level: 100}
-          - {name: Z16·改, search_name: Z16, ship_type: [dd], min_level: 100}
-          - {name: Z21·改, search_name: Z21, ship_type: [dd], min_level: 100}
-          - {name: Z22·改, search_name: Z22, ship_type: [dd], min_level: 100}
-          - {name: Z46·改, search_name: Z46, ship_type: [dd], min_level: 100}
-          - {name: Z31·改, search_name: Z31, ship_type: [dd], min_level: 100}
-        search_name: Z28
-        ship_type: [dd]
-        min_level: 100
-      - name: T-23·改
-        candidates:
-          - {name: Z1·改, search_name: Z1, ship_type: [dd], min_level: 100}
-          - {name: Z16·改, search_name: Z16, ship_type: [dd], min_level: 100}
-          - {name: Z21·改, search_name: Z21, ship_type: [dd], min_level: 100}
-          - {name: Z22·改, search_name: Z22, ship_type: [dd], min_level: 100}
-          - {name: Z46·改, search_name: Z46, ship_type: [dd], min_level: 100}
-          - {name: Z31·改, search_name: Z31, ship_type: [dd], min_level: 100}
-        search_name: T-23
-        ship_type: [dd]
-        min_level: 100
-      - name: 吕贝克·改
-        candidates:
-          - {name: Z1·改, search_name: Z1, ship_type: [dd], min_level: 100}
-          - {name: Z16·改, search_name: Z16, ship_type: [dd], min_level: 100}
-          - {name: Z21·改, search_name: Z21, ship_type: [dd], min_level: 100}
-          - {name: Z22·改, search_name: Z22, ship_type: [dd], min_level: 100}
-          - {name: Z46·改, search_name: Z46, ship_type: [dd], min_level: 100}
-          - {name: Z31·改, search_name: Z31, ship_type: [dd], min_level: 100}
-        search_name: 吕贝克
-        ship_type: [dd]
-        min_level: 100
-      - name: 克劳塞维茨·改
-        search_name: 克劳塞维茨
-        ship_type: [bc]
-        min_level: 100
-      - name: 赛尔弗里吉·改
-        candidates:
-          - {name: Z1·改, search_name: Z1, ship_type: [dd], min_level: 100}
-          - {name: Z16·改, search_name: Z16, ship_type: [dd], min_level: 100}
-          - {name: Z21·改, search_name: Z21, ship_type: [dd], min_level: 100}
-          - {name: Z22·改, search_name: Z22, ship_type: [dd], min_level: 100}
-          - {name: Z46·改, search_name: Z46, ship_type: [dd], min_level: 100}
-          - {name: Z31·改, search_name: Z31, ship_type: [dd], min_level: 100}
-        search_name: 赛尔弗里吉
-        ship_type: [dd]
-        min_level: 100
-      - name: 85工程
-        ship_type: [cv]
-        min_level: 100

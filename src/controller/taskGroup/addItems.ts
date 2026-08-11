@@ -8,6 +8,7 @@ import type { TaskPreset } from '../../types/model.js';
 import type {
   DailyPlanSelection,
   ManagedBattlePlan,
+  PlanPresetSource,
 } from '../../types/ipc.js';
 import { Logger } from '../../utils/Logger';
 import {
@@ -115,7 +116,11 @@ export async function addCurrentPlanToGroup(
 /** 将当前任务预设添加到任务组 */
 export function addPresetToGroup(
   taskGroupModel: TaskGroupModel,
-  getCurrentPresetInfo: () => { preset: TaskPreset; filePath: string } | null,
+  getCurrentPresetInfo: () => {
+    preset: TaskPreset;
+    filePath: string;
+    source: PlanPresetSource;
+  } | null,
   times: number,
   render: () => void,
 ): void {
@@ -127,6 +132,7 @@ export function addPresetToGroup(
 
   taskGroupModel.addItem(group.name, {
     path: info.filePath,
+    managedSource: info.source,
     kind: 'preset',
     times: normalizedTimes,
     label,

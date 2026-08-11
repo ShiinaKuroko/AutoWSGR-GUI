@@ -7,6 +7,7 @@ import type {
   TeamPlanViewObject,
 } from '../../types/view.js';
 import type { BathRepairConfig } from '../../types/model.js';
+import { findShipLibraryShip } from '../../shared/shipLibrary.js';
 import {
   appendTeamPlanCardContent,
   filterAndSortTeamPlans,
@@ -25,6 +26,7 @@ import { createShipArtwork } from './ShipArtwork';
 
 interface ShipPreviewRule {
   name: string;
+  searchName?: string;
   minLevel?: number;
   maxLevel?: number;
 }
@@ -475,12 +477,14 @@ export class FleetPresetView {
       primary: slot?.primary
         ? {
             name: slot.primary.name,
+            searchName: slot.primary.searchName,
             minLevel: slot.primary.minLevel,
             maxLevel: slot.primary.maxLevel,
           }
         : null,
       backups: (slot?.candidates ?? []).map(candidate => ({
         name: candidate.name,
+        searchName: candidate.searchName,
         minLevel: candidate.minLevel,
         maxLevel: candidate.maxLevel,
       })),
@@ -521,14 +525,19 @@ export class FleetPresetView {
       return card;
     }
 
-    card.title = name;
-    card.dataset['name'] = name;
-    const ship = this.findShip(name);
+    const ship = findShipLibraryShip(this.shipLibrary?.ships ?? [], {
+      name,
+      searchName: rule?.searchName,
+    });
     if (ship) {
-      card.append(createShipArtwork(
-        ship,
-        this.shipLibrary?.labels.ship_types[ship.ship_type] ?? ship.ship_type,
-      ));
+      card.append(createShipArtwork(ship, {
+        shipTypeLabel:
+          this.shipLibrary?.labels.ship_types[ship.ship_type] ?? ship.ship_type,
+        showNumber: false,
+        showName: true,
+        displayName: name,
+        nameStyle: size === 'backup' ? 'plain' : 'rarity',
+      }));
     } else {
       const unknown = document.createElement('span');
       unknown.className = 'fleet-team-card-empty fleet-team-card-unknown';
@@ -560,13 +569,6 @@ export class FleetPresetView {
       summary.append(max);
     }
     return summary;
-  }
-
-  private findShip(
-    name: string,
-  ): FleetShipLibraryViewObject['ships'][number] | undefined {
-    return this.shipLibrary?.ships.find(ship => ship.name === name)
-      ?? this.shipLibrary?.ships.find(ship => ship.search_name === name);
   }
 
 }

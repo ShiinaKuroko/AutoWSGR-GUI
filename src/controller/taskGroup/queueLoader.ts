@@ -10,11 +10,15 @@ import type { EventFightReq, NormalFightReq, TaskRequest } from '../../types/api
 import type {
   DailyPlanSelection,
   ManagedBattlePlanSelection,
+  ShipLibraryShip,
 } from '../../types/ipc.js';
 import type { TaskPreset } from '../../types/model.js';
 import { resolveFleetPreset } from '../../model/fleet/ShipMatcher';
 import { resolveFleetPresetRules } from '../../model/fleet/FleetRuleMapper';
-import { toBackendName } from '../../shared/shipNameNormalizer';
+import {
+  toBackendDecisiveShipNames,
+  toBackendName,
+} from '../../shared/shipNameNormalizer';
 import { taskPresetCodec } from '../../shared/taskPreset';
 import { Logger } from '../../utils/Logger';
 import {
@@ -24,7 +28,10 @@ import {
 import type { TaskGroupHost } from '../contracts.js';
 import { readTaskGroupItemFile } from './managedPlanReader';
 import { parseYamlRecord } from '../../adapter';
-import { getTaskGroupRepository } from '../../adapter/IpcAdapter';
+import {
+  getTaskGroupRepository,
+  type TaskGroupRepository,
+} from '../../adapter/IpcAdapter';
 
 export function applyPlanNodeOverrides(
   req: NormalFightReq | EventFightReq,
@@ -95,6 +102,44 @@ interface PlanQueueHost {
   renderMain(): void;
 }
 
+async function decisiveShipsForItem(
+  item: TaskGroupItem,
+  preset: TaskPreset,
+  repository: TaskGroupRepository,
+): Promise<
+  readonly Pick<ShipLibraryShip, 'name' | 'search_name'>[] | undefined
+> {
+  const source = item.dailySource ?? item.managedSource;
+  if (preset.task_type !== 'decisive' || source === 'system') {
+    return undefined;
+  }
+  if (!repository.getShipLibraryManifest) {
+    throw new Error('舰船资料库读取接口不可用');
+  }
+  return (await repository.getShipLibraryManifest()).ships;
+}
+
+async function decisiveShipsForTemplate(
+  item: TaskGroupItem,
+  templateModel: TemplateModel,
+  repository: TaskGroupRepository | undefined,
+): Promise<
+  readonly Pick<ShipLibraryShip, 'name' | 'search_name'>[] | undefined
+> {
+  const templateId = item.templateId ?? '';
+  const template = templateModel.get(templateId);
+  if (
+    template?.type !== 'decisive'
+    || templateModel.isBuiltin(templateId)
+  ) {
+    return undefined;
+  }
+  if (!repository?.getShipLibraryManifest) {
+    throw new Error('舰船资料库读取接口不可用');
+  }
+  return (await repository.getShipLibraryManifest()).ships;
+}
+
 function addPlanTaskToQueue(
   item: TaskGroupItem,
   plan: PlanModel,
@@ -133,6 +178,7 @@ function addPresetTaskToQueue(
   item: TaskGroupItem,
   preset: TaskPreset,
   scheduler: Scheduler,
+  ships?: readonly Pick<ShipLibraryShip, 'name' | 'search_name'>[],
 ): void {
   let req: TaskRequest;
   if (preset.task_type === 'campaign') {
@@ -150,9 +196,7 @@ function addPresetTaskToQueue(
     req = {
       type: 'decisive',
       chapter: preset.chapter,
-      level1: preset.level1 ?? [],
-      level2: preset.level2 ?? [],
-      flagship_priority: preset.flagship_priority ?? [],
+      ...toBackendDecisiveShipNames(preset, ships),
       use_quick_repair: item.useQuickRepair
         ?? preset.use_quick_repair
         ?? true,
@@ -194,16 +238,20 @@ export async function loadManagedPlanToQueue(
     label: selection.plan.name,
     fleetPresetIndex: selection.fleetPresetIndex,
   };
-  const { content, path } = await readTaskGroupItemFile(item);
+  const repository = getTaskGroupRepository();
+  if (!repository) throw new Error('Electron bridge is unavailable');
+  const { content, path } = await readTaskGroupItemFile(item, repository);
   const parsed = parseYamlRecord(content, '任务文件');
   if (
     item.kind === 'preset'
     || taskPresetCodec.isStandalone(parsed)
   ) {
+    const preset = taskPresetCodec.normalize(parsed);
     addPresetTaskToQueue(
       item,
-      taskPresetCodec.normalize(parsed),
+      preset,
       host.scheduler,
+      await decisiveShipsForItem(item, preset, repository),
     );
   } else {
     const plan = PlanModel.fromYaml(content, path);
@@ -232,11 +280,18 @@ export async function loadDailyPlanToQueue(
       ? selection.useQuickRepair !== false
       : undefined,
   };
-  const { content } = await readTaskGroupItemFile(item);
+  const repository = getTaskGroupRepository();
+  if (!repository) throw new Error('Electron bridge is unavailable');
+  const { content } = await readTaskGroupItemFile(item, repository);
   const preset = taskPresetCodec.normalize(
     parseYamlRecord(content, '日常任务'),
   );
-  addPresetTaskToQueue(item, preset, host.scheduler);
+  addPresetTaskToQueue(
+    item,
+    preset,
+    host.scheduler,
+    await decisiveShipsForItem(item, preset, repository),
+  );
   Logger.info(`已将日常任务「${selection.plan.name}」加入任务队列`);
   host.renderMain();
 }
@@ -256,7 +311,17 @@ export async function loadGroupToQueue(
   for (const item of group.items) {
     try {
       if (item.kind === 'template') {
-        loadedCount += loadTemplateToQueue(item, templateModel, host) ? 1 : 0;
+        const ships = await decisiveShipsForTemplate(
+          item,
+          templateModel,
+          repository,
+        );
+        loadedCount += loadTemplateToQueue(
+          item,
+          templateModel,
+          host,
+          ships,
+        ) ? 1 : 0;
         continue;
       }
 
@@ -270,10 +335,12 @@ export async function loadGroupToQueue(
         item.kind === 'preset'
         || taskPresetCodec.isStandalone(parsed)
       ) {
+        const preset = taskPresetCodec.normalize(parsed);
         addPresetTaskToQueue(
           item,
-          taskPresetCodec.normalize(parsed),
+          preset,
           host.scheduler,
+          await decisiveShipsForItem(item, preset, repository),
         );
       } else {
         const plan = PlanModel.fromYaml(content, path);
@@ -298,6 +365,7 @@ export function loadTemplateToQueue(
   item: TaskGroupItem,
   templateModel: TemplateModel,
   host: TaskGroupHost,
+  ships?: readonly Pick<ShipLibraryShip, 'name' | 'search_name'>[],
 ): boolean {
   const tpl = templateModel.get(item.templateId ?? '');
   if (!tpl) { Logger.error(`模板「${item.label}」不存在，可能已被删除`); return false; }
@@ -317,17 +385,16 @@ export function loadTemplateToQueue(
       host.scheduler.addTask(item.label || tpl.name, 'campaign', req, TaskPriority.USER_TASK, times, undefined, undefined, undefined, undefined, undefined, undefined, allowPolling);
       break;
     }
-    case 'decisive':
+    case 'decisive': {
       req = {
         type: 'decisive',
         chapter: item.chapter ?? tpl.chapter ?? 6,
-        level1: tpl.level1 ?? [],
-        level2: tpl.level2 ?? [],
-        flagship_priority: tpl.flagship_priority ?? [],
+        ...toBackendDecisiveShipNames(tpl, ships),
         use_quick_repair: tpl.use_quick_repair,
       };
       host.scheduler.addTask(item.label || tpl.name, 'decisive', req, TaskPriority.USER_TASK, times, undefined, undefined, undefined, undefined, undefined, undefined, allowPolling);
       break;
+    }
     default:
       return false;
   }
@@ -345,15 +412,25 @@ export async function loadSingleItemToQueue(
   if (!group) return;
   const item = group.items[index];
   if (!item) return;
+  const repository = getTaskGroupRepository();
 
   if (item.kind === 'template') {
-    loadTemplateToQueue(item, templateModel, host);
-    Logger.info(`已将「${item.label}」加入队列`);
-    host.renderMain();
+    try {
+      const ships = await decisiveShipsForTemplate(
+        item,
+        templateModel,
+        repository,
+      );
+      loadTemplateToQueue(item, templateModel, host, ships);
+      Logger.info(`已将「${item.label}」加入队列`);
+      host.renderMain();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      Logger.error(`加载「${item.label}」失败: ${msg}`);
+    }
     return;
   }
 
-  const repository = getTaskGroupRepository();
   if (!repository) return;
 
   try {
@@ -367,10 +444,12 @@ export async function loadSingleItemToQueue(
       item.kind === 'preset'
       || taskPresetCodec.isStandalone(parsed)
     ) {
+      const preset = taskPresetCodec.normalize(parsed);
       addPresetTaskToQueue(
         item,
-        taskPresetCodec.normalize(parsed),
+        preset,
         host.scheduler,
+        await decisiveShipsForItem(item, preset, repository),
       );
     } else {
       const plan = PlanModel.fromYaml(content, path);

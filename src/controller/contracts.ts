@@ -25,7 +25,11 @@ export interface TaskGroupHost {
   renderPlanPreview(): void;
   closePresetDetail(): void;
   executePreset(): void;
-  getCurrentPresetInfo(): { preset: TaskPreset; filePath: string } | null;
+  getCurrentPresetInfo(): {
+    preset: TaskPreset;
+    filePath: string;
+    source: PlanPresetSource;
+  } | null;
   pickManagedBattlePlan(): Promise<ManagedBattlePlanSelection | null>;
   openManagedPlan(
     file: string,

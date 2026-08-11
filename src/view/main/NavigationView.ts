@@ -75,6 +75,11 @@ export class NavigationView {
       ?.dataset['planTab'] ?? 'fleet';
   }
 
+  getActivePage(): string {
+    return document.querySelector<HTMLElement>('.nav-tab.active')
+      ?.dataset['page'] ?? 'main';
+  }
+
   private updateNavigationIndicator(): void {
     const activeTab = this.navTabs?.querySelector<HTMLElement>(
       '.nav-tab.active',

@@ -17,6 +17,7 @@ export function getRendererIpc(): RendererIpc {
 
 export type ManagedCombatPlanRepository = Partial<Pick<
   ElectronBridge,
+  | 'getShipLibraryManifest'
   | 'getPlanManagement'
   | 'importLocalCombatPlan'
   | 'readManagedCombatPlan'
@@ -30,6 +31,7 @@ export function getManagedCombatPlanRepository(
 
 export type TaskGroupRepository = Partial<Pick<
   ElectronBridge,
+  | 'getShipLibraryManifest'
   | 'getPlanManagement'
   | 'listDailyPlans'
   | 'readDailyPlan'
@@ -142,6 +144,7 @@ export function getConfigurationGateway(
 export type ScheduledTaskRepository = Pick<
   ElectronBridge,
   | 'getDecisivePlanSettings'
+  | 'getShipLibraryManifest'
   | 'readManagedCombatPlan'
   | 'readCombatPlanFile'
   | 'readFile'

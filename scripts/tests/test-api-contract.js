@@ -19,7 +19,16 @@ const {
 const {
   CurrentFleetController,
 } = require('../../dist/src/controller/app/CurrentFleetController.js');
+const {
+  buildAutomaticDecisivePlanRequest,
+} = require('../../dist/src/controller/app/AutomaticDecisiveTask.js');
+const {
+  createShipArtwork,
+} = require('../../dist/src/view/plan/ShipArtwork.js');
 const { ALL_SHIPS } = require('../../dist/src/shared/shipCatalog.js');
+const {
+  findShipLibraryShip,
+} = require('../../dist/src/shared/shipLibrary.js');
 const {
   FLEET_SHIP_TYPE_CODES,
   NATIVE_FLEET_SHIP_TYPE_CODES,
@@ -28,6 +37,131 @@ const {
   SHIP_TYPE_FILTER_ORDER,
   TYPE_LABELS,
 } = require('../../dist/src/shared/fleetShipTypes.js');
+
+const shipLibraryFixtures = [
+  {
+    id: 1,
+    name: 'U-47',
+    search_name: 'U-47',
+    variant: 'normal',
+    rarity: 4,
+    ship_type: 'SS',
+    portraitUrl: 'normal.png',
+    backgroundUrl: 'background.png',
+    frameUrl: 'frame.png',
+    typeIconUrl: 'type.png',
+  },
+  {
+    id: 2,
+    name: 'U-47·改',
+    search_name: 'U-47',
+    variant: 'refit',
+    rarity: 5,
+    ship_type: 'SS',
+    portraitUrl: 'refit.png',
+    backgroundUrl: 'background.png',
+    frameUrl: 'frame.png',
+    typeIconUrl: 'type.png',
+  },
+];
+assert.equal(
+  findShipLibraryShip(shipLibraryFixtures, {
+    name: 'U-47·改',
+    searchName: 'U-47',
+  })?.id,
+  2,
+);
+assert.equal(
+  findShipLibraryShip(shipLibraryFixtures, {
+    searchName: 'U-47',
+  })?.id,
+  1,
+);
+const decisivePlan = {
+  chapter: 6,
+  useQuickRepair: true,
+  level1: ['U-47·改', '未收录舰船'],
+  level2: ['U-47'],
+};
+const decisiveRequest = buildAutomaticDecisivePlanRequest(
+  decisivePlan,
+  shipLibraryFixtures,
+);
+assert.deepEqual(decisiveRequest.level1, ['U-47', '未收录舰船']);
+assert.deepEqual(decisiveRequest.level2, ['U-47']);
+assert.deepEqual(decisivePlan.level1, ['U-47·改', '未收录舰船']);
+assert.equal(
+  findShipLibraryShip(shipLibraryFixtures, {
+    name: 'U-47·旧称',
+    allowBaseNameFallback: true,
+  })?.id,
+  1,
+);
+
+function fakeDomElement(tagName) {
+  return {
+    tagName,
+    className: '',
+    dataset: {},
+    children: [],
+    append(...children) {
+      this.children.push(...children);
+    },
+  };
+}
+
+function findElementByClass(element, className) {
+  if (element.className.split(/\s+/).includes(className)) return element;
+  for (const child of element.children) {
+    const match = findElementByClass(child, className);
+    if (match) return match;
+  }
+  return null;
+}
+
+const previousDocument = global.document;
+global.document = {
+  createElement: fakeDomElement,
+};
+try {
+  const compactArtwork = createShipArtwork(shipLibraryFixtures[1], {
+    shipTypeLabel: '潜艇',
+    showNumber: false,
+    showName: false,
+  });
+  assert.equal(compactArtwork.dataset.searchName, 'U-47');
+  assert.equal(findElementByClass(
+    compactArtwork,
+    'fleet-ship-number',
+  ), null);
+  assert.equal(findElementByClass(
+    compactArtwork,
+    'fleet-ship-name',
+  ), null);
+  assert.ok(findElementByClass(
+    compactArtwork,
+    'fleet-ship-type-icon',
+  ));
+
+  const namedArtwork = createShipArtwork(shipLibraryFixtures[1], {
+    displayName: 'U-47·改',
+    nameStyle: 'plain',
+  });
+  assert.ok(
+    findElementByClass(namedArtwork, 'fleet-ship-name')
+      .className.split(/\s+/).includes('is-plain'),
+  );
+  assert.equal(
+    findElementByClass(namedArtwork, 'fleet-ship-name-text').textContent,
+    'U-47·改',
+  );
+} finally {
+  if (previousDocument === undefined) {
+    delete global.document;
+  } else {
+    global.document = previousDocument;
+  }
+}
 
 function buildFleetContractCase(name, sourceYaml) {
   const contractPlan = PlanModel.fromYaml(sourceYaml, `${name}.yaml`);
@@ -139,6 +273,21 @@ const pureBackupRuleOnlyPreview = new CurrentFleetController().resolve({
 assert.deepEqual(
   pureBackupRuleOnlyPreview.map(ship => ship.name),
   pureBackupNames,
+);
+const exactVariantPreview = new CurrentFleetController().resolve({
+  type: 'normal_fight',
+  times: 1,
+  plan: {
+    fleet: ['巴尔的摩'],
+    fleet_rules: [{
+      name: '巴尔的摩·改',
+      search_name: '巴尔的摩',
+    }],
+  },
+});
+assert.deepEqual(
+  exactVariantPreview.map(ship => ship.name),
+  ['巴尔的摩·改'],
 );
 assert.deepEqual(
   new CurrentFleetController().resolve({
@@ -380,37 +529,54 @@ assert.equal(
   false,
 );
 
-let queuedDecisiveTask = null;
-const decisivePresetState = {
-  currentPreset: {
-    task_type: 'decisive',
-  },
-  currentPresetFilePath: 'decisive-10.yaml',
-};
-executePresetFlow(
+for (const { source, times, expected } of [
   {
-    collectPresetFormValues: () => ({
-      times: 10,
-      chapter: 6,
-      level1: [],
-      level2: [],
-      flagshipPriority: [],
-      useQuickRepair: true,
-    }),
-    hidePresetDetail: () => {},
+    source: 'user',
+    times: 10,
+    expected: [['U-47'], ['未收录舰名'], ['U-47']],
   },
   {
-    scheduler: {
-      addTask: (...args) => {
-        queuedDecisiveTask = args;
-      },
+    source: 'system',
+    times: 1,
+    expected: [['U-47·改'], ['未收录舰名'], ['U-47·改']],
+  },
+]) {
+  let queuedDecisiveTask = null;
+  executePresetFlow(
+    {
+      collectPresetFormValues: () => ({
+        times,
+        chapter: 6,
+        level1: ['U-47·改'],
+        level2: ['未收录舰名'],
+        flagshipPriority: ['U-47·改'],
+        useQuickRepair: true,
+      }),
+      hidePresetDetail: () => {},
     },
-    switchPage: () => {},
-    renderMain: () => {},
-  },
-  decisivePresetState,
-);
-assert.equal(queuedDecisiveTask[4], 10);
+    {
+      scheduler: {
+        addTask: (...args) => {
+          queuedDecisiveTask = args;
+        },
+      },
+      switchPage: () => {},
+      renderMain: () => {},
+    },
+    {
+      currentPreset: { task_type: 'decisive' },
+      currentPresetFilePath: `decisive-${source}.yaml`,
+      currentPresetSource: source,
+    },
+    shipLibraryFixtures,
+  );
+  assert.equal(queuedDecisiveTask[4], times);
+  assert.deepEqual([
+    queuedDecisiveTask[2].level1,
+    queuedDecisiveTask[2].level2,
+    queuedDecisiveTask[2].flagship_priority,
+  ], expected);
+}
 
 const rotatedAliasRequest = {
   type: 'normal_fight',

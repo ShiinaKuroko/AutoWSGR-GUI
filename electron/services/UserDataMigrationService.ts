@@ -4,7 +4,6 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as yaml from 'js-yaml';
 import { isDeepStrictEqual } from 'util';
 import {
   DEFAULT_LOOT_PLAN_ID,
@@ -15,6 +14,10 @@ import {
   parseLootPlanIndex,
   type LootPlanId,
 } from '../../src/shared/lootPlans';
+import {
+  parseYaml,
+  serializeYaml,
+} from '../../src/shared/yamlSerializer';
 import { AppPaths } from './AppPaths';
 import { AtomicFileStore } from './AtomicFileStore';
 import {
@@ -602,12 +605,7 @@ export class UserDataMigrationService {
 
     automation[key] = migrated;
     const content = format === 'yaml'
-      ? yaml.dump(root, {
-        lineWidth: -1,
-        noCompatMode: true,
-        noRefs: true,
-        sortKeys: false,
-      })
+      ? serializeYaml(root)
       : JSON.stringify(root, null, 2);
     this.atomicFiles.write(target, content);
     return true;
@@ -769,12 +767,7 @@ export class UserDataMigrationService {
       : {};
     const merged = this.deepMerge(current, legacy);
     const content = format === 'yaml'
-      ? yaml.dump(merged, {
-        lineWidth: -1,
-        noCompatMode: true,
-        noRefs: true,
-        sortKeys: false,
-      })
+      ? serializeYaml(merged)
       : JSON.stringify(merged, null, 2);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     this.atomicFiles.write(target, content);
@@ -962,7 +955,7 @@ export class UserDataMigrationService {
     label: string,
   ): Record<string, unknown> {
     const parsed = format === 'yaml'
-      ? yaml.load(content)
+      ? parseYaml(content)
       : JSON.parse(content);
     if (!this.isPlainObject(parsed)) {
       throw new Error(`${label}根节点必须是对象`);

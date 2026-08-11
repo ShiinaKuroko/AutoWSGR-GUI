@@ -184,10 +184,11 @@ export class FleetPreviewView {
 
     const ship = preview.ship;
     if (ship) {
-      card.append(createShipArtwork(
-        ship,
-        preview.shipTypeLabel ?? ship.ship_type,
-      ));
+      card.append(createShipArtwork(ship, {
+        shipTypeLabel: preview.shipTypeLabel ?? ship.ship_type,
+        showNumber: false,
+        displayName: preview.name,
+      }));
     } else {
       const unknown = document.createElement('span');
       unknown.className = 'current-fleet-card-unknown';

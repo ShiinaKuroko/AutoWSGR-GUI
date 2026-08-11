@@ -70,7 +70,7 @@ function createLegacyPlanMigration(
     {
       yamlFiles: directory => combatRepository.yamlFiles(directory),
       safePlanBaseName: value => combatCodec.safeBaseName(value),
-      normalizeUserTeamPlan: raw => teamCodec.normalize(raw),
+      normalizeUserTeamPlan: raw => teamCodec.normalizeLegacy(raw),
       teamPlanMatches: (filePath, team) => (
         teamRepository.matches(filePath, team)
       ),
@@ -83,7 +83,7 @@ function createLegacyPlanMigration(
         root,
         source,
         requireEmbeddedShips,
-      ) => combatCodec.normalizeFleetPresets(
+      ) => combatCodec.normalizeLegacyFleetPresets(
         root,
         source,
         requireEmbeddedShips,
@@ -615,7 +615,7 @@ function testUserDataMigration() {
     {
       yamlFiles: directory => combatRepository.yamlFiles(directory),
       safePlanBaseName: value => combatCodec.safeBaseName(value),
-      normalizeUserTeamPlan: raw => teamCodec.normalize(raw),
+      normalizeUserTeamPlan: raw => teamCodec.normalizeLegacy(raw),
       teamPlanMatches: (filePath, team) => (
         teamRepository.matches(filePath, team)
       ),
@@ -628,7 +628,7 @@ function testUserDataMigration() {
         root,
         source,
         requireEmbeddedShips,
-      ) => combatCodec.normalizeFleetPresets(
+      ) => combatCodec.normalizeLegacyFleetPresets(
         root,
         source,
         requireEmbeddedShips,
@@ -729,12 +729,12 @@ function testUserDataMigration() {
   assert.deepEqual(
     yaml.load(fs.readFileSync(migratedTeamPath, 'utf8')).ships,
     [
-      { name: 'U-47' },
+      { name: 'U-47', relaxed: true },
       {
         ship_type: ['ss'],
         candidates: [
-          { name: 'U-96', ship_type: ['ss'] },
-          { name: 'U-81', ship_type: ['ss'] },
+          { name: 'U-96', ship_type: ['ss'], relaxed: true },
+          { name: 'U-81', ship_type: ['ss'], relaxed: true },
         ],
       },
     ],
@@ -742,6 +742,12 @@ function testUserDataMigration() {
   assert.deepEqual(
     yaml.load(fs.readFileSync(referencedPlanPath, 'utf8')).fleet_presets,
     [{ name: 'Referenced Team' }],
+  );
+  assert.deepEqual(
+    yaml.load(fs.readFileSync(referencedTeamPath, 'utf8')).ships,
+    [{
+      candidates: [{ name: 'U-505', relaxed: true }],
+    }],
   );
   assert.equal(
     fs.existsSync(path.join(projectRoot, 'plans', 'legacy.yaml')),
@@ -1603,7 +1609,7 @@ function testLegacyPlanConflictRetry() {
     {
       yamlFiles: directory => combatRepository.yamlFiles(directory),
       safePlanBaseName: value => combatCodec.safeBaseName(value),
-      normalizeUserTeamPlan: raw => teamCodec.normalize(raw),
+      normalizeUserTeamPlan: raw => teamCodec.normalizeLegacy(raw),
       teamPlanMatches: (filePath, team) => (
         teamRepository.matches(filePath, team)
       ),
@@ -1616,7 +1622,7 @@ function testLegacyPlanConflictRetry() {
         planRoot,
         source,
         requireEmbeddedShips,
-      ) => combatCodec.normalizeFleetPresets(
+      ) => combatCodec.normalizeLegacyFleetPresets(
         planRoot,
         source,
         requireEmbeddedShips,
@@ -1839,7 +1845,7 @@ function testInitializedUserDataBlocksLegacyInstall() {
     {
       yamlFiles: directory => combatRepository.yamlFiles(directory),
       safePlanBaseName: value => combatCodec.safeBaseName(value),
-      normalizeUserTeamPlan: raw => teamCodec.normalize(raw),
+      normalizeUserTeamPlan: raw => teamCodec.normalizeLegacy(raw),
       teamPlanMatches: (filePath, team) => (
         teamRepository.matches(filePath, team)
       ),
@@ -1852,7 +1858,7 @@ function testInitializedUserDataBlocksLegacyInstall() {
         planRoot,
         source,
         requireEmbeddedShips,
-      ) => combatCodec.normalizeFleetPresets(
+      ) => combatCodec.normalizeLegacyFleetPresets(
         planRoot,
         source,
         requireEmbeddedShips,

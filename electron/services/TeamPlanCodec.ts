@@ -1,9 +1,8 @@
 /**
  * 归一化、校验并序列化独立编队计划。
  */
-import * as yaml from 'js-yaml';
-
 import { normalizeFleetShipTypeCode } from '../../src/shared/fleetShipTypes';
+import { serializeTeamYaml } from '../../src/shared/yamlSerializer';
 
 export type PlanPresetSource = 'system' | 'user';
 
@@ -77,90 +76,57 @@ export class TeamPlanCodec {
     return { ...raw, name: raw.name.trim(), ships };
   }
 
+  /**
+   * 归一化兼容升级导入的旧编队。
+   * 旧规则未声明校验模式时使用弱校验，显式 true/false 均保持不变。
+   */
+  normalizeLegacy(raw: unknown): UserTeamPlan {
+    const plan = this.normalize(raw);
+    const ships = plan.ships.map((slot) => {
+      const candidates = slot.candidates?.map(candidate => ({
+        ...candidate,
+        relaxed: candidate.relaxed ?? true,
+      }));
+      return {
+        ...slot,
+        ...(
+          slot.name !== undefined && slot.relaxed === undefined
+            ? { relaxed: true }
+            : {}
+        ),
+        ...(candidates === undefined ? {} : { candidates }),
+      };
+    });
+    return { ...plan, ships };
+  }
+
   /** 序列化编队计划并保留未知业务字段。 */
   serialize(plan: UserTeamPlan): string {
+    const ships = plan.ships.map((slot) => {
+      const output = slot.name === undefined
+        ? this.serializableAnonymousSlot(slot)
+        : this.serializableShipRule({
+          ...slot,
+          name: slot.name,
+        });
+      delete output.candidates;
+      delete output.priority;
+      if (slot.candidates?.length) {
+        output.candidates = slot.candidates.map(
+          candidate => this.serializableShipRule(candidate),
+        );
+      }
+      return output;
+    });
     const output: Record<string, unknown> = {
       ...plan,
       name: plan.name,
-      ships: plan.ships,
+      ships,
     };
     delete output.file;
     delete output.modifiedAt;
     delete output.source;
-    const lines = [
-      ...Object.entries(output)
-        .filter(([key]) => key !== 'ships')
-        .map(([key, value]) => `${key}: ${this.inlineYaml(value)}`),
-      'ships:',
-    ];
-    for (const slot of plan.ships) {
-      const candidateOnly = slot.name === undefined;
-      const knownSlotKeys = new Set([
-        'name',
-        'search_name',
-        'ship_type',
-        'min_level',
-        'max_level',
-        'relaxed',
-        'candidates',
-        'priority',
-      ]);
-      const extraEntries = Object.entries(slot)
-        .filter(
-          ([key, value]) => (
-            !knownSlotKeys.has(key) && value !== undefined
-          ),
-        );
-      const anonymousEntries = Object.entries(
-        this.serializableAnonymousSlot(slot),
-      );
-      if (slot.name !== undefined) {
-        lines.push(`  - name: ${this.inlineYaml(slot.name)}`);
-        if (slot.search_name !== undefined) {
-          lines.push(
-            `    search_name: ${this.inlineYaml(slot.search_name)}`,
-          );
-        }
-        if (slot.ship_type !== undefined) {
-          lines.push(
-            `    ship_type: ${this.inlineYaml(slot.ship_type)}`,
-          );
-        }
-        if (slot.min_level !== undefined) {
-          lines.push(`    min_level: ${slot.min_level}`);
-        }
-        if (slot.max_level !== undefined) {
-          lines.push(`    max_level: ${slot.max_level}`);
-        }
-        if (slot.relaxed === true) {
-          lines.push('    relaxed: true');
-        }
-      }
-      if (candidateOnly && anonymousEntries.length > 0) {
-        const [first, ...rest] = anonymousEntries;
-        lines.push(`  - ${first[0]}: ${this.inlineYaml(first[1])}`);
-        for (const [key, value] of rest) {
-          lines.push(`    ${key}: ${this.inlineYaml(value)}`);
-        }
-      } else if (!candidateOnly) {
-        for (const [key, value] of extraEntries) {
-          lines.push(`    ${key}: ${this.inlineYaml(value)}`);
-        }
-      }
-      if (slot.candidates?.length) {
-        lines.push(
-          candidateOnly && anonymousEntries.length === 0
-            ? '  - candidates:'
-            : '    candidates:',
-        );
-        for (const candidate of slot.candidates) {
-          lines.push(
-            `      - ${this.inlineYaml(this.serializableShipRule(candidate))}`,
-          );
-        }
-      }
-    }
-    return `${lines.join('\n')}\n`;
+    return serializeTeamYaml(output);
   }
 
   /** 把编队名称转换为既有 team-*.yaml 文件名。 */
@@ -410,7 +376,7 @@ export class TeamPlanCodec {
     return value;
   }
 
-  /** 固定舰船规则字段顺序；false 使用后端缺省值，不写入 YAML。 */
+  /** 固定舰船规则字段顺序，并显式记录强校验或弱校验。 */
   private serializableShipRule(
     rule: UserTeamShipRule,
   ): Record<string, unknown> {
@@ -419,7 +385,7 @@ export class TeamPlanCodec {
     if (rule.ship_type !== undefined) result.ship_type = rule.ship_type;
     if (rule.min_level !== undefined) result.min_level = rule.min_level;
     if (rule.max_level !== undefined) result.max_level = rule.max_level;
-    if (rule.relaxed === true) result.relaxed = true;
+    result.relaxed = rule.relaxed === true;
     const knownKeys = new Set([
       'name',
       'search_name',
@@ -458,15 +424,6 @@ export class TeamPlanCodec {
       if (!knownKeys.has(key) && value !== undefined) result[key] = value;
     }
     return result;
-  }
-
-  private inlineYaml(value: unknown): string {
-    return yaml.dump(value, {
-      flowLevel: 0,
-      lineWidth: -1,
-      noRefs: true,
-      sortKeys: false,
-    }).trim();
   }
 
   private isPlainObject(

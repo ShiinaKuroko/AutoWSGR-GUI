@@ -3,6 +3,9 @@ import type {
   ShipLibraryLabels,
   ShipLibraryShip,
 } from '../../types/ipc.js';
+import type {
+  ShipGalleryViewState,
+} from '../../types/view.js';
 import {
   SHIP_TYPE_FILTER_ORDER,
   TYPE_LABELS,
@@ -60,6 +63,8 @@ export interface ShipGalleryViewHost {
   activeSlotDescription(): string;
   isExcluded(ship: ShipLibraryShip): boolean;
   assignShip(ship: ShipLibraryShip): void;
+  getGalleryState?(): ShipGalleryViewState | null;
+  setGalleryState?(state: ShipGalleryViewState): void;
   shipDisplayName?(ship: ShipLibraryShip): string;
   getRefitFilter?(): boolean;
   setRefitFilter?(enabled: boolean): void;
@@ -85,13 +90,32 @@ export class ShipGalleryView {
   private sortField: GallerySortField = 'id';
   private descending = false;
   private dragScrollTop: number | null = null;
+  private restoredScrollPosition: { top: number; left: number } | null = null;
+  private restoredRenderedShipCount = 0;
 
   constructor(
     private readonly elements: ShipGalleryElements,
     private readonly host: ShipGalleryViewHost,
   ) {
-    this.refitOnly = this.host.getRefitFilter?.() ?? false;
+    const restoredState = this.host.getGalleryState?.() ?? null;
+    if (restoredState) {
+      this.elements.searchInput.value = restoredState.searchText;
+      this.groupFilter = restoredState.groupFilter;
+      this.typeFilters = new Set(restoredState.typeFilters);
+      this.countryFilters = new Set(restoredState.countryFilters);
+      this.sortField = restoredState.sortField;
+      this.descending = restoredState.descending;
+      this.restoredScrollPosition = {
+        top: restoredState.scrollTop,
+        left: restoredState.scrollLeft,
+      };
+      this.restoredRenderedShipCount = restoredState.renderedShipCount;
+    }
+    this.refitOnly = restoredState?.refitOnly
+      ?? this.host.getRefitFilter?.()
+      ?? false;
     this.elements.refitFilter.checked = this.refitOnly;
+    this.elements.sortDescending.checked = this.descending;
     this.bindActions();
     this.resizeObserver = new ResizeObserver(
       () => this.ensureGalleryFilled(),
@@ -119,6 +143,7 @@ export class ShipGalleryView {
   }
 
   showLibrary(library: ShipGalleryLibrary): void {
+    const preserveCurrentPosition = this.shipItems.length > 0;
     this.labels = {
       ...EMPTY_LABELS,
       ...library.labels,
@@ -126,7 +151,7 @@ export class ShipGalleryView {
     this.shipItems = [...library.ships];
     this.backgroundUrl = library.colorfulBackgroundUrl ?? '';
     this.renderFilterOptions();
-    this.render();
+    this.render(!preserveCurrentPosition);
   }
 
   clearLibrary(): void {
@@ -178,6 +203,7 @@ export class ShipGalleryView {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.persistState();
     this.eventController.abort();
     this.resizeObserver.disconnect();
   }
@@ -234,6 +260,7 @@ export class ShipGalleryView {
         - gallery.scrollTop
         - gallery.clientHeight;
       if (remaining < 480) this.appendGalleryBatch();
+      this.persistState();
     }, listenerOptions);
 
     searchInput.addEventListener(
@@ -442,12 +469,21 @@ export class ShipGalleryView {
   private applyFilters(resetScroll: boolean): void {
     const gallery = this.elements.gallery;
     const preservedScroll = captureScrollPosition(gallery);
+    const restoringSavedPosition = resetScroll
+      && this.restoredScrollPosition !== null;
     if (!resetScroll && this.dragScrollTop !== null) {
       preservedScroll.top = this.dragScrollTop;
     }
-    const previousRenderedCount = resetScroll
-      ? 0
-      : this.renderedShipCount;
+    const targetScrollPosition = restoringSavedPosition
+      ? this.restoredScrollPosition!
+      : resetScroll
+        ? { top: 0, left: 0 }
+        : preservedScroll;
+    const previousRenderedCount = restoringSavedPosition
+      ? this.restoredRenderedShipCount
+      : resetScroll
+        ? 0
+        : this.renderedShipCount;
     this.visibleShips = filterAndSortGalleryShips(this.shipItems, {
       searchText: this.elements.searchInput.value,
       typeFilters: this.typeFilters,
@@ -468,16 +504,28 @@ export class ShipGalleryView {
           ? this.host.unavailableMessage ?? '没有符合当前条件的舰娘'
           : '没有符合当前条件的舰娘',
       );
+      restoreScrollPosition(gallery, { top: 0, left: 0 });
+      this.restoredScrollPosition = null;
+      this.restoredRenderedShipCount = 0;
+      this.persistState();
       return;
     }
     this.appendGalleryBatch(Math.max(
       this.galleryBatchSize(),
       previousRenderedCount,
     ));
-    restoreScrollPosition(
-      gallery,
-      resetScroll ? { top: 0, left: 0 } : preservedScroll,
-    );
+    while (
+      restoringSavedPosition
+      && this.renderedShipCount < this.visibleShips.length
+      && gallery.scrollHeight
+        < targetScrollPosition.top + gallery.clientHeight
+    ) {
+      this.appendGalleryBatch();
+    }
+    restoreScrollPosition(gallery, targetScrollPosition);
+    this.restoredScrollPosition = null;
+    this.restoredRenderedShipCount = 0;
+    this.persistState();
   }
 
   private galleryBatchSize(): number {
@@ -515,7 +563,9 @@ export class ShipGalleryView {
     card.type = 'button';
     card.className = 'fleet-ship-card';
     card.dataset['shipId'] = String(ship.id);
-    card.append(createShipArtwork(ship, this.shipTypeDisplay(ship)));
+    card.append(createShipArtwork(ship, {
+      shipTypeLabel: this.shipTypeDisplay(ship),
+    }));
     this.updateCard(card, ship);
     return card;
   }
@@ -536,6 +586,21 @@ export class ShipGalleryView {
       && this.host.unavailableCountLabel
       ? this.host.unavailableCountLabel
       : `显示 ${this.visibleShips.length} / ${this.shipItems.length} 艘`;
+  }
+
+  private persistState(): void {
+    this.host.setGalleryState?.({
+      searchText: this.elements.searchInput.value,
+      groupFilter: this.groupFilter,
+      typeFilters: [...this.typeFilters],
+      countryFilters: [...this.countryFilters],
+      refitOnly: this.refitOnly,
+      sortField: this.sortField,
+      descending: this.descending,
+      scrollTop: this.elements.gallery.scrollTop,
+      scrollLeft: this.elements.gallery.scrollLeft,
+      renderedShipCount: this.renderedShipCount,
+    });
   }
 
   private showMessage(message: string): void {

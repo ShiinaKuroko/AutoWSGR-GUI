@@ -23,6 +23,7 @@ import type { MapData } from '../../model/MapDataLoader';
 import type {
   ManagedBattlePlanSelection,
   PlanPresetSource,
+  ShipLibraryShip,
   UserTeamPlan,
 } from '../../types/ipc.js';
 import { taskPresetCodec } from '../../shared/taskPreset';
@@ -57,6 +58,7 @@ export class PlanController {
   private editingNodeId: string | null = null;
   private currentPreset: TaskPreset | null = null;
   private currentPresetFilePath = '';
+  private currentPresetSource: PlanPresetSource = 'user';
   private mapLoadVersion = 0;
   private planPresetName = '';
   private currentManagedPlanFile: string | null = null;
@@ -172,9 +174,17 @@ export class PlanController {
     this.eventMapCatalog = await loadEventMapCatalog();
   }
 
-  getCurrentPresetInfo(): { preset: TaskPreset; filePath: string } | null {
+  getCurrentPresetInfo(): {
+    preset: TaskPreset;
+    filePath: string;
+    source: PlanPresetSource;
+  } | null {
     return this.currentPreset && this.currentPresetFilePath
-      ? { preset: this.currentPreset, filePath: this.currentPresetFilePath }
+      ? {
+          preset: this.currentPreset,
+          filePath: this.currentPresetFilePath,
+          source: this.currentPresetSource,
+        }
       : null;
   }
 
@@ -188,6 +198,8 @@ export class PlanController {
       set currentPreset(v) { self.currentPreset = v; },
       get currentPresetFilePath() { return self.currentPresetFilePath; },
       set currentPresetFilePath(v) { self.currentPresetFilePath = v; },
+      get currentPresetSource() { return self.currentPresetSource; },
+      set currentPresetSource(v) { self.currentPresetSource = v; },
     };
   }
 
@@ -363,6 +375,7 @@ export class PlanController {
         this.importTaskPreset(
           taskPresetCodec.normalize(parsed),
           result.path,
+          source,
         );
         return true;
       }
@@ -525,17 +538,52 @@ export class PlanController {
     }
   }
 
-  importTaskPreset(preset: TaskPreset, filePath: string): void {
+  importTaskPreset(
+    preset: TaskPreset,
+    filePath: string,
+    source: PlanPresetSource = 'user',
+  ): void {
     this.mapLoadVersion++;
-    importTaskPresetFlow(preset, filePath, this.planView, this.host, this.presetState);
+    importTaskPresetFlow(
+      preset,
+      filePath,
+      this.planView,
+      this.host,
+      this.presetState,
+      source,
+    );
   }
 
   closePresetDetail(): void {
     closePresetDetailFlow(this.planView, this.presetState);
   }
 
-  executePreset(): void {
-    executePresetFlow(this.planView, this.host, this.presetState);
+  async executePreset(): Promise<void> {
+    let ships: Pick<ShipLibraryShip, 'name' | 'search_name'>[] = [];
+    if (
+      this.currentPreset?.task_type === 'decisive'
+      && this.currentPresetSource !== 'system'
+    ) {
+      if (!this.managedPlans?.getShipLibraryManifest) {
+        await showAlert('加入队列失败', '舰船资料库读取接口不可用');
+        return;
+      }
+      try {
+        ships = (await this.managedPlans.getShipLibraryManifest()).ships;
+      } catch (error) {
+        await showAlert(
+          '加入队列失败',
+          error instanceof Error ? error.message : String(error),
+        );
+        return;
+      }
+    }
+    executePresetFlow(
+      this.planView,
+      this.host,
+      this.presetState,
+      ships,
+    );
   }
 
   renderPlanPreview(): void {
