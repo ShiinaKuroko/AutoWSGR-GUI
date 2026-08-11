@@ -75,10 +75,7 @@ export class SchedulerBinder {
     this.runtime.reset();
   }
 
-  /**
-   * 解绑运行状态监听。
-   * 当前没有生产调用方，保留为正式生命周期清理接口。
-   */
+  /** 在 Renderer 卸载时释放运行状态监听。 */
   dispose(): void {
     this.runtime.dispose();
   }
@@ -121,7 +118,7 @@ export class SchedulerBinder {
               this.pendingBattleConfig.target,
             );
             Logger.info(
-              `自动战役今日确认成功 1 次，剩余 ${remaining} 次`,
+              `自动战役今日正常结算 1 次，剩余 ${remaining} 次`,
             );
           }
         }
@@ -174,7 +171,7 @@ export class SchedulerBinder {
               ? Math.max(0, config.target - remaining)
               : 0;
             Logger.warn(
-              `自动战役次数已用完，今日确认成功 ${completed}/${config?.target ?? 0} 次，剩余游戏次数 0`,
+              `自动战役次数已用完，今日正常结算 ${completed}/${config?.target ?? 0} 次，剩余游戏次数 0`,
             );
             this.host.cronScheduler.markBattleHandled();
           } else if (
@@ -182,12 +179,12 @@ export class SchedulerBinder {
             && remaining < config.remainingAtStart
           ) {
             Logger.warn(
-              `自动战役本批已有成功记录，今日仍缺少 ${remaining} 次，将在下次检查时补跑`,
+              `自动战役本批已有正常结算记录，今日仍缺少 ${remaining} 次，将在下次检查时补跑`,
             );
             this.host.cronScheduler.clearBattlePending();
           } else {
             Logger.warn(
-              '自动战役本批未确认成功，单轮重试已耗尽，今日停止补跑',
+              '自动战役本批未正常结算，单轮重试已耗尽，今日停止补跑',
             );
             this.host.cronScheduler.markBattleHandled();
           }
@@ -382,7 +379,7 @@ export class SchedulerBinder {
         };
         this.pendingBattleResult = null;
         Logger.info(
-          `自动战役已加入队列 (${campaignName}，剩余成功 ${remaining} 次)`,
+          `自动战役已加入队列 (${campaignName}，剩余结算 ${remaining} 次)`,
         );
         this.host.scheduler.startConsuming();
       },
@@ -396,13 +393,15 @@ export class SchedulerBinder {
       },
 
       canStartNormalFight: () => {
+        const tasks = this.host.configModel.current
+          .daily_automation
+          .normal_fight_tasks;
         const hasRemaining = this.host.normalFightDailyQuota.hasRemaining(
-          this.host.configModel.current
-            .daily_automation
-            .normal_fight_tasks,
+          tasks,
         );
+        const completelyIdle = this.host.scheduler.isCompletelyIdle;
         this.host.refreshNormalFightRemaining();
-        return this.host.scheduler.isCompletelyIdle && hasRemaining;
+        return completelyIdle && hasRemaining;
       },
 
       onNormalFightDue: () => {

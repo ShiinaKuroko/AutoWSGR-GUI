@@ -8,21 +8,20 @@ import type { NormalFightTaskConfig } from '../../types/model.js';
 import type { ConfigViewObject } from '../../types/view.js';
 import {
   DEFAULT_LOOT_PLAN_ID,
-  findLootAutomationPlan,
-  lootAutomationPlanKey,
-  normalizeLootAutomationPlans,
   type LootAutomationPlan,
-  type LootPlanSource,
 } from '../../shared/lootPlans.js';
 import {
   normalizeDecisiveAutomationSource,
 } from '../../shared/decisiveAutomation.js';
+import { DAILY_CAMPAIGN_TIMES } from '../../shared/campaign.js';
 import {
-  normalFightDailyLimit,
-  normalFightTaskKey,
-} from '../../model/scheduler/NormalFightDailyQuota.js';
-
-type StatusKind = 'ok' | 'error' | 'unknown';
+  ConfigAutomationView,
+} from './ConfigAutomationView';
+import {
+  ConfigRuntimeView,
+  type ConfigStatusKind,
+} from './ConfigRuntimeView';
+import { updateSettingSelectWidth } from './settingSelectWidth';
 
 export interface ConfigViewActions {
   onSave(): void;
@@ -58,21 +57,14 @@ export class ConfigView {
   private configTabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-config-tab]'));
   private configPanels = Array.from(document.querySelectorAll<HTMLElement>('[data-config-panel]'));
   private configTabDescription = document.getElementById('config-tab-description');
-  private normalFightTasks: NormalFightTaskConfig[] = [];
-  private normalFightRemaining: number | null = null;
-  private normalFightFleetNames = new Map<string, string>();
-  private lootPlans: LootAutomationPlan[] = [];
+  private readonly automationView = new ConfigAutomationView();
+  private readonly runtimeView = new ConfigRuntimeView();
 
   private emuType = element<HTMLSelectElement>('cfg-emu-type');
   private emuPath = element<HTMLInputElement>('cfg-emu-path');
   private emuSerial = element<HTMLInputElement>('cfg-emu-serial');
   private gameApp = element<HTMLSelectElement>('cfg-game-app');
   private updateMode = element<HTMLSelectElement>('cfg-update-mode');
-  private guiUpdateProgress = element<HTMLElement>('gui-update-progress');
-  private guiUpdateStatus = element<HTMLElement>('gui-update-status');
-  private guiUpdatePercent = element<HTMLElement>('gui-update-percent');
-  private guiUpdateProgressTrack = element<HTMLElement>('gui-update-progress-track');
-  private guiUpdateProgressFill = element<HTMLElement>('gui-update-progress-fill');
   private autoExpedition = element<HTMLInputElement>('cfg-auto-expedition');
   private expeditionInterval = element<HTMLInputElement>('cfg-expedition-interval');
   private autoBattle = element<HTMLInputElement>('cfg-auto-battle');
@@ -84,9 +76,7 @@ export class ConfigView {
   private autoDecisive = element<HTMLInputElement>('cfg-auto-decisive');
   private decisiveTemplate = element<HTMLSelectElement>('cfg-decisive-template');
   private autoLoot = element<HTMLInputElement>('cfg-auto-loot');
-  private lootPlan = element<HTMLSelectElement>('cfg-loot-plan');
   private lootStopCount = element<HTMLInputElement>('cfg-loot-stop-count');
-  private normalFightTaskList = element<HTMLElement>('cfg-normal-fight-tasks');
 
   private logLevel = element<HTMLSelectElement>('cfg-log-level');
   private logRoot = element<HTMLInputElement>('cfg-log-root');
@@ -95,7 +85,6 @@ export class ConfigView {
   private accentLabel = element<HTMLElement>('cfg-accent-label');
   private debugMode = element<HTMLInputElement>('cfg-debug-mode');
   private backendPort = element<HTMLInputElement>('cfg-backend-port');
-  private backendStatus = document.getElementById('cfg-backend-status');
   private backendStartupMode = element<HTMLInputElement>('cfg-use-external-backend');
   private backendRepoPath = element<HTMLInputElement>('cfg-backend-repo-path');
   private ocrGpuMode = element<HTMLSelectElement>('cfg-ocr-gpu-mode');
@@ -107,18 +96,10 @@ export class ConfigView {
   private shipNameAliases = element<HTMLTextAreaElement>('cfg-ship-name-aliases');
   private shipNameCorrections = element<HTMLTextAreaElement>('cfg-ship-name-corrections');
   private cudaPath = element<HTMLInputElement>('cfg-cuda-path');
-  private cudaStatus = document.getElementById('cfg-cuda-status');
-  private validateCudaBtn = document.getElementById('btn-validate-cuda') as HTMLButtonElement | null;
   private saveBackendScreenshots = element<HTMLInputElement>('cfg-save-backend-screenshots');
   private debugAdvancedWrap = document.getElementById('cfg-debug-advanced');
   private backendRepoWrap = document.getElementById('cfg-backend-repo-wrap');
   private pythonPath = element<HTMLInputElement>('cfg-python-path');
-  private pythonStatus = document.getElementById('cfg-python-status');
-  private adbStatus = document.getElementById('cfg-adb-status');
-  private validatePythonBtn = document.getElementById('btn-validate-python') as HTMLButtonElement | null;
-  private shipLibraryStatus = document.getElementById('ship-library-status');
-  private updateShipLibraryBtn = document.getElementById('btn-update-ship-library') as HTMLButtonElement | null;
-  private shipLibraryUpdateLabel = '更新舰船数据库';
   private defaultWindowWidth = element<HTMLInputElement>('cfg-window-width');
   private defaultWindowHeight = element<HTMLInputElement>('cfg-window-height');
   private rememberWindowBounds = element<HTMLInputElement>('cfg-remember-window-bounds');
@@ -157,10 +138,6 @@ export class ConfigView {
         hasPath ? 'CUDA 路径已修改，请点击检测' : 'CUDA 路径留空，将检测当前系统环境',
       );
     });
-    this.lootPlan.addEventListener(
-      'change',
-      () => this.updateLootPlanSelectWidth(),
-    );
     this.bindNumberRange(this.delayMinRange, this.delayMin);
     this.bindNumberRange(this.delayMaxRange, this.delayMax);
     this.bindNumberRange(this.ocrConfidenceRange, this.ocrConfidence);
@@ -175,7 +152,7 @@ export class ConfigView {
 
     document.querySelectorAll<HTMLSelectElement>(
       '#page-config select.input',
-    ).forEach(select => this.updateSettingSelectWidth(select));
+    ).forEach(select => updateSettingSelectWidth(select));
   }
 
   bindActions(actions: ConfigViewActions): void {
@@ -226,15 +203,19 @@ export class ConfigView {
     this.exerciseFleetId.value = String(vo.exerciseFleetId);
     this.battleTimes.value = String(vo.battleTimes);
     this.autoNormalFight.checked = vo.autoNormalFight;
-    this.normalFightTasks = structuredClone(vo.normalFightTasks);
-    this.normalFightRemaining = vo.normalFightRemaining;
-    this.normalFightFleetNames.clear();
-    this.renderNormalFightTasks();
+    this.automationView.showNormalFightTasks(
+      vo.normalFightTasks,
+      vo.normalFightRemaining,
+    );
     this.autoDecisive.checked = vo.autoDecisive;
     this.decisiveTemplate.value = vo.decisiveTemplateId;
-    this.lootPlans = normalizeLootAutomationPlans(vo.lootPlans, []);
-    this.renderLootPlanOptions(vo.lootPlanSource, vo.lootPlanId);
-    this.autoLoot.checked = vo.autoLoot && this.lootPlans.length > 0;
+    this.automationView.showLootPlans(
+      vo.lootPlans,
+      vo.lootPlanSource,
+      vo.lootPlanId,
+    );
+    this.autoLoot.checked = vo.autoLoot
+      && this.automationView.hasLootPlans();
     this.lootStopCount.value = String(vo.lootStopCount);
     this.logLevel.value = vo.logLevel;
     this.logRoot.value = vo.logRoot;
@@ -288,7 +269,7 @@ export class ConfigView {
     if (operationDelayMin > operationDelayMax) {
       throw new Error('全局延迟的最小值不能大于最大值');
     }
-    const selectedLootPlan = this.selectedLootPlan();
+    const selectedLootPlan = this.automationView.selectedLootPlan();
     if (this.autoLoot.checked && !selectedLootPlan) {
       throw new Error('启用自动胖次前必须先加载并选择出征计划');
     }
@@ -304,10 +285,10 @@ export class ConfigView {
       battleType: this.battleType.value,
       autoExercise: this.autoExercise.checked,
       exerciseFleetId: Math.trunc(this.clamp(this.exerciseFleetId.value, 1, 4, 1)),
-      battleTimes: Math.trunc(this.clamp(this.battleTimes.value, 1, 99, 3)),
+      battleTimes: DAILY_CAMPAIGN_TIMES,
       autoNormalFight: this.autoNormalFight.checked,
-      normalFightTasks: this.collectNormalFightTasks(),
-      normalFightRemaining: this.normalFightRemaining,
+      normalFightTasks: this.automationView.getNormalFightTasks(),
+      normalFightRemaining: this.automationView.getNormalFightRemaining(),
       autoDecisive: this.autoDecisive.checked,
       decisiveTemplateId: normalizeDecisiveAutomationSource(
         this.decisiveTemplate.value,
@@ -315,7 +296,7 @@ export class ConfigView {
       autoLoot: this.autoLoot.checked,
       lootPlanSource: selectedLootPlan?.source ?? 'system',
       lootPlanId: selectedLootPlan?.file ?? DEFAULT_LOOT_PLAN_ID,
-      lootPlans: structuredClone(this.lootPlans),
+      lootPlans: this.automationView.getLootPlans(),
       lootStopCount: Math.trunc(this.clamp(this.lootStopCount.value, 1, 50, 50)),
       logLevel: this.logLevel.value as ConfigViewObject['logLevel'],
       logRoot: this.logRoot.value.trim() || 'logs',
@@ -358,89 +339,18 @@ export class ConfigView {
     fleetName: string,
     remaining: number,
   ): void {
-    this.normalFightTasks = [structuredClone(task)];
-    this.normalFightRemaining = Math.max(0, Math.trunc(remaining));
-    this.normalFightFleetNames.clear();
-    this.normalFightFleetNames.set(
-      this.normalFightFleetKey(
-        task.name,
-        task.fleet_preset_index ?? 0,
-      ),
-      fleetName,
-    );
-    this.renderNormalFightTasks();
+    this.automationView.setNormalFightPlan(task, fleetName, remaining);
   }
 
   getNormalFightTasks(): NormalFightTaskConfig[] {
-    return structuredClone(this.normalFightTasks);
+    return this.automationView.getNormalFightTasks();
   }
 
   setNormalFightRemaining(
     tasks: readonly NormalFightTaskConfig[],
     remaining: number,
   ): void {
-    const signature = (task: NormalFightTaskConfig): string => (
-      JSON.stringify([
-        normalFightTaskKey(task),
-        normalFightDailyLimit(task.times),
-      ])
-    );
-    const currentKeys = this.normalFightTasks.map(signature);
-    const savedKeys = tasks.map(signature);
-    if (JSON.stringify(currentKeys) !== JSON.stringify(savedKeys)) return;
-    this.normalFightRemaining = Math.max(0, Math.trunc(remaining));
-    this.renderNormalFightTasks();
-  }
-
-  private collectNormalFightTasks(): NormalFightTaskConfig[] {
-    return structuredClone(this.normalFightTasks);
-  }
-
-  private renderNormalFightTasks(): void {
-    this.normalFightTaskList.replaceChildren();
-    if (this.normalFightTasks.length === 0) {
-      const empty = document.createElement('span');
-      empty.className = 'config-empty-note';
-      empty.textContent = '尚未加载计划';
-      this.normalFightTaskList.appendChild(empty);
-      return;
-    }
-    const primaryTask = this.normalFightTasks[0];
-    if (!primaryTask) return;
-    const name = document.createElement('span');
-    const fileName = primaryTask.name.split(/[\\/]/).pop() ?? primaryTask.name;
-    const displayName = fileName
-      .replace(/\.ya?ml$/i, '')
-      .replace(/^bettle-/i, '');
-    name.className = 'config-task-name';
-    name.title = this.normalFightTasks.map(task => task.name).join('\n');
-    name.textContent = this.normalFightTasks.length > 1
-      ? `${displayName} 等 ${this.normalFightTasks.length} 个任务`
-      : displayName;
-    this.normalFightTaskList.appendChild(name);
-
-    const remaining = document.createElement('span');
-    remaining.className = 'config-task-remaining';
-    remaining.textContent = `今日剩余执行次数：${
-      this.normalFightRemaining ?? 0
-    }`;
-    this.normalFightTaskList.appendChild(remaining);
-
-    if (primaryTask.fleet_preset_index != null) {
-      const fleetIndex = primaryTask.fleet_preset_index;
-      const fleetName = this.normalFightFleetNames.get(
-        this.normalFightFleetKey(primaryTask.name, fleetIndex),
-      ) ?? `队伍 ${fleetIndex + 1}`;
-      const fleetTag = document.createElement('span');
-      fleetTag.className = 'tg-fleet-tag';
-      fleetTag.textContent = fleetName;
-      fleetTag.title = `使用队伍：${fleetName}`;
-      this.normalFightTaskList.appendChild(fleetTag);
-    }
-  }
-
-  private normalFightFleetKey(path: string, fleetPresetIndex: number): string {
-    return `${path.toLowerCase()}\u0000${fleetPresetIndex}`;
+    this.automationView.setNormalFightRemaining(tasks, remaining);
   }
 
   private showConfigTab(tag: string): void {
@@ -471,79 +381,12 @@ export class ConfigView {
   }
 
   getLootPlans(): LootAutomationPlan[] {
-    return structuredClone(this.lootPlans);
+    return this.automationView.getLootPlans();
   }
 
   setLootPlans(plans: readonly LootAutomationPlan[]): void {
-    const selected = this.selectedLootPlan();
-    this.lootPlans = normalizeLootAutomationPlans(plans, []);
-    this.renderLootPlanOptions(selected?.source, selected?.file);
-    if (this.lootPlans.length === 0) this.autoLoot.checked = false;
-  }
-
-  private renderLootPlanOptions(
-    source?: LootPlanSource,
-    file?: string,
-  ): void {
-    const selected = findLootAutomationPlan(this.lootPlans, source, file)
-      ?? this.lootPlans[0]
-      ?? null;
-    this.lootPlan.replaceChildren();
-    this.lootPlans.forEach((plan) => {
-      const option = document.createElement('option');
-      option.value = lootAutomationPlanKey(plan);
-      option.textContent = plan.name;
-      option.title = `${plan.name} (${plan.file})`;
-      this.lootPlan.append(option);
-    });
-    this.lootPlan.disabled = this.lootPlans.length === 0;
-    this.lootPlan.value = selected
-      ? lootAutomationPlanKey(selected)
-      : '';
-    this.updateLootPlanSelectWidth();
-  }
-
-  private selectedLootPlan(): LootAutomationPlan | null {
-    return this.lootPlans.find(plan => (
-      lootAutomationPlanKey(plan) === this.lootPlan.value
-    )) ?? null;
-  }
-
-  private updateLootPlanSelectWidth(): void {
-    const option = this.lootPlan.selectedOptions[0];
-    const text = option?.textContent?.trim() || '任务预设';
-    this.updateSettingSelectWidth(this.lootPlan);
-    this.lootPlan.title = option?.title || text;
-  }
-
-  private updateSettingSelectWidth(select: HTMLSelectElement): void {
-    const fixedWidth = Number(select.dataset['configSelectWidth']);
-    if (Number.isFinite(fixedWidth) && fixedWidth > 0) {
-      select.style.setProperty(
-        '--config-select-width',
-        `${fixedWidth}px`,
-      );
-      return;
-    }
-
-    const style = window.getComputedStyle(select);
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    if (!context) return;
-
-    context.font = style.font;
-    const contentWidth = Math.max(
-      0,
-      ...Array.from(
-        select.options,
-        item => context.measureText(item.text.trim()).width,
-      ),
-    );
-    const requiredWidth = Math.ceil(contentWidth + 38);
-    const widthSteps = [96, 124, 168, 204, 240, 280, 320];
-    const width = widthSteps.find(step => step >= requiredWidth)
-      ?? widthSteps[widthSteps.length - 1]!;
-    select.style.setProperty('--config-select-width', `${width}px`);
+    this.automationView.setLootPlans(plans);
+    if (!this.automationView.hasLootPlans()) this.autoLoot.checked = false;
   }
 
   private bindNumberRange(range: HTMLInputElement, number: HTMLInputElement): void {
@@ -561,17 +404,6 @@ export class ConfigView {
     return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
   }
 
-  private setStatus(target: HTMLElement | null, text: string, status: StatusKind): void {
-    if (!target) return;
-    target.textContent = text;
-    const cls = status === 'ok'
-      ? 'adb-status-online'
-      : status === 'error'
-        ? 'adb-status-offline'
-        : 'adb-status-unknown';
-    target.className = `adb-status ${cls}`;
-  }
-
   setEmulatorPath(path: string): void { this.emuPath.value = path; }
   setEmulatorSerial(serial: string): void { this.emuSerial.value = serial; }
   setPythonPath(path: string): void { this.pythonPath.value = path; }
@@ -584,172 +416,66 @@ export class ConfigView {
   getPythonPath(): string { return this.pythonPath.value.trim(); }
   getBackendPort(): number { return Math.trunc(this.clamp(this.backendPort.value, 1, 65535, 8438)); }
 
-  setCudaStatus(text: string, status: StatusKind, details = text): void {
-    this.setStatus(this.cudaStatus, text, status);
-    if (this.cudaStatus) this.cudaStatus.title = details;
-  }
-  setPythonStatus(text: string, status: StatusKind): void { this.setStatus(this.pythonStatus, text, status); }
-  setBackendStatus(text: string, status: StatusKind): void { this.setStatus(this.backendStatus, text, status); }
-  setShipLibraryStatus(
+  setCudaStatus(
     text: string,
-    status: StatusKind,
+    status: ConfigStatusKind,
     details = text,
   ): void {
-    this.setStatus(this.shipLibraryStatus, text, status);
-    if (this.shipLibraryStatus) this.shipLibraryStatus.title = details;
+    this.runtimeView.setCudaStatus(text, status, details);
+  }
+  setPythonStatus(text: string, status: ConfigStatusKind): void {
+    this.runtimeView.setPythonStatus(text, status);
+  }
+  setBackendStatus(text: string, status: ConfigStatusKind): void {
+    this.runtimeView.setBackendStatus(text, status);
+  }
+  setShipLibraryStatus(
+    text: string,
+    status: ConfigStatusKind,
+    details = text,
+  ): void {
+    this.runtimeView.setShipLibraryStatus(text, status, details);
   }
   setShipLibraryUpdateLabel(label: string): void {
-    this.shipLibraryUpdateLabel = label;
-    if (this.updateShipLibraryBtn && !this.updateShipLibraryBtn.disabled) {
-      this.updateShipLibraryBtn.textContent = label;
-    }
+    this.runtimeView.setShipLibraryUpdateLabel(label);
   }
   setAdbStatus(text: string, status: 'online' | 'offline' | 'unknown'): void {
-    if (!this.adbStatus) return;
-    this.adbStatus.title = text;
-    this.adbStatus.textContent = status === 'online'
-      ? '在线'
-      : status === 'offline'
-        ? '离线'
-        : text.includes('中')
-          ? text
-          : '未检测';
-    this.adbStatus.className = `adb-status adb-status-${status}`;
+    this.runtimeView.setAdbStatus(text, status);
   }
 
   setCudaValidateLoading(loading: boolean): void {
-    if (!this.validateCudaBtn) return;
-    this.validateCudaBtn.disabled = loading;
-    this.validateCudaBtn.textContent = loading ? '检测中…' : '检测';
+    this.runtimeView.setCudaValidateLoading(loading);
   }
 
   setPythonValidateLoading(loading: boolean): void {
-    if (!this.validatePythonBtn) return;
-    this.validatePythonBtn.disabled = loading;
-    this.validatePythonBtn.textContent = loading ? '检测中…' : '检测';
+    this.runtimeView.setPythonValidateLoading(loading);
   }
 
   setShipLibraryUpdateLoading(loading: boolean): void {
-    if (!this.updateShipLibraryBtn) return;
-    this.updateShipLibraryBtn.disabled = loading;
-    this.updateShipLibraryBtn.textContent = loading
-      ? this.shipLibraryUpdateLabel === '同步后端'
-        ? '正在同步…'
-        : '正在检查…'
-      : this.shipLibraryUpdateLabel;
+    this.runtimeView.setShipLibraryUpdateLoading(loading);
   }
 
   setBackendCheckLoading(loading: boolean): void {
-    this.setButtonLoading('btn-check-backend', loading, '检测中…', '检测');
+    this.runtimeView.setBackendCheckLoading(loading);
   }
 
   setAdbCheckLoading(loading: boolean): void {
-    this.setButtonLoading(
-      'btn-check-adb',
-      loading,
-      '检测中…',
-      '自动检测',
-    );
+    this.runtimeView.setAdbCheckLoading(loading);
   }
 
   setAdbConnectionLoading(
     action: 'connect' | 'disconnect',
     loading: boolean,
   ): void {
-    this.setButtonLoading(
-      action === 'connect' ? 'btn-connect-adb' : 'btn-disconnect-adb',
-      loading,
-      action === 'connect' ? '连接中…' : '断开中…',
-      action === 'connect' ? '主动连接' : '断开连接',
-    );
+    this.runtimeView.setAdbConnectionLoading(action, loading);
   }
 
   setUpdateCheckLoading(loading: boolean): void {
-    this.setButtonLoading(
-      'btn-check-updates',
-      loading,
-      '检查中…',
-      '立即检查',
-    );
+    this.runtimeView.setUpdateCheckLoading(loading);
   }
 
   setGuiUpdateStatus(status: GuiUpdateStatus): void {
-    let text: string;
-    let percent: number | null = 0;
-    let state: 'active' | 'complete' | 'error' = 'active';
-    let percentText: string | null = null;
-
-    switch (status.status) {
-      case 'checking':
-        text = '正在检查更新…';
-        percent = null;
-        percentText = '检查中';
-        break;
-      case 'available':
-        text = `发现 v${status.version}，等待下载`;
-        break;
-      case 'up-to-date':
-        text = '当前已是最新版本';
-        percent = 100;
-        state = 'complete';
-        break;
-      case 'downloading':
-        percent = null;
-        percentText = '后台';
-        text = '正在后台下载并校验更新…';
-        break;
-      case 'downloaded':
-        text = `v${status.version} 已准备完成，等待选择重启时间`;
-        percent = 100;
-        state = 'complete';
-        break;
-      case 'deferred':
-        text = `v${status.version} 将在下次打开前更新`;
-        percent = 100;
-        state = 'complete';
-        break;
-      case 'installing':
-        text = status.message;
-        percent = 100;
-        break;
-      case 'error':
-        text = `更新失败：${status.message}`;
-        percentText = '失败';
-        state = 'error';
-        break;
-    }
-
-    this.guiUpdateProgress.hidden = false;
-    this.guiUpdateProgress.dataset['state'] = state;
-    this.guiUpdateProgress.title = text;
-    this.guiUpdateStatus.textContent = text;
-    this.guiUpdatePercent.textContent = percentText
-      ?? `${percent ?? 0}%`;
-    this.guiUpdateProgressTrack.classList.toggle(
-      'is-indeterminate',
-      percent === null,
-    );
-    this.guiUpdateProgressFill.style.width = `${percent ?? 0}%`;
-    if (percent === null) {
-      this.guiUpdateProgressTrack.removeAttribute('aria-valuenow');
-    } else {
-      this.guiUpdateProgressTrack.setAttribute(
-        'aria-valuenow',
-        String(percent),
-      );
-    }
-  }
-
-  private setButtonLoading(
-    id: string,
-    loading: boolean,
-    loadingText: string,
-    idleText: string,
-  ): void {
-    const button = document.getElementById(id) as HTMLButtonElement | null;
-    if (!button) return;
-    button.disabled = loading;
-    button.textContent = loading ? loadingText : idleText;
+    this.runtimeView.setGuiUpdateStatus(status);
   }
 
   resetAccentColor(defaultColor: string): void {

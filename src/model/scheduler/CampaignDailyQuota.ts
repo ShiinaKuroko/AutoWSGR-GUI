@@ -1,4 +1,4 @@
-/** 维护自动战役每日确认成功次数，并在本地日期变化时重置。 */
+/** 维护自动战役每日正常结算次数，并在本地日期变化时重置。 */
 import {
   browserStorageStore,
   type StorageStore,

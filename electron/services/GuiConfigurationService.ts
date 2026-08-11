@@ -19,6 +19,7 @@ import {
   normalizeDecisiveAutomationSource,
   type DecisiveAutomationSource,
 } from '../../src/shared/decisiveAutomation';
+import { DAILY_CAMPAIGN_TIMES } from '../../src/shared/campaign';
 import {
   DEFAULT_DECISIVE_PLAN_SETTINGS,
   type DecisivePlanSettings,
@@ -33,6 +34,7 @@ export type UpdateMode = 'auto' | 'manual';
 
 export interface GuiAutomationSettings {
   expeditionInterval: number;
+  /** 兼容持久化结构，自动战役运行时固定为 8。 */
   battleTimes: number;
   autoDecisive: boolean;
   decisiveTemplateId: DecisiveAutomationSource;
@@ -222,13 +224,22 @@ export class GuiConfigurationService {
     }
     const battleTimes = finiteNumber(value.battleTimes);
     if (battleTimes !== null) {
-      settings.battleTimes = battleTimes;
+      settings.battleTimes = DAILY_CAMPAIGN_TIMES;
+      if (battleTimes !== DAILY_CAMPAIGN_TIMES) {
+        rewritten = {
+          ...(rewritten ?? value),
+          battleTimes: DAILY_CAMPAIGN_TIMES,
+        };
+      }
     }
     if (typeof value.autoDecisive === 'boolean') {
       settings.autoDecisive = value.autoDecisive;
     } else if (typeof legacyDecisive.autoDecisive === 'boolean') {
       settings.autoDecisive = legacyDecisive.autoDecisive;
-      rewritten = { ...value, autoDecisive: legacyDecisive.autoDecisive };
+      rewritten = {
+        ...(rewritten ?? value),
+        autoDecisive: legacyDecisive.autoDecisive,
+      };
     }
     const storedDecisiveSource = (
       typeof value.decisiveTemplateId === 'string'
@@ -423,10 +434,7 @@ export class GuiConfigurationService {
           Math.trunc(Number(settings?.expeditionInterval) || 15),
         ),
       ),
-      battleTimes: Math.max(
-        1,
-        Math.trunc(Number(settings?.battleTimes) || 3),
-      ),
+      battleTimes: DAILY_CAMPAIGN_TIMES,
       autoDecisive: settings?.autoDecisive === true,
       decisiveTemplateId,
       autoLoot: settings?.autoLoot === true && selected !== null,

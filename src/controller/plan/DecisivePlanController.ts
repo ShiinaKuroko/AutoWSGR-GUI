@@ -57,6 +57,10 @@ export class DecisivePlanController {
     this.view.bindActions();
   }
 
+  dispose(): void {
+    this.view.dispose();
+  }
+
   async load(): Promise<void> {
     try {
       this.draft.load(await this.repository.loadSettings());

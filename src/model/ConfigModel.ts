@@ -26,6 +26,7 @@ import {
   SYSTEM_DECISIVE_PRESET_ID,
   normalizeDecisiveAutomationSource,
 } from '../shared/decisiveAutomation.js';
+import { DAILY_CAMPAIGN_TIMES } from '../shared/campaign.js';
 import { normalFightDailyLimit } from './scheduler/NormalFightDailyQuota.js';
 import { Logger } from '../utils/Logger';
 
@@ -76,7 +77,7 @@ const DEFAULT_SETTINGS: UserSettings = {
 
 const DEFAULT_GUI_AUTOMATION: GuiAutomationSettings = {
   expeditionInterval: 15,
-  battleTimes: 3,
+  battleTimes: DAILY_CAMPAIGN_TIMES,
   autoDecisive: false,
   decisiveTemplateId: SYSTEM_DECISIVE_PRESET_ID,
   autoLoot: false,
@@ -374,10 +375,7 @@ export class ConfigModel {
       1,
       Math.min(120, Math.trunc(this.guiAutomation.expeditionInterval || 15)),
     );
-    this.guiAutomation.battleTimes = Math.max(
-      1,
-      Math.trunc(this.guiAutomation.battleTimes || 3),
-    );
+    this.guiAutomation.battleTimes = DAILY_CAMPAIGN_TIMES;
     this.guiAutomation.autoDecisive =
       this.guiAutomation.autoDecisive === true;
     this.guiAutomation.decisiveTemplateId =

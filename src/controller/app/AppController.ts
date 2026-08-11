@@ -279,6 +279,9 @@ export class AppController {
     watchSystemTheme();
 
     this.mainView.onBeforeUnload = () => {
+      this.schedulerBinder.dispose();
+      this.fleetPlannerCtrl.dispose();
+      this.decisivePlanCtrl.dispose();
       this.taskGroupModel.save();
       Logger.flush();
     };

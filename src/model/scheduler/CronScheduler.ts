@@ -4,6 +4,7 @@ import type { LootPlanSource } from '../../shared/lootPlans.js';
 import type {
   DecisiveAutomationSource,
 } from '../../shared/decisiveAutomation.js';
+import { DAILY_CAMPAIGN_TIMES } from '../../shared/campaign.js';
 
 /**
  * CronScheduler —— 基于系统时钟的定时任务调度器。
@@ -33,7 +34,7 @@ export interface CronConfig {
   autoBattle: boolean;
   /** 战役类型名称 */
   battleType: string;
-  /** 战役次数 */
+  /** 战役次数（兼容旧配置，运行时固定为 8） */
   battleTimes: number;
   /** 启用空闲时自动常规出击 */
   autoNormalFight: boolean;
@@ -124,7 +125,10 @@ export class CronScheduler {
   private scheduledTaskDate = '';
 
   constructor(config: CronConfig, storage: StorageStore = browserStorageStore) {
-    this.config = { ...config };
+    this.config = {
+      ...config,
+      battleTimes: DAILY_CAMPAIGN_TIMES,
+    };
     this.storage = storage;
   }
 
@@ -135,6 +139,7 @@ export class CronScheduler {
   /** 更新配置 (配置页保存时调用) */
   updateConfig(config: Partial<CronConfig>): void {
     Object.assign(this.config, config);
+    this.config.battleTimes = DAILY_CAMPAIGN_TIMES;
   }
 
   /** 启动定时检查 (每分钟) */

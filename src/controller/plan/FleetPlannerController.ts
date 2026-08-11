@@ -149,6 +149,10 @@ export class FleetPlannerController {
     return this.planManagementCtrl.load();
   }
 
+  dispose(): void {
+    this.view.dispose();
+  }
+
   private loadShipLibrary(force: boolean): Promise<void> {
     if (this.shipLibraryLoading) return this.shipLibraryLoading;
     if (this.shipLibrary && !force) {

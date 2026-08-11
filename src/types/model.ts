@@ -70,6 +70,7 @@ export interface LogConfig {
 
 export interface GuiAutomationSettings {
   expeditionInterval: number;
+  /** 兼容持久化结构，自动战役运行时固定为 8。 */
   battleTimes: number;
   autoDecisive: boolean;
   /** 自动决战使用计划页方案或系统预设。 */

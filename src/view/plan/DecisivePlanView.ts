@@ -16,14 +16,9 @@
  * 保存时空槽不会写入 gui_settings.json。
  */
 import type {
-  ShipLibraryLabels,
   ShipLibraryManifest,
   ShipLibraryShip,
 } from '../../types/ipc.js';
-import {
-  SHIP_TYPE_FILTER_ORDER,
-  TYPE_LABELS,
-} from '../../shared/fleetShipTypes';
 import {
   showAlert,
   showConfirm,
@@ -34,14 +29,11 @@ import {
   restoreScrollPosition,
 } from '../shared/scrollPosition';
 import {
-  calculateGalleryBatchSize,
-  filterAndSortGalleryShips,
-  type GallerySortField,
-} from './GalleryShipCollection';
+  ShipGalleryView,
+} from './ShipGalleryView';
 import { createShipArtwork } from './ShipArtwork';
 
 export type DecisiveLevel = 'level1' | 'level2';
-type FilterKind = 'group' | 'type' | 'country';
 
 export interface DecisivePlanViewState {
   chapter: number;
@@ -94,13 +86,6 @@ const LEVEL_LABELS: Record<DecisiveLevel, string> = {
 const MAIN_SLOT_COUNT = 6;
 const DEFAULT_BACKUP_SLOT_COUNT = 6;
 const DECISIVE_DRAG_MIME = 'application/x-autowsgr-decisive-ship';
-const EMPTY_LABELS: ShipLibraryLabels = {
-  ship_types: {},
-  size_classes: {},
-  role_classes: {},
-  countries: {},
-  variants: {},
-};
 
 function requiredElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -134,60 +119,62 @@ export class DecisivePlanView {
     'decisive-level2-list',
   );
   private readonly backupScroll = this.backupList.parentElement!;
-  private readonly gallery = requiredElement<HTMLElement>(
-    'decisive-ship-gallery',
-  );
-  private readonly gallerySearch = requiredElement<HTMLInputElement>(
-    'decisive-gallery-search',
-  );
-  private readonly filterButtons = Array.from(
-    document.querySelectorAll<HTMLButtonElement>(
-      '[data-decisive-filter-trigger]',
-    ),
-  );
-  private readonly filterCount = requiredElement<HTMLElement>(
-    'decisive-filter-count',
-  );
-  private readonly filterPopover = requiredElement<HTMLElement>(
-    'decisive-filter-popover',
-  );
-  private readonly typeOptions = requiredElement<HTMLElement>(
-    'decisive-filter-types',
-  );
-  private readonly countryOptions = requiredElement<HTMLElement>(
-    'decisive-filter-countries',
-  );
-  private readonly refitFilter = requiredElement<HTMLInputElement>(
-    'decisive-filter-refit-only',
-  );
-  private readonly sortDescending = requiredElement<HTMLInputElement>(
-    'decisive-sort-desc',
-  );
-  private readonly galleryCount = requiredElement<HTMLElement>(
-    'decisive-gallery-count',
-  );
-  private readonly galleryResizeObserver: ResizeObserver;
-  private ships: ShipLibraryShip[] = [];
-  private labels: ShipLibraryLabels = EMPTY_LABELS;
-  private visibleGalleryShips: ShipLibraryShip[] = [];
-  private renderedGalleryCount = 0;
+  private readonly galleryView: ShipGalleryView;
   private galleryLevel: DecisiveLevel = 'level1';
   private activeMainIndex = 0;
   private activeBackupIndex = 0;
   private backupSlotCount = DEFAULT_BACKUP_SLOT_COUNT;
-  private groupFilter: string | null = 'all';
-  private typeFilters = new Set<string>();
-  private countryFilters = new Set<string>();
-  private refitOnly = false;
-  private sortField: GallerySortField = 'id';
-  private descending = false;
-  private galleryDragScrollTop: number | null = null;
   private backupDragScroll: { top: number; left: number } | null = null;
+
   constructor(private readonly host: DecisivePlanViewHost) {
-    this.galleryResizeObserver = new ResizeObserver(
-      () => this.ensureGalleryFilled(),
-    );
-    this.galleryResizeObserver.observe(this.gallery);
+    this.galleryView = new ShipGalleryView({
+      gallery: requiredElement('decisive-ship-gallery'),
+      countLabel: requiredElement('decisive-gallery-count'),
+      searchInput: requiredElement<HTMLInputElement>('decisive-gallery-search'),
+      filterButtons: Array.from(
+        document.querySelectorAll<HTMLButtonElement>(
+          '[data-decisive-filter-trigger]',
+        ),
+      ),
+      filterCount: requiredElement('decisive-filter-count'),
+      filterPopover: requiredElement('decisive-filter-popover'),
+      typeOptions: requiredElement('decisive-filter-types'),
+      countryOptions: requiredElement('decisive-filter-countries'),
+      refitFilter: requiredElement<HTMLInputElement>(
+        'decisive-filter-refit-only',
+      ),
+      sortDescending: requiredElement<HTMLInputElement>('decisive-sort-desc'),
+      resetButton: requiredElement<HTMLButtonElement>(
+        'btn-reset-decisive-filter',
+      ),
+      confirmButton: requiredElement<HTMLButtonElement>(
+        'btn-confirm-decisive-filter',
+      ),
+    }, {
+      activeSlotDescription: () => this.activeSlotDescription(),
+      isExcluded: ship => {
+        const state = this.host.getState();
+        return state.level1.includes(ship.search_name)
+          || state.level2.includes(ship.search_name);
+      },
+      assignShip: ship => this.assignGalleryShip(ship),
+      shipDisplayName: ship => ship.search_name,
+      isInteractionEnabled: () => this.editEnabled.checked,
+      drag: {
+        mime: DECISIVE_DRAG_MIME,
+        serialize: ship => JSON.stringify({
+          source: 'gallery',
+          shipId: ship.id,
+        } satisfies DecisiveDragData),
+        onStart: () => this.rememberBackupScroll(),
+        onEnd: () => {
+          this.backupDragScroll = null;
+          this.clearDragOver();
+        },
+      },
+      unavailableCountLabel: '图鉴不可用',
+      unavailableMessage: '舰船资料库不可用',
+    });
   }
 
   bindActions(): void {
@@ -216,109 +203,13 @@ export class DecisivePlanView {
       this.renderQueues();
       this.renderGalleryTarget();
     });
-    this.gallerySearch.addEventListener('input', () => {
-      this.renderGallery();
-    });
-    this.filterButtons.forEach(button => {
-      button.addEventListener('click', event => {
-        event.stopPropagation();
-        this.setFilterPopoverOpen(this.filterPopover.hidden);
-      });
-    });
-    this.filterPopover.addEventListener('click', event => {
-      const option = (event.target as HTMLElement).closest<HTMLButtonElement>(
-        '[data-filter-kind]',
-      );
-      if (option) {
-        this.setFilter(
-          option.dataset['filterKind'] as FilterKind,
-          option.dataset['filterValue'] ?? 'all',
-        );
-      }
-      const sortOption = (event.target as HTMLElement).closest<HTMLButtonElement>(
-        '[data-sort-field]',
-      );
-      if (sortOption) {
-        this.sortField = sortOption.dataset['sortField'] as GallerySortField;
-        this.updateFilterControls();
-        this.renderGallery();
-      }
-    });
-    this.sortDescending.addEventListener('change', () => {
-      this.descending = this.sortDescending.checked;
-      this.updateFilterControls();
-      this.renderGallery();
-    });
-    this.refitFilter.addEventListener('change', () => {
-      this.refitOnly = this.refitFilter.checked;
-      this.updateFilterControls();
-      this.renderGallery();
-    });
-    requiredElement<HTMLButtonElement>('btn-reset-decisive-filter')
-      .addEventListener('click', () => {
-        this.groupFilter = 'all';
-        this.typeFilters.clear();
-        this.countryFilters.clear();
-        this.refitOnly = false;
-        this.sortField = 'id';
-        this.descending = false;
-        this.updateFilterControls();
-        this.renderGallery();
-      });
-    requiredElement<HTMLButtonElement>('btn-confirm-decisive-filter')
-      .addEventListener('click', () => this.setFilterPopoverOpen(false));
-    document.addEventListener('click', event => {
-      const target = event.target as Node;
-      if (
-        !this.filterPopover.hidden
-        && !this.filterPopover.contains(target)
-        && !this.filterButtons.some(button => button.contains(target))
-      ) {
-        this.setFilterPopoverOpen(false);
-      }
-    });
-    document.addEventListener('keydown', event => {
-      if (event.key === 'Escape') this.setFilterPopoverOpen(false);
-    });
-    this.gallery.addEventListener('click', event => {
-      const card = (event.target as HTMLElement).closest<HTMLButtonElement>(
-        '[data-decisive-gallery-ship-id]',
-      );
-      if (!card) return;
-      const shipId = Number(card.dataset['decisiveGalleryShipId']);
-      const ship = this.ships.find(item => item.id === shipId);
-      if (ship) this.assignGalleryShip(ship);
-    });
-    this.gallery.addEventListener('dragstart', event => {
-      const card = (event.target as HTMLElement).closest<HTMLElement>(
-        '[data-decisive-gallery-ship-id]',
-      );
-      if (!card || !event.dataTransfer || !this.editEnabled.checked) return;
-      this.galleryDragScrollTop = this.gallery.scrollTop;
-      this.rememberBackupScroll();
-      event.dataTransfer.effectAllowed = 'copyMove';
-      event.dataTransfer.setData(
-        DECISIVE_DRAG_MIME,
-        JSON.stringify({
-          source: 'gallery',
-          shipId: Number(card.dataset['decisiveGalleryShipId']),
-        } satisfies DecisiveDragData),
-      );
-    });
-    this.gallery.addEventListener('dragend', () => {
-      this.galleryDragScrollTop = null;
-      this.backupDragScroll = null;
-      this.clearDragOver();
-    });
-    this.gallery.addEventListener('scroll', () => {
-      const remaining = this.gallery.scrollHeight
-        - this.gallery.scrollTop
-        - this.gallery.clientHeight;
-      if (remaining < 480) this.appendGalleryBatch();
-    });
     requiredElement<HTMLButtonElement>('btn-save-decisive-plan')
       .addEventListener('click', () => void this.save());
     this.resetButton.addEventListener('click', () => void this.resetTeam());
+  }
+
+  dispose(): void {
+    this.galleryView.dispose();
   }
 
   showLoaded(manifest: ShipLibraryManifest): void {
@@ -376,23 +267,20 @@ export class DecisivePlanView {
 
   private loadShipLibrary(manifest: ShipLibraryManifest | null): void {
     if (!manifest?.ships) {
-      this.galleryCount.textContent = '图鉴不可用';
-      this.labels = EMPTY_LABELS;
-      this.ships = [];
+      this.galleryView.clearLibrary();
+      this.galleryView.showLoadError('舰船资料库不可用');
       return;
     }
 
-    this.labels = {
-      ...EMPTY_LABELS,
-      ...manifest.labels,
-    };
-    this.ships = manifest.ships.filter(ship => (
-      Number.isFinite(ship.id)
-      && Boolean(ship.name)
-      && Boolean(ship.search_name)
-      && Boolean(ship.portraitUrl)
-    ));
-    this.renderFilterOptions();
+    this.galleryView.showLibrary({
+      labels: manifest.labels,
+      ships: manifest.ships.filter(ship => (
+        Number.isFinite(ship.id)
+        && Boolean(ship.name)
+        && Boolean(ship.search_name)
+        && Boolean(ship.portraitUrl)
+      )),
+    });
   }
 
   private render(): void {
@@ -402,7 +290,7 @@ export class DecisivePlanView {
     this.editEnabled.checked = false;
     this.renderEditState();
     this.renderQueues();
-    this.renderGallery();
+    this.galleryView.render();
     this.renderGalleryTarget();
   }
 
@@ -410,13 +298,7 @@ export class DecisivePlanView {
     const editing = this.editEnabled.checked;
     this.resetButton.disabled = !editing;
     this.addBackupButton.disabled = !editing;
-    this.gallery.classList.toggle('is-locked', !editing);
-    this.gallery
-      .querySelectorAll<HTMLButtonElement>('[data-decisive-gallery-ship-id]')
-      .forEach(card => {
-        card.disabled = !editing;
-        card.draggable = editing;
-      });
+    this.galleryView.refreshInteractionState();
   }
 
   private renderQueues(): void {
@@ -481,7 +363,7 @@ export class DecisivePlanView {
       if (ship) {
         slot.append(createShipArtwork(
           ship,
-          this.shipTypeDisplay(ship),
+          this.galleryView.shipTypeDisplay(ship),
         ));
       } else {
         const fallback = document.createElement('span');
@@ -641,7 +523,7 @@ export class DecisivePlanView {
     }
     this.markDirty();
     this.renderQueues();
-    this.renderGallery(false);
+    this.galleryView.renderSelection();
     this.renderGalleryTarget();
     if (level === 'level2') this.scrollBackupSlotIntoView(this.activeBackupIndex);
   }
@@ -662,7 +544,7 @@ export class DecisivePlanView {
     }
     this.markDirty();
     this.renderQueues();
-    this.renderGallery(false);
+    this.galleryView.renderSelection();
   }
 
   private handleDrop(
@@ -674,7 +556,7 @@ export class DecisivePlanView {
     try {
       const source = JSON.parse(raw) as DecisiveDragData;
       if (source.source === 'gallery') {
-        const ship = this.ships.find(item => item.id === Number(source.shipId));
+        const ship = this.galleryView.shipById(Number(source.shipId));
         if (ship) this.placeGalleryShip(ship, targetLevel, targetIndex, false);
         return;
       }
@@ -694,7 +576,7 @@ export class DecisivePlanView {
     } catch {
       // 忽略非本页面产生的拖拽数据。
     } finally {
-      this.galleryDragScrollTop = null;
+      this.galleryView.clearDragScroll();
       this.backupDragScroll = null;
       this.clearDragOver();
     }
@@ -727,7 +609,7 @@ export class DecisivePlanView {
     );
     this.markDirty();
     this.renderQueues();
-    this.renderGallery(false);
+    this.galleryView.renderSelection();
     this.renderGalleryTarget();
     if (targetLevel === 'level2') this.scrollBackupSlotIntoView(targetIndex);
   }
@@ -754,9 +636,9 @@ export class DecisivePlanView {
   }
 
   private findDisplayShip(name: string): ShipLibraryShip | undefined {
-    return this.ships.find(ship => (
+    return this.galleryView.ships().find(ship => (
       ship.search_name === name && ship.variant === 'normal'
-    )) ?? this.ships.find(ship => ship.search_name === name);
+    )) ?? this.galleryView.ships().find(ship => ship.search_name === name);
   }
 
   private findConfiguredShip(
@@ -766,233 +648,7 @@ export class DecisivePlanView {
   }
 
   private renderGalleryTarget(): void {
-    this.gallery
-      .querySelectorAll<HTMLButtonElement>('[data-decisive-gallery-ship-id]')
-      .forEach(card => {
-        const shipId = Number(card.dataset['decisiveGalleryShipId']);
-        const ship = this.ships.find(item => item.id === shipId);
-        if (ship) this.updateGalleryCard(card, ship);
-      });
-    this.updateGalleryCount();
-  }
-
-  private setFilter(kind: FilterKind, value: string): void {
-    if (kind === 'group') {
-      this.groupFilter = value;
-      this.typeFilters.clear();
-      if (value !== 'all') {
-        this.ships.forEach(ship => {
-          if (
-            (ship.size_class === value || ship.role_class === value)
-            && SHIP_TYPE_FILTER_ORDER.includes(ship.ship_type)
-          ) {
-            this.typeFilters.add(ship.ship_type);
-          }
-        });
-      }
-    } else {
-      const filters = kind === 'type'
-        ? this.typeFilters
-        : this.countryFilters;
-      if (kind === 'type') this.groupFilter = null;
-      if (value === 'all') {
-        filters.clear();
-      } else if (filters.has(value)) {
-        filters.delete(value);
-      } else {
-        filters.add(value);
-      }
-    }
-    this.updateFilterControls();
-    this.renderGallery();
-  }
-
-  private setFilterPopoverOpen(open: boolean): void {
-    this.filterPopover.hidden = !open;
-    this.filterButtons.forEach(button => {
-      button.setAttribute(
-        'aria-expanded',
-        String(open && button.dataset['decisiveFilterTrigger'] === 'filter'),
-      );
-    });
-  }
-
-  private renderFilterOptions(): void {
-    this.typeOptions.replaceChildren(
-      this.createFilterOption('type', 'all', '全部'),
-      ...SHIP_TYPE_FILTER_ORDER
-        .filter(code => this.labels.ship_types[code] !== undefined)
-        .map(code => this.createFilterOption(
-          'type',
-          code,
-          TYPE_LABELS[code] ?? this.labels.ship_types[code]!,
-        )),
-    );
-    this.countryOptions.replaceChildren(
-      this.createFilterOption('country', 'all', '全部'),
-      ...Object.entries(this.labels.countries)
-        .map(([code, label]) => (
-          this.createFilterOption('country', code, label)
-        )),
-    );
-    this.updateFilterControls();
-  }
-
-  private createFilterOption(
-    kind: FilterKind,
-    value: string,
-    label: string,
-  ): HTMLButtonElement {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'fleet-filter-option';
-    button.dataset['filterKind'] = kind;
-    button.dataset['filterValue'] = value;
-    button.setAttribute('aria-pressed', 'false');
-    button.textContent = label;
-    return button;
-  }
-
-  private updateFilterControls(): void {
-    this.filterPopover
-      .querySelectorAll<HTMLElement>('[data-filter-kind]')
-      .forEach(item => {
-        const kind = item.dataset['filterKind'];
-        const value = item.dataset['filterValue'] ?? 'all';
-        const active = kind === 'group'
-          ? value === this.groupFilter
-          : kind === 'type'
-            ? value === 'all'
-              ? this.typeFilters.size === 0
-              : this.typeFilters.has(value)
-            : value === 'all'
-              ? this.countryFilters.size === 0
-              : this.countryFilters.has(value);
-        item.classList.toggle('active', active);
-        item.setAttribute('aria-pressed', String(active));
-      });
-    this.filterPopover
-      .querySelectorAll<HTMLElement>('[data-sort-field]')
-      .forEach(item => {
-        item.classList.toggle(
-          'active',
-          item.dataset['sortField'] === this.sortField,
-        );
-      });
-    this.sortDescending.checked = this.descending;
-    this.refitFilter.checked = this.refitOnly;
-    const activeFilterCount = [
-      this.typeFilters.size > 0,
-      this.countryFilters.size > 0,
-      this.refitOnly,
-    ].filter(Boolean).length;
-    this.filterCount.textContent = activeFilterCount > 0
-      ? String(activeFilterCount)
-      : '';
-    this.filterButtons.forEach(button => {
-      button.classList.toggle(
-        'active',
-        activeFilterCount > 0
-          || this.sortField !== 'id'
-          || this.descending,
-      );
-    });
-  }
-
-  private renderGallery(resetScroll = true): void {
-    const preservedScroll = captureScrollPosition(this.gallery);
-    if (!resetScroll && this.galleryDragScrollTop !== null) {
-      preservedScroll.top = this.galleryDragScrollTop;
-    }
-    const previousRenderedCount = resetScroll
-      ? 0
-      : this.renderedGalleryCount;
-    const state = this.host.getState();
-    const selectedNames = new Set([
-      ...state.level1,
-      ...state.level2,
-    ]);
-    this.visibleGalleryShips = filterAndSortGalleryShips(this.ships, {
-      searchText: this.gallerySearch.value,
-      typeFilters: this.typeFilters,
-      countryFilters: this.countryFilters,
-      refitOnly: this.refitOnly,
-      sortField: this.sortField,
-      descending: this.descending,
-      shipTypeLabels: this.labels.ship_types,
-      isExcluded: ship => selectedNames.has(ship.search_name),
-    });
-
-    this.renderedGalleryCount = 0;
-    this.gallery.replaceChildren();
-    this.updateGalleryCount();
-    if (this.visibleGalleryShips.length === 0) {
-      this.showGalleryMessage(
-        this.ships.length === 0
-          ? '舰船资料库不可用'
-          : '没有符合当前条件的舰娘',
-      );
-      return;
-    }
-    this.appendGalleryBatch(Math.max(
-      this.galleryBatchSize(),
-      previousRenderedCount,
-    ));
-    restoreScrollPosition(
-      this.gallery,
-      resetScroll ? { top: 0, left: 0 } : preservedScroll,
-    );
-  }
-
-  /** 根据图鉴当前宽高计算首屏和下一批需要的卡片数量。 */
-  private galleryBatchSize(): number {
-    return calculateGalleryBatchSize(
-      this.gallery.clientWidth,
-      this.gallery.clientHeight,
-    );
-  }
-
-  /** 窗口变大时补齐新增列和可见行，不重建图鉴。 */
-  private ensureGalleryFilled(): void {
-    if (this.visibleGalleryShips.length === 0) return;
-    const missingCount = this.galleryBatchSize() - this.renderedGalleryCount;
-    if (missingCount > 0) this.appendGalleryBatch(missingCount);
-  }
-
-  private appendGalleryBatch(count = this.galleryBatchSize()): void {
-    if (this.renderedGalleryCount >= this.visibleGalleryShips.length) return;
-    const preservedScroll = captureScrollPosition(this.gallery);
-    const fragment = document.createDocumentFragment();
-    const end = Math.min(
-      this.renderedGalleryCount + count,
-      this.visibleGalleryShips.length,
-    );
-    for (let index = this.renderedGalleryCount; index < end; index += 1) {
-      fragment.append(this.createGalleryCard(this.visibleGalleryShips[index]));
-    }
-    this.renderedGalleryCount = end;
-    this.gallery.append(fragment);
-    restoreScrollPosition(this.gallery, preservedScroll);
-  }
-
-  private createGalleryCard(ship: ShipLibraryShip): HTMLButtonElement {
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'fleet-ship-card';
-    card.dataset['decisiveGalleryShipId'] = String(ship.id);
-    card.append(createShipArtwork(ship, this.shipTypeDisplay(ship)));
-    this.updateGalleryCard(card, ship);
-    return card;
-  }
-
-  private updateGalleryCard(
-    card: HTMLButtonElement,
-    ship: ShipLibraryShip,
-  ): void {
-    const editing = this.editEnabled.checked;
-    card.disabled = !editing;
-    card.draggable = editing;
-    card.title = `将 ${ship.search_name} 放入${this.activeSlotDescription()}`;
+    this.galleryView.updateCardTargets();
   }
 
   private activeSlotDescription(): string {
@@ -1000,15 +656,6 @@ export class DecisivePlanView {
       return `主选位置 ${this.activeMainIndex + 1}`;
     }
     return `第 ${this.activeBackupIndex + 1} 个备选槽位`;
-  }
-
-  private updateGalleryCount(): void {
-    if (this.ships.length === 0) {
-      this.galleryCount.textContent = '图鉴不可用';
-      return;
-    }
-    this.galleryCount.textContent =
-      `显示 ${this.visibleGalleryShips.length} / ${this.ships.length} 艘`;
   }
 
   private async resetTeam(): Promise<void> {
@@ -1038,7 +685,7 @@ export class DecisivePlanView {
     );
     this.markDirty();
     this.renderQueues();
-    this.renderGallery(false);
+    this.galleryView.renderSelection();
     this.renderGalleryTarget();
   }
 
@@ -1109,17 +756,4 @@ export class DecisivePlanView {
     );
   }
 
-  private shipTypeDisplay(ship: ShipLibraryShip): string {
-    const typeName = TYPE_LABELS[ship.ship_type]
-      ?? this.labels.ship_types[ship.ship_type]
-      ?? ship.ship_type;
-    return `${typeName}-${ship.ship_type.toUpperCase()}`;
-  }
-
-  private showGalleryMessage(message: string): void {
-    const empty = document.createElement('div');
-    empty.className = 'fleet-library-empty';
-    empty.textContent = message;
-    this.gallery.replaceChildren(empty);
-  }
 }

@@ -9,7 +9,7 @@ import {
 } from '../../shared/lootPlans.js';
 import {
   MAX_NORMAL_FIGHT_DAILY_EXECUTIONS,
-} from '../../model/scheduler/NormalFightDailyQuota.js';
+} from '../../shared/normalFightQuota.js';
 import { LoaderDialog } from '../shared/LoaderDialog';
 import {
   captureScrollPosition,

@@ -125,6 +125,10 @@ export class FleetPlannerView {
     return this.host.hasUnsavedDraftChanges(this.presetNameInput.value);
   }
 
+  dispose(): void {
+    this.galleryView.dispose();
+  }
+
   private async newTeamPlan(): Promise<void> {
     if (this.hasUnsavedFleetChanges()) {
       const confirmed = await showConfirm(
