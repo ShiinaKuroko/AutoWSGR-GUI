@@ -1005,7 +1005,7 @@ npm run build
 ### 16.2 旧计划迁移测试
 
 ```powershell
-npm run test:legacy-plan
+npm run test:migrations
 ```
 
 测试在系统临时目录中：
@@ -1204,7 +1204,7 @@ View
 ### 工程
 
 - [ ] `npm run build` 通过。
-- [ ] `npm run test:legacy-plan` 通过。
+- [ ] `npm run test:migrations` 通过。
 - [ ] `npm run test:settings` 通过。
 - [ ] `git diff --check` 通过。
 - [ ] `npm run dist` 生成 `2.0.0-alpha` 安装包和 `alpha.yml`。

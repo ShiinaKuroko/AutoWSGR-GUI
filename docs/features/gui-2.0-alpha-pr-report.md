@@ -57,7 +57,7 @@ AutoWSGR 运行环境整理为可校验、可迁移、可维护的完整流程�
 
 此前审计发现的 Controller 直接 DOM/全局 bridge `major` 问题已经整改。42 个
 Controller 文件的 DOM、DOM 类型、浏览器事件和 `window.electronBridge` 扫描均为
-0；`npm run test:controller-boundaries` 已把该约束固化为回归门禁。
+0；`npm run test:architecture-boundaries` 已把该约束固化为回归门禁。
 
 ## 2. 新增功能
 

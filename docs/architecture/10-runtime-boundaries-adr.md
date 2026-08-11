@@ -1,116 +1,156 @@
-# ADR-001：当前运行时边界与生命周期
+# ADR-001：当前运行时边界
 
-- **状态**：已接受
-- **日期**：2026-08-05
-- **适用范围**：当前 AutoWSGR-GUI 主进程、渲染进程、用户数据迁移、任务调度和 GUI 更新
+- 状态：已接受
+- 基线：当前工作区代码，包括未提交改动
+- 范围：Renderer、Electron Main、Python 后端、存储、迁移和更新
 
 ## 背景
 
-GUI 已完成大规模模块拆分。为了防止实现继续演进而工程文档停留在旧结构，本
-决策记录固定当前版本的所有权和生命周期边界。代码是最终契约；相关变更必须
-同时更新本 ADR 和对应专题文档。
+项目同时包含浏览器运行时、Node/Electron 运行时和 Python 后端。方案、配置和
+任务又存在多个持久化来源。若状态所有权或依赖方向不明确，容易出现两份状态、
+View 直连文件系统、安装目录被写入、迁移不可重试等问题。
 
-## 决策
+以下决策是当前实现必须保持的边界。
 
-### 1. 渲染进程遵循单向边界
-
-标准数据流为：
+## 决策 1：Renderer 单向数据流
 
 ```text
-Model / Repository → Controller → ViewObject → View
-View → 用户意图 → Controller
+Repository / Model -> Controller -> ViewObject -> View
+View -> 用户意图 -> Controller
 ```
 
-View 不读取 Electron bridge，不拼装持久化 DTO，也不拥有文件 identity。
-`FleetPlannerController` 负责舰船库和编队计划读取、保存覆盖、DTO 映射及
-`file/source`；`FleetDraft` 负责草稿与 `UserTeamPlan` 的双向转换和规则校验。
-View 只看到 ViewObject 和不透明计划 ID。`DecisivePlanController` 以同样方式
-拥有设置 Repository 和 `DecisiveFleetDraft`。
+- Controller 编排，不拥有 DOM。
+- View 拥有 DOM 和局部视觉状态，不访问有状态 Model、Adapter、ApiClient 或
+  ElectronBridge。
+- Model 拥有领域状态和规则，不操作 DOM。
+- Adapter 隔离 IPC、HTTP、WebSocket、序列化和浏览器存储。
+- Shared 只包含无状态、跨运行时可复用逻辑。
 
-### 2. `electron/main.ts` 只做组合根
+边界由 `test-renderer-architecture.js` 强制。
 
-`main.ts` 可以创建 Service、注入依赖、注册 IPC、编排启动迁移和处理 Electron
-生命周期，不实现文件策略、YAML 规则、计划归一化、资料库升级、环境检测或
-更新策略。业务边界分别由以下模块承担：
+## 决策 2：组合根不承载业务规则
 
-| 边界 | 所有者 |
-|------|--------|
-| 普通文件能力 | `SafePathService`、`SecureFileService` |
-| GUI 设置 | `GuiSettingsStore`、`GuiConfigurationService` |
-| 迁移状态账本 | `MigrationStateStore` |
-| 作战计划 | `CombatPlanCodec`、`CombatPlanRepository`、计划 Service |
-| 编队计划 | `TeamPlanCodec`、`TeamPlanRepository`、`TeamPlanService` |
-| 舰船资料库 | `ShipLibraryService`、`ShipLibraryUpdater` |
-| Python/CUDA/ADB | `pythonEnv/*`、环境 Service |
-| 后端进程 | `BackendService`、`BackendShutdownService` |
-| GUI 更新 | `UpdaterIpc`、`GuiUpdatePolicy` |
+`AppController` 是 Renderer 组合根，`electron/main.ts` 是 Main 组合根。它们
+允许创建对象、注入依赖、注册生命周期和协调顶层流程，不实现：
 
-### 3. 安装资源只读，用户数据写入 `userData`
+- YAML Codec。
+- 路径安全。
+- 方案归一化。
+- Python/更新策略。
+- 舰队分配规则。
+- 文件持久化细节。
 
-| 数据 | 运行时位置 |
-|------|------------|
-| 系统作战/舰队/日常计划、地图、内置模板 | `resource/`，只读 |
-| 已下架系统计划的迁移快照 | `resource/migrations/v6/`，只读 |
-| 用户作战计划 | `userData/user_battle_plans/` |
-| 用户舰队计划 | `userData/user_team_plans/` |
-| 用户日常计划 | `userData/user_daily_plans/` |
-| 设置、任务组、模板 | `userData/` |
+业务分别进入 Controller 用例模块、Model、Service、Repository 或 Codec。
+
+## 决策 3：Preload 是唯一 Electron 桥
+
+Renderer 只通过 `window.electronBridge` 使用 Main 能力，且 Controller 依赖
+`IpcAdapter` 裁剪后的窄 Gateway。`src/types/ipc.ts` 是桥接 DTO 的类型来源。
+
+新增通道必须同步 preload、Main IPC、Adapter 和契约测试。同步 getter 的
+`sendSync/ipcMain.on` 配对不能单侧修改。
+
+## 决策 4：系统资源只读，用户数据写 userData
+
+| 数据 | 位置 |
+|---|---|
+| 系统作战/编队/日常方案、地图、内置模板 | `resource/` |
+| 用户作战方案 | `userData/user_battle_plans/` |
+| 用户编队方案 | `userData/user_team_plans/` |
+| 用户日常方案 | `userData/user_daily_plans/` |
+| YAML/GUI 设置、任务组、用户模板 | `userData/` |
 | 舰船资料库工作副本 | `userData/ship-library/` |
-| 迁移状态 | `userData/.migration-state.json` |
-| 临时展开计划 | 系统 temp 下的进程专属目录 |
+| 迁移账本 | `userData/.migration-state.json` |
+| 执行计划 | temp 的进程专属目录 |
 
-舰船资料库按 manifest 的 schema 版本和生成时间升级，通过临时目录、备份和
-重命名切换，失败时恢复旧目录。
+安装目录中的可变文件只作为旧迁移来源。通用文件 IPC 不获得任意磁盘读写权。
 
-通用文件 IPC 只允许读取 `userData` 和 `resource`，只允许写入 `userData`。
-路径验证拒绝 `..`、UNC、盘符跳转和 NTFS ADS，并通过 `realpath` 检查符号链接
-或 junction 的真实目标。系统文件对话框授予的单次外部文件能力不扩展通用 IPC。
+## 决策 5：配置是跨文件事务
 
-### 4. 迁移是可重试的版本状态机
+`usersettings.yaml` 和 `gui_settings.json` 是不同域，但设置页一次保存必须保持
+一致：
 
-`MigrationStateStore` 独占 `.migration-state.json` 的解析、合并和原子写入。
-`UserDataMigrationService` 负责旧来源和 v6 库存迁移，
-`LegacyPlanMigration` 负责 v7 计划分类迁移。迁移遵循：
+```text
+写 YAML -> 原子写 JSON -> 失败则恢复 YAML -> 成功后更新 Renderer 内存
+```
 
-1. 源文件不修改、不删除。
-2. 同名不同内容保存为“（旧版）”副本，并同步受管引用。
-3. 设置按字段深度合并，未知扩展字段保留。
-4. 完成项包含来源和内容摘要，重复启动不重复迁移。
-5. 每一阶段全部成功后才写入完成键并推进版本；失败项下次启动重试。
-6. 实际发生迁移时显示总数、成功数、失败数和失败文件。
+`GuiSettingsStore` 保留未知顶层字段；新的旧配置转换需要独立迁移标记。
 
-### 5. 调度器区分轮次与逻辑任务
+## 决策 6：方案使用 Codec/Repository/Service
 
-`SchedulerTask.id` 只标识当前物理轮次；`logicalId` 在所有后触发、重试、间隔
-等待和无限轮次之间保持稳定。事件分为：
+- Codec：结构、兼容和未知字段保留。
+- Repository：系统/用户来源、路径、文件和原子写入。
+- Service：导入、保存、重命名、删除、关联和运行时准备。
+- IPC：参数和结果边界。
 
-- `onTaskCompleted(id)`：单轮完成。
-- `onLogicalTaskCompleted(logicalId)`：整个任务不再有后续轮次。
-- `onLogicalTaskCanceled(logicalId, reason)`：删除、清空或系统停止。
+Renderer 的 `PlanModel.rawRoot` 保留未建模 YAML。系统和用户同名文件仍是不同
+identity。运行前由 `RuntimePlanService` 展开到临时目录。
 
-`SchedulerBinder` 只根据逻辑事件更新 cron/pending。系统停止允许下次重新触发，
-用户删除或清空表示主动放弃。
+## 决策 7：普通编队与决战状态独立
 
-### 6. 模板兼容链路暂时保留
+`FleetPlannerController` 独占普通 `FleetDraft`，
+`DecisivePlanController` 独占 `DecisiveFleetDraft`。两者共享
+`ShipGalleryView` 视觉行为，但不共享草稿、文件 identity 或保存状态。
 
-`TemplateModel`、`TemplateController`、用户模板文件和
-`kind: "template"` 仍是旧任务组及系统决战预设的执行依赖。当前计划页没有
-独立模板库入口；新入口按后续界面方案实现。在完成数据和执行迁移之前，不得
-删除或停止初始化兼容链路。
+共享图库必须用 `AbortController` 和 `ResizeObserver.disconnect()` 完整释放，
+释放链到达 `AppController.onBeforeUnload`。
 
-### 7. 发布和安装使用严格生命周期
+## 决策 8：调度区分轮次与逻辑任务
 
-版本只允许 `X.Y.Z`、`X.Y.Z-beta.N`、`X.Y.Z-dev` 或 `X.Y.Z-dev.N`，
-分别对应 `latest`、`beta`、`dev`。发布工作流和客户端使用同一解析规则，
-产物不得混入其他频道清单。
+- `id`：物理轮次。
+- `logicalId`：有限/无限任务、重试、gap 和修理等待的稳定身份。
+- Cron pending 和取消使用 `logicalId`。
+- 未到终点或战果不满足的成功轮次不减少 `remainingTimes`。
+- 自动任务记录实际完成/处理，不在入队时提前标记。
 
-更新检查必须返回有更新、已是最新或失败三态。安装前调用
-`BackendShutdownService`：后端正式停止接口、进程树终止、等待 `close`、超时
-强制回退。无法确认退出时阻止 `quitAndInstall()`。
+自动战役固定每日 8 次正常结算。常规出击额度按计划来源、文件和舰队去重。
+
+## 决策 9：迁移是可重试状态机
+
+`MigrationStateStore` 独占 `.migration-state.json`：
+
+1. 完成 marker 只合并，不覆盖。
+2. 文件全部成功后才完成阶段。
+3. 失败只重试未完成项。
+4. 源文件不修改、不删除。
+5. 同名不同内容保留“（旧版）”。
+6. 旧来源用 started/configuration-complete/complete 封存。
+
+当前主要版本为用户数据 v6、旧方案 v7。
+
+## 决策 10：后端来源与能力先验证
+
+managed 和 external 使用唯一明确 AutoWSGR 来源。启动前检查：
+
+- 实际 import 路径。
+- OCR GPU 和截图环境变量行为。
+- `autowsgr.server.main:app` 的 ASGI 能力。
+- Python 3.12/3.13、依赖和 CUDA。
+
+不满足时直接失败，不回退到另一后端来源。
+
+## 决策 11：启动与退出顺序固定
+
+单实例锁必须早于更新、迁移、pip 和窗口。pending 更新必须早于迁移和窗口。
+
+退出时必须先保存窗口状态，再正式停止后端、等待进程树、停止内置 ADB，最后
+退出。无法确认释放时阻止退出和更新安装。
+
+## 决策 12：生成源与运行产物分离
+
+- HTML 源：`src/view/html/**`
+- SCSS 源：`src/view/styles/**/*.scss`
+- Electron 运行：生成的 `src/view/index.html` 和 `styles.css`
+- Renderer 运行：`dist/renderer.bundle.js`
+
+生成的 HTML/CSS 提交到仓库；partial 和 TypeScript 不打入安装包。生成文件不
+手改。
 
 ## 后果
 
-- 新功能需要明确状态所有者，不能把 Repository 或 Electron bridge 重新放回 View。
-- 新的用户可变文件必须先定义 `userData` 位置和 IPC 能力，不能写安装目录。
-- 调度回调不能用单轮 `id` 清理逻辑任务状态。
-- 修改迁移、频道或关闭顺序时，必须补对应 Service 测试和旧版本 fixture。
+- 新状态必须先确定唯一所有者。
+- 新文件必须先确定只读资源或 userData 位置。
+- 新共享组件必须有真实复用和完整生命周期。
+- 新迁移必须有独立 marker 与失败重试测试。
+- 新 IPC 必须补桥接契约测试。
+- 修改调度身份、后端来源或退出顺序时必须增加对应领域/Service 测试。

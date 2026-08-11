@@ -54,14 +54,14 @@
   `dist` 文件锁出现 `EPERM`；清理残留 Electron 进程后串行执行通过。后续
   Electron 测试必须串行运行，避免测试进程竞争构建目录。
 - 当前没有使用这个失败结果放宽测试；根因是测试资源生命周期竞争，不是设置持久化断言失败。
-- `npm run test:legacy-config-upgrade` 独立覆盖已有 `userData`、不同安装目录、
+- `npm run test:migrations` 统一覆盖已有 `userData`、不同安装目录、
   同名任务组合并、旧 YAML 升级、队列引用更新和重复启动幂等。PR 工作流
-  `Legacy configuration upgrade compatibility` 会在 Windows runner 自动执行。
+  `Build and migration contracts` 会在 Windows runner 自动执行。
 - 使用 `AutoWSGR-GUI-old` 的真实数据在隔离临时目录完成两轮演练：空计划目标
   下迁移 4 个作战计划和 8 个编队；复制当前完整 `userData` 后再次迁移时，
   当前队列和用户修改过的编队均保留，旧任务组引用升级成功。演练未修改真实
   `%APPDATA%` 和旧目录，临时目录已清理。
 - 主进程拆分完成后已通过：
   `test:main-services`、`test:main-ipc`、`test:settings`、
-  `test:legacy-plan`、`test:api-contract`、`test:task-group-migration`、
+  `test:migrations`、`test:api-contract`、
   `test:python-environment` 和 `test:event-resources`。

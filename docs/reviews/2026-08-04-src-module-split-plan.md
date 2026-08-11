@@ -286,8 +286,7 @@ git diff --check
 按改动范围追加：
 
 ```powershell
-npm run test:task-group-migration
-npm run test:legacy-plan
+npm run test:migrations
 npm run test:settings
 npm run test:main-services
 npm run test:main-ipc
@@ -296,7 +295,7 @@ npm run test:main-ipc
 最终静态边界检查：
 
 ```powershell
-npm run test:controller-boundaries
+npm run test:architecture-boundaries
 rg -n "window\.electronBridge|\(window as any\)" src/model src/view
 rg -n "js-yaml|yaml\.load|yaml\.dump" src/controller src/model src/view
 rg -n "\bas any\b" src/controller src/model src/view

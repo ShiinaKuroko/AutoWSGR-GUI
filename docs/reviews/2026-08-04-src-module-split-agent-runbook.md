@@ -54,15 +54,14 @@ Agent 每次只执行一个阶段，例如 `S2`。阶段完成并经过维护者
 下一个阶段。开始阶段前必须完整读取：
 
 1. `AGENTS.md`
-2. `docs/engineering-standards.md`
-3. `.editorconfig`
-4. `.gitattributes`
-5. `tsconfig.json`
-6. `package.json`
-7. `CONTRIBUTING.md`
-8. 原拆分方案
-9. 本任务书
-10. 当前阶段卡指定的架构文档和现有测试
+2. `.editorconfig`
+3. `.gitattributes`
+4. `tsconfig.json`
+5. `package.json`
+6. `CONTRIBUTING.md`
+7. 原拆分方案
+8. 本任务书
+9. 当前阶段卡指定的架构文档和现有测试
 
 ### 3.2 修改前报告
 
@@ -245,9 +244,7 @@ S0 只读审计与行为基线
 
 ```powershell
 npm run build
-npm run test:legacy-config-upgrade
-npm run test:legacy-plan
-npm run test:task-group-migration
+npm run test:migrations
 npm run test:api-contract
 npm run test:settings
 npm run test:main-services
@@ -309,9 +306,7 @@ src/model/ApiClient.ts
 **验收**：
 
 ```powershell
-npm run test:legacy-config-upgrade
-npm run test:legacy-plan
-npm run test:task-group-migration
+npm run test:migrations
 npm run test:api-contract
 npm run test:main-ipc
 ```

@@ -249,6 +249,7 @@ GUI 保存的 YAML 必须通过当前前端校验，并最终符合 AutoWSGR 后
 
 ## 文档
 
+- [用户使用指南（含节点索敌规则说明）](docs/user-guide.md)
 - [战斗方案 YAML 说明](docs/plan-guide.md)
 - [架构文档索引](docs/architecture/README.md)
 - [开发环境搭建](docs/architecture/08-dev-setup.md)
@@ -267,7 +268,7 @@ GUI 保存的 YAML 必须通过当前前端校验，并最终符合 AutoWSGR 后
 
 ## 贡献
 
-欢迎参与开发！请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 和强制性的[工程与代码规范](docs/engineering-standards.md)。
+欢迎参与开发！请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 和强制性的 [AGENTS.md](AGENTS.md)。
 
 ## 许可证
 
