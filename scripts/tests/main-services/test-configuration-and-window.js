@@ -67,11 +67,14 @@ function testWindowService() {
   let webContentsDestroyed = false;
   let sendFailsAsDestroyed = false;
   const sentMessages = [];
+  const windowActivationCalls = [];
   const windowHandlers = new Map();
   const webContentsHandlers = new Map();
   const fakeWindow = {
     isDestroyed: () => windowDestroyed,
     getNormalBounds: () => normalBounds,
+    show: () => windowActivationCalls.push('show'),
+    focus: () => windowActivationCalls.push('focus'),
     webContents: {
       isDestroyed: () => webContentsDestroyed,
       send: (...args) => {
@@ -102,6 +105,9 @@ function testWindowService() {
     on: (event, handler) => {
       windowHandlers.set(event, handler);
     },
+    once: (event, handler) => {
+      windowHandlers.set(event, handler);
+    },
   };
   const service = new WindowService(settings, {
     backendPort: 18438,
@@ -130,6 +136,7 @@ function testWindowService() {
   assert.equal(createdOptions.x, 20);
   assert.equal(createdOptions.y, 30);
   assert.equal(createdOptions.center, false);
+  assert.equal(createdOptions.show, false);
   assert.equal(
     createdOptions.webPreferences.preload,
     path.join(temporaryDirectory, 'dist', 'electron', 'preload.js'),
@@ -139,6 +146,10 @@ function testWindowService() {
     path.join(temporaryDirectory, 'app', 'src', 'view', 'index.html'),
   );
   assert.equal(service.getMainWindow(), fakeWindow);
+  assert.equal(windowHandlers.has('ready-to-show'), true);
+  assert.deepEqual(windowActivationCalls, []);
+  windowHandlers.get('ready-to-show')();
+  assert.deepEqual(windowActivationCalls, ['show', 'focus']);
   assert.equal(
     service.sendToRenderer('backend-log', 'backend running'),
     true,

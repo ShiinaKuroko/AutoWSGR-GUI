@@ -182,6 +182,7 @@ export class WindowService {
       center: initialBounds === null,
       minWidth: MIN_WINDOW_WIDTH,
       minHeight: MIN_WINDOW_HEIGHT,
+      show: false,
       webPreferences: {
         preload: path.join(
           this.dependencies.moduleDirectory,
@@ -235,6 +236,12 @@ export class WindowService {
         }
       },
     );
+
+    win.once('ready-to-show', () => {
+      if (win.isDestroyed()) return;
+      win.show();
+      win.focus();
+    });
 
     win.loadFile(htmlPath).catch((error: Error) => {
       console.error('[Main] loadFile failed:', error);
