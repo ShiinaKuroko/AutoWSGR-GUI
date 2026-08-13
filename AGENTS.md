@@ -163,18 +163,19 @@
 - 未经明确要求，不得执行 `git reset --hard`、`git checkout -- <path>`、强制清理、历史重写、`--no-verify` 或无条件 `git push --force`。
 - 不得 `git add .`；按逻辑变更显式暂存。分支使用语义前缀，Commit 使用 Conventional Commits，一个 commit 对应一个可独立审查的逻辑变更。
 
-### 8.2 ShiinaKuroko Fork
+### 8.2 个人 Fork 分支职责
 
 - 路径以仓库为基准：GUI 为当前仓库根目录，后端默认是同级 `../AutoWSGR`；不得固化某台机器的绝对路径。
 - 当前仓库是个人 Fork。`main` 只用于同步 `yltx/AutoWSGR-GUI:alpha`，不直接开发功能；同步上游 `alpha` 后再更新个人 Fork 的 `origin/main`。
-- `ShiinaKuroko` 是主力开发分支，代表个人 Fork 的最新有效代码。功能实现、正式自动化测试和必要生成入口必须先合入该分支并完成验证，再由该分支执行普通 push。
+- `ShiinaSakuya` 是日常主力开发分支，代表个人 Fork 的最新开发代码。所有新功能和 Bug Fix 必须基于该分支开发、验证并 push；正式自动化测试和必要生成入口必须随对应代码一并进入该分支。
+- `ShiinaKuroko` 是主库 Stable 升级协作专用分支，只用于维护者明确要求的主库稳定版基线同步、升级适配、兼容处理和稳定版发布准备。不得在该分支直接进行日常新功能或 Bug Fix 开发，也不得把无关开发提交 push 到该分支。
 - 未经维护者事先明确允许，不得创建任何本地或远程分支、备份分支、worktree 或发布克隆；不得以隔离脏工作树、备份、测试、打包或发布为理由自行创建。
 - 只有维护者明确要求并批准 PR 时，才允许创建对应 PR 分支；格式为 `feat/<功能>-PR` 或 `fix/<功能>-PR`，Git 分支名不得使用反斜杠。创建下一条 PR 前必须检查上一条临时 PR 的状态，确认代码已经合入目标分支后，删除对应的本地和远端 PR 分支；未合入或状态不明确时不得删除。
 - GitHub 网络操作前读取系统当前代理设置；只允许命令级临时代理，不得硬编码端口或修改全局 Git 配置。
-- 每次 push `ShiinaKuroko` 前必须先 `git fetch origin`。本地落后或出现分叉时，先审查并整合远端提交，不得用强推覆盖远端代码。
-- 只有维护者明确要求并批准时，才以当前 `origin/ShiinaKuroko` 为指针创建远端不可移动备份 `backup/YYYYMMDD-<short-sha>`；不得擅自创建、移动、复用或删除 backup 分支。
+- 每次 push `ShiinaSakuya` 或 `ShiinaKuroko` 前必须先 `git fetch origin`。本地落后或出现分叉时，先审查并整合远端提交，不得用强推覆盖远端代码。
+- 只有维护者明确要求并批准时，才以对应目标分支的当前远端指针创建不可移动备份 `backup/YYYYMMDD-<short-sha>`；不得擅自创建、移动、复用或删除 backup 分支。
 - 普通 push 禁止 `--force` 和 `--force-with-lease`。只有用户明确授权历史改写、已说明将被替换的远端提交且备份完成时，才允许使用 `--force-with-lease`。
-- push 完成后检查其他本地工作分支：只有确认有效提交已进入 `ShiinaKuroko`、没有独有未推送提交、没有未提交修改且未被 worktree 使用时才能删除。不得批量强删；保留 `main`、`ShiinaKuroko` 和仍未合入的活动 PR 分支。
+- push 完成后检查其他本地工作分支：只有确认有效提交已进入对应目标分支、没有独有未推送提交、没有未提交修改且未被 worktree 使用时才能删除。不得批量强删；保留 `main`、`ShiinaSakuya`、`ShiinaKuroko` 和仍未合入的活动 PR 分支。
 
 ### 8.3 Alpha 与正式发布
 
