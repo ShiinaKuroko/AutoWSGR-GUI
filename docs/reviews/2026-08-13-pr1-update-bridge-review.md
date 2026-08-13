@@ -4,10 +4,12 @@
 
 PR #1 `feat: add 2.1 Alpha-to-Stable update bridge` 当前不能直接合并。
 
-主要原因不是功能方向错误，而是 PR 分支基线与当前仓库错位，并且混入了两个应独立处理的功能范围：
+主要原因不是功能方向错误，而是 PR 分支基线与当前仓库错位，并且混入了两个应独立审查的功能范围：
 
-1. 1.4.3 计划降级备份，属于日常功能开发，应基于 `ShiinaSakuya` 单独处理。
-2. Alpha 到 Stable 更新桥接，属于主库 Stable 升级协作，应基于 `ShiinaKuroko` 单独处理。
+1. 1.4.3 计划降级备份。
+2. Alpha 到 Stable 更新桥接。
+
+本 PR 的任何功能提交都不得合入 `ShiinaSakuya`；如需处理，必须统一在 `ShiinaKuroko` 上逐笔审查、解决冲突和验证。Sakuya 仅保留本审查交接文档。
 
 本次审查没有合并、cherry-pick 或修改 PR 代码。
 
@@ -186,8 +188,8 @@ this.allowDowngrade = true;
 
 ## 建议处理顺序
 
-1. 从最新 `ShiinaSakuya` 单独重建“1.4.3 计划降级备份”功能提交。
-2. 从最新 `ShiinaKuroko` 单独重建“Stable 更新桥接”提交。
+1. 以最新 `ShiinaKuroko` 为唯一目标，逐笔处理 3 个真实功能提交；不得将其中任何代码合入 `ShiinaSakuya`。
+2. 分别审查“1.4.3 计划降级备份”和“Stable 更新桥接”，避免把两个功能范围作为一个整体验收。
 3. 删除或重写直接发布 `yltx/AutoWSGR-GUI` 的 workflow 步骤。
 4. 按用户确认的版本基线重做版本与频道配置，不沿用硬编码的 `2.1.0-alpha.1`。
 5. 修复 `allowDowngrade` 被频道 setter 重新开启的问题。
