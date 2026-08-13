@@ -172,6 +172,11 @@ assert.match(
   /autoUpdater\.autoInstallOnAppQuit\s*=\s*false/,
   '普通退出不得自动安装 GUI 更新',
 );
+assert.match(
+  updaterSource,
+  /autoUpdater\.channel\s*=\s*updatePolicy\.channel;\s*autoUpdater\.allowDowngrade\s*=\s*false;/,
+  '每次切换更新频道后必须重新禁止降级',
+);
 assert.doesNotMatch(
   updaterSource,
   /autoUpdater\.autoInstallOnAppQuit\s*=\s*true/,

@@ -19,6 +19,10 @@ export interface GuiReleasePolicy {
   allowPrerelease: boolean;
 }
 
+export interface GuiUpdateSelectionPolicy extends GuiReleasePolicy {
+  acceptedChannels: readonly GuiReleaseChannel[];
+}
+
 export type GuiUpdateCheckResult =
   | { status: 'available'; version: string }
   | { status: 'up-to-date' }
@@ -74,9 +78,42 @@ export function resolveGuiReleasePolicy(version: string): GuiReleasePolicy {
   );
 }
 
+/** 根据用户偏好选择 stable/alpha 候选集合；beta/dev 保持构建自身频道。 */
+export function resolveGuiUpdateSelectionPolicy(
+  version: string,
+  allowTestUpdates: boolean,
+): GuiUpdateSelectionPolicy {
+  const releasePolicy = resolveGuiReleasePolicy(version);
+  if (
+    releasePolicy.channel === 'beta'
+    || releasePolicy.channel === 'dev'
+  ) {
+    return {
+      ...releasePolicy,
+      acceptedChannels: [releasePolicy.channel],
+    };
+  }
+  if (allowTestUpdates) {
+    return {
+      channel: 'alpha',
+      stage: releasePolicy.stage,
+      allowPrerelease: true,
+      acceptedChannels: ['latest', 'alpha'],
+    };
+  }
+  return {
+    channel: 'latest',
+    stage: releasePolicy.stage,
+    allowPrerelease: false,
+    acceptedChannels: ['latest'],
+  };
+}
+
 /** 返回候选版本不属于当前频道时的明确错误。 */
 export function validateGuiUpdateCandidate(
-  currentPolicy: GuiReleasePolicy,
+  currentPolicy: GuiReleasePolicy & {
+    acceptedChannels?: readonly GuiReleaseChannel[];
+  },
   candidateVersion: string,
 ): string | null {
   let candidatePolicy: GuiReleasePolicy;
@@ -85,9 +122,11 @@ export function validateGuiUpdateCandidate(
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
-  if (candidatePolicy.channel === currentPolicy.channel) return null;
+  const acceptedChannels = currentPolicy.acceptedChannels
+    ?? [currentPolicy.channel];
+  if (acceptedChannels.includes(candidatePolicy.channel)) return null;
   return `更新版本 ${candidateVersion} 属于 ${candidatePolicy.channel} 频道，`
-    + `当前客户端只允许 ${currentPolicy.channel} 频道`;
+    + `当前客户端只允许 ${acceptedChannels.join('、')} 频道`;
 }
 
 /** 将 electron-updater 的结果转换为可靠的三态结果。 */

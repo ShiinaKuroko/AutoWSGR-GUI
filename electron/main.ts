@@ -27,6 +27,10 @@ import { SingleInstanceService } from './services/SingleInstanceService';
 import {
   GuiUpdateStateStore,
 } from './services/GuiUpdateStateStore';
+import {
+  resolveGuiUpdateSelectionPolicy,
+  validateGuiUpdateCandidate,
+} from './services/GuiUpdatePolicy';
 import { GuiUpdateInstaller } from './services/GuiUpdateInstaller';
 import { GuiUpdaterLogger } from './services/GuiUpdaterLogger';
 import {
@@ -239,6 +243,10 @@ const guiConfigurationService = new GuiConfigurationService(
       cudaEnvironmentService.normalizePath(candidate)
     ),
     environmentPort: () => process.env.AUTOWSGR_PORT,
+    defaultAllowTestUpdates: () => (
+      resolveGuiUpdateSelectionPolicy(app.getVersion(), true).stage
+        === 'prerelease'
+    ),
   },
 );
 const pythonEnvironmentService = new PythonEnvironmentService(
@@ -479,6 +487,23 @@ function initializeApplicationLifecycle(): void {
 
   /** 在任何迁移、后端初始化和主窗口创建前处理待安装更新。 */
   const handleStartupUpdate = async (): Promise<boolean> => {
+    const pendingUpdate = guiUpdateStateStore.read();
+    if (pendingUpdate) {
+      const updatePolicy = resolveGuiUpdateSelectionPolicy(
+        app.getVersion(),
+        guiConfigurationService.allowTestUpdates(),
+      );
+      const mismatch = validateGuiUpdateCandidate(
+        updatePolicy,
+        pendingUpdate.targetVersion,
+      );
+      if (mismatch) {
+        guiUpdaterLogger.warn(
+          `Discarded pending GUI update after channel change: ${mismatch}`,
+        );
+        guiUpdateStateStore.clear();
+      }
+    }
     const resolution = guiUpdateStateStore.resolveStartup(
       app.getVersion(),
     );
@@ -604,6 +629,7 @@ function initializeApplicationLifecycle(): void {
         windowService.sendToRenderer(channel, ...args)
       ),
       getAppVersion: () => app.getVersion(),
+      allowTestUpdates: () => guiConfigurationService.allowTestUpdates(),
       logger: guiUpdaterLogger,
       updateStates: guiUpdateStateStore,
       chooseDownload: async (version) => {

@@ -124,6 +124,7 @@ export type ConfigurationGateway = Pick<
   | 'getBackendStartupMode'
   | 'getCudaPath'
   | 'getGuiAutomationSettings'
+  | 'getAllowTestUpdates'
   | 'getOcrGpuMode'
   | 'getPythonPath'
   | 'getSaveBackendScreenshots'

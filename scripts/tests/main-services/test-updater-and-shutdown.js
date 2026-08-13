@@ -22,6 +22,7 @@ const {
 const {
   classifyGuiUpdateCheck,
   resolveGuiReleasePolicy,
+  resolveGuiUpdateSelectionPolicy,
   validateGuiUpdateCandidate,
 } = require('../../../dist/electron/services/GuiUpdatePolicy.js');
 const {
@@ -126,6 +127,46 @@ function testGuiUpdatePolicy() {
   assert.equal(
     validateGuiUpdateCandidate(development, '2.0.3-dev.1'),
     null,
+  );
+
+  const stableOnly = resolveGuiUpdateSelectionPolicy('2.0.1', false);
+  assert.equal(stableOnly.channel, 'latest');
+  assert.equal(stableOnly.allowPrerelease, false);
+  assert.deepEqual(stableOnly.acceptedChannels, ['latest']);
+  assert.match(
+    validateGuiUpdateCandidate(stableOnly, '2.0.2-alpha.1'),
+    /只允许 latest 频道/,
+  );
+
+  const stableWithAlpha = resolveGuiUpdateSelectionPolicy('2.0.1', true);
+  assert.equal(stableWithAlpha.channel, 'alpha');
+  assert.equal(stableWithAlpha.allowPrerelease, true);
+  assert.deepEqual(
+    stableWithAlpha.acceptedChannels,
+    ['latest', 'alpha'],
+  );
+  assert.equal(
+    validateGuiUpdateCandidate(stableWithAlpha, '2.0.2-alpha.1'),
+    null,
+  );
+  assert.equal(
+    validateGuiUpdateCandidate(stableWithAlpha, '2.0.2'),
+    null,
+  );
+
+  const alphaStableOnly = resolveGuiUpdateSelectionPolicy(
+    '2.0.2-alpha.3',
+    false,
+  );
+  assert.equal(alphaStableOnly.channel, 'latest');
+  assert.deepEqual(alphaStableOnly.acceptedChannels, ['latest']);
+  assert.equal(
+    validateGuiUpdateCandidate(alphaStableOnly, '2.0.2'),
+    null,
+  );
+  assert.match(
+    validateGuiUpdateCandidate(alphaStableOnly, '2.0.3-alpha.1'),
+    /只允许 latest 频道/,
   );
 
   const root = path.join(__dirname, '..', '..', '..');
