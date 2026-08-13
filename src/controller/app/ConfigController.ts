@@ -332,6 +332,7 @@ export class ConfigController {
         ?? (browserStorageStore.get('updateMode') === 'manual'
           ? 'manual'
           : 'auto'),
+      allowTestUpdates: this.gateway?.getAllowTestUpdates?.() === true,
       autoExpedition: cfg.daily_automation.auto_expedition,
       expeditionInterval: gui.expeditionInterval,
       autoBattle: cfg.daily_automation.auto_battle,
@@ -450,6 +451,7 @@ export class ConfigController {
 
       const committed = await bridge.commitGuiSettings({
         updateMode: collected.updateMode,
+        allowTestUpdates: collected.allowTestUpdates,
         backendPort: collected.backendPort,
         backendStartupMode: collected.backendStartupMode,
         backendRepoPath: collected.backendRepoPath || null,

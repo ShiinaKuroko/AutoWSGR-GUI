@@ -182,8 +182,14 @@ NSIS 从 1.4.x 覆盖升级时，必须在旧卸载器运行前将旧用户数�
 | `X.Y.Z-beta.N` | `beta` |
 | `X.Y.Z-dev[.N]` | `dev` |
 
-当前稳定版 workflow 只构建 `X.Y.Z` 并发布到 `latest`。客户端仍校验候选版本
-属于当前频道，因此 Alpha 客户端不会自动跨频道切换到稳定版，必须手动安装。
+用户设置 `allow_test_updates` 决定候选集合：关闭时只接受 Stable，开启时接受
+Stable 与 Alpha。Alpha 构建在该字段缺失时默认开启，Stable 默认关闭；关闭测试版
+后不会自动降级，而是等待更高 Stable。
+
+已有 `2.0.16-alpha` 客户端使用旧的 Alpha-only 策略，因此首个 Stable 版本线必须
+先发布更高的 Alpha 桥，再发布同基础版本 Stable。Stable Release 在迁移窗口内同时
+携带桥接版的 `alpha.yml`、安装包和 blockmap，确保休眠旧 Alpha 客户端仍能先升级
+到桥接版，再切换到 Stable。
 更新检查返回 `available | up-to-date | error`，网络错误不能显示为最新版。
 
 下载完成后用户选择立即重启或下次启动。pending 更新必须在任何迁移和窗口创建前

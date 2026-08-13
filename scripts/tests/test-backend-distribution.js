@@ -730,8 +730,8 @@ try {
     path.join(root, 'package.json'),
     'utf8',
   ));
-  const stableBuilderConfig = fs.readFileSync(
-    path.join(root, 'build', 'electron-builder.stable.cjs'),
+  const releaseBuilderConfig = fs.readFileSync(
+    path.join(root, 'build', 'electron-builder.release.cjs'),
     'utf8',
   );
   const helper = fs.readFileSync(helperPath, 'utf8');
@@ -888,12 +888,12 @@ try {
     '默认 NSIS 配置不得覆盖 electron-builder installer.nsi',
   );
   assert.match(
-    stableBuilderConfig,
+    releaseBuilderConfig,
     /include:\s*['"]build\/installer\.nsh['"]/,
     '稳定版配置必须继续 include installer.nsh',
   );
   assert.doesNotMatch(
-    stableBuilderConfig,
+    releaseBuilderConfig,
     /\bscript\s*:/,
     '稳定版配置不得覆盖 electron-builder installer.nsi',
   );

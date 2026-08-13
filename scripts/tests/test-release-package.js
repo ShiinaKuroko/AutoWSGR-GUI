@@ -26,9 +26,14 @@ const sourceResources = path.join(root, 'resource');
 const packageJson = JSON.parse(
   fs.readFileSync(path.join(root, 'package.json'), 'utf8'),
 );
-const stableDistribution = {
-  id: 'latest',
-};
+const version = process.env.AUTOWSGR_RELEASE_VERSION || packageJson.version;
+const channel = /^\d+\.\d+\.\d+$/.test(version)
+  ? 'latest'
+  : /^\d+\.\d+\.\d+-alpha(?:\.\d+)?$/.test(version)
+    ? 'alpha'
+    : null;
+if (!channel) throw new Error(`不支持的发布版本: ${version}`);
+const releaseDistribution = { id: channel };
 const v6MigrationPlans = [
   'bettle-E1炸鱼.yaml',
   'bettle-E5夜战.yaml',
@@ -81,7 +86,7 @@ function assertReleasePackage(distribution) {
   const resources = path.join(unpacked, 'resources');
   const packagedResources = path.join(resources, 'resource');
   const artifactName = (
-    `AutoWSGR-GUI-Setup-${packageJson.version}.exe`
+    `AutoWSGR-GUI-Setup-${version}.exe`
   );
   const label = `${distribution.id} 包`;
 
@@ -205,7 +210,6 @@ function assertReleasePackage(distribution) {
     `${label}后端必须固定到明确提交`,
   );
 
-  const channel = packageJson.build.publish.channel;
   const appUpdate = yaml.load(fs.readFileSync(
     path.join(resources, 'app-update.yml'),
     'utf8',
@@ -241,8 +245,8 @@ function assertReleasePackage(distribution) {
 
   console.log(
     `${distribution.id} release package passed: `
-    + `${packageJson.version} (${channel})`,
+    + `${version} (${channel})`,
   );
 }
 
-assertReleasePackage(stableDistribution);
+assertReleasePackage(releaseDistribution);

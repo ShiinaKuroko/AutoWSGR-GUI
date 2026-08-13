@@ -30,6 +30,7 @@
 | 10 | [运行时边界 ADR](10-runtime-boundaries-adr.md) | 当前必须保持的架构决策 |
 | 11 | [Renderer 视觉架构](11-renderer-visual-architecture.md) | HTML partial、View、共享图库、SCSS 和生命周期 |
 | 12 | [AGENT 进入指南](12-agent-entry-guide.md) | 需求到文件映射、修改步骤、验证矩阵和止损规则 |
+| 13 | [发布版本治理](13-release-version-governance.md) | Stable/Alpha 版本号、双仓更新源和 2.1 桥接规则 |
 
 ## 三条先决规则
 

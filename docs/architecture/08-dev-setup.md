@@ -144,15 +144,19 @@ node scripts/tests/test-api-contract.js
 `.github/workflows/release.yml` 当前：
 
 1. 接受 `v*` tag 或手动触发。
-2. 只允许稳定版 `X.Y.Z`。
+2. Stable 使用 `X.Y.Z` / `latest`，Alpha 使用
+   `X.Y.Z-alpha[.N]` / `alpha`。
 3. 校验仓库中已经审查的稳定后端固定提交，不跟随移动分支。
-4. `npm run dist`。
-5. `npm run test:release-package`。
-6. 校验只生成 `latest.yml`。
-7. 发布 NSIS exe、blockmap 和稳定版更新清单。
+4. `npm run dist` 并按有效版本输出到对应频道目录。
+5. `npm run test:release-package` 校验有效频道、安装包和更新清单。
+6. Stable 发布前要求同版本线 Alpha 桥已经发布，并将桥接 Alpha 资产附加到
+   Stable Release，供旧 Alpha 客户端迁移。
+7. Stable 完整资产同时发布到旧 `yltx/AutoWSGR-GUI` feed，供 1.4.x
+   客户端发现；目标权限和版本冲突必须在构建前预检。
 
-`build/electron-builder.stable.cjs` 将输出放到 `release/latest`，并打包
-`build/backend-distribution.json`。
+`build/electron-builder.release.cjs` 根据有效版本将输出放到 `release/latest`
+或 `release/alpha`，并打包 `build/backend-distribution.json`。本地候选可通过
+`AUTOWSGR_RELEASE_VERSION` 覆盖包内版本而不修改受跟踪版本文件。
 
 ## 安装包边界
 

@@ -22,6 +22,7 @@ const {
 const {
   classifyGuiUpdateCheck,
   resolveGuiReleasePolicy,
+  resolveGuiUpdateSelectionPolicy,
   validateGuiUpdateCandidate,
 } = require('../../../dist/electron/services/GuiUpdatePolicy.js');
 const {
@@ -128,12 +129,56 @@ function testGuiUpdatePolicy() {
     null,
   );
 
+  const stableOnly = resolveGuiUpdateSelectionPolicy('2.0.1', false);
+  assert.equal(stableOnly.channel, 'latest');
+  assert.equal(stableOnly.allowPrerelease, false);
+  assert.deepEqual(stableOnly.acceptedChannels, ['latest']);
+  assert.match(
+    validateGuiUpdateCandidate(stableOnly, '2.0.2-alpha.1'),
+    /只允许 latest 频道/,
+  );
+
+  const stableWithAlpha = resolveGuiUpdateSelectionPolicy('2.0.1', true);
+  assert.equal(stableWithAlpha.channel, 'alpha');
+  assert.equal(stableWithAlpha.allowPrerelease, true);
+  assert.deepEqual(
+    stableWithAlpha.acceptedChannels,
+    ['latest', 'alpha'],
+  );
+  assert.equal(
+    validateGuiUpdateCandidate(stableWithAlpha, '2.0.2-alpha.1'),
+    null,
+  );
+  assert.equal(
+    validateGuiUpdateCandidate(stableWithAlpha, '2.0.2'),
+    null,
+  );
+
+  const alphaStableOnly = resolveGuiUpdateSelectionPolicy(
+    '2.0.2-alpha.3',
+    false,
+  );
+  assert.equal(alphaStableOnly.channel, 'latest');
+  assert.deepEqual(alphaStableOnly.acceptedChannels, ['latest']);
+  assert.equal(
+    validateGuiUpdateCandidate(alphaStableOnly, '2.0.2'),
+    null,
+  );
+  assert.match(
+    validateGuiUpdateCandidate(alphaStableOnly, '2.0.3-alpha.1'),
+    /只允许 latest 频道/,
+  );
+
   const root = path.join(__dirname, '..', '..', '..');
   const packageJson = JSON.parse(
     fs.readFileSync(path.join(root, 'package.json'), 'utf8'),
   );
   const packagePolicy = resolveGuiReleasePolicy(packageJson.version);
-  assert.equal(packageJson.build.publish.channel, packagePolicy.channel);
+  assert.equal(
+    require(path.join(root, 'build', 'electron-builder.release.cjs'))
+      .publish.channel,
+    packagePolicy.channel,
+  );
 
   const workflow = fs.readFileSync(
     path.join(root, '.github', 'workflows', 'release.yml'),
@@ -157,19 +202,31 @@ function testGuiUpdatePolicy() {
     releaseVersionStep.run,
     /Get-Content package-lock\.json\s*\|\s*ConvertFrom-Json/,
   );
-  assert.match(workflow, /稳定版版本/);
+  assert.match(workflow, /X\.Y\.Z-alpha\[\.N\]/);
   assert.match(
     workflow,
-    /release\/latest\/latest\.yml/,
+    /steps\.version\.outputs\.CHANNEL/,
   );
   assert.match(workflow, /AutoWSGR-GUI-Setup-/);
   assert.match(workflow, /Verify pinned stable backend/);
   assert.match(workflow, /manifest\.id -ne "stable"/);
-  assert.match(workflow, /prerelease: false/);
+  assert.match(workflow, /PRERELEASE/);
+  assert.match(workflow, /LEGACY_RELEASE_TOKEN/);
+  assert.match(workflow, /yltx\/AutoWSGR-GUI/);
+  assert.match(workflow, /Preflight release destinations/);
+  assert.match(workflow, /旧更新源已存在/);
+  assert.match(workflow, /同版本线 Alpha 桥接版/);
+  assert.match(workflow, /Download Alpha compatibility bridge/);
+  assert.match(workflow, /release\/alpha-compat\/\*/);
+  assert.match(workflow, /Stage stable release on legacy updater feed/);
+  assert.match(workflow, /Publish verified Stable releases/);
+  assert.match(workflow, /draft: true/);
+  assert.match(workflow, /2\.1\.0-alpha\.1/);
+  assert.match(workflow, /v2\.0\.16-alpha/);
   assert.doesNotMatch(workflow, /git ls-remote/);
   assert.doesNotMatch(workflow, /X\.Y\.Z-beta\.N/);
   assert.doesNotMatch(workflow, /X\.Y\.Z-dev\.N/);
-  assert.doesNotMatch(workflow, /release\/alpha\/alpha\.yml/);
+  assert.match(workflow, /'latest', 'alpha'/);
 }
 
 async function testGuiUpdateStartupGateAndInstaller() {
