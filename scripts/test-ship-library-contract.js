@@ -41,6 +41,14 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.j
 const resourceEntry = packageJson.build.extraResources.find(entry => entry.from === 'resource');
 assert.ok(resourceEntry, 'electron-builder must include the resource directory');
 assert.equal(resourceEntry.to, 'resource');
-assert.deepEqual(resourceEntry.filter, ['**/*']);
+assert.ok(
+  resourceEntry.filter.includes('**/*'),
+  'electron-builder must include resource contents',
+);
+assert.equal(
+  resourceEntry.filter.some(pattern => pattern.includes('ship-library')),
+  false,
+  'electron-builder resource filters must not exclude the ship library',
+);
 
 console.log(`ship library contract verified: ${manifest.ships.length} ships at ${libraryRoot}`);
