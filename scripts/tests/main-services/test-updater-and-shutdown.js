@@ -223,6 +223,8 @@ function testGuiUpdatePolicy() {
   assert.match(workflow, /draft: true/);
   assert.match(workflow, /2\.1\.0-alpha\.1/);
   assert.match(workflow, /v2\.0\.16-alpha/);
+  assert.match(workflow, /Create GitHub Releases after all gates pass/);
+  assert.match(workflow, /github\.event_name != 'workflow_dispatch'/);
   assert.doesNotMatch(workflow, /git ls-remote/);
   assert.doesNotMatch(workflow, /X\.Y\.Z-beta\.N/);
   assert.doesNotMatch(workflow, /X\.Y\.Z-dev\.N/);

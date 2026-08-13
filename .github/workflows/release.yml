@@ -5,6 +5,12 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Create GitHub Releases after all gates pass'
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -73,6 +79,7 @@ jobs:
           }
 
       - name: Preflight release destinations
+        if: github.event_name != 'workflow_dispatch' || inputs.publish
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -215,7 +222,9 @@ jobs:
             }
 
       - name: Download Alpha compatibility bridge
-        if: steps.version.outputs.CHANNEL == 'latest'
+        if: >-
+          steps.version.outputs.CHANNEL == 'latest'
+          && (github.event_name != 'workflow_dispatch' || inputs.publish)
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -243,7 +252,9 @@ jobs:
           }
 
       - name: Stage stable release on legacy updater feed
-        if: steps.version.outputs.CHANNEL == 'latest'
+        if: >-
+          steps.version.outputs.CHANNEL == 'latest'
+          && (github.event_name != 'workflow_dispatch' || inputs.publish)
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.LEGACY_RELEASE_TOKEN }}
@@ -266,7 +277,9 @@ jobs:
             @assets
 
       - name: Create Alpha Release
-        if: steps.version.outputs.CHANNEL == 'alpha'
+        if: >-
+          steps.version.outputs.CHANNEL == 'alpha'
+          && (github.event_name != 'workflow_dispatch' || inputs.publish)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.VERSION }}
@@ -288,7 +301,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create Stable Release
-        if: steps.version.outputs.CHANNEL == 'latest'
+        if: >-
+          steps.version.outputs.CHANNEL == 'latest'
+          && (github.event_name != 'workflow_dispatch' || inputs.publish)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.VERSION }}
@@ -333,7 +348,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish verified Stable releases
-        if: steps.version.outputs.CHANNEL == 'latest'
+        if: >-
+          steps.version.outputs.CHANNEL == 'latest'
+          && (github.event_name != 'workflow_dispatch' || inputs.publish)
         shell: pwsh
         env:
           PRIMARY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
