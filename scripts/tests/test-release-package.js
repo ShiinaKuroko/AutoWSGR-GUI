@@ -26,9 +26,17 @@ const sourceResources = path.join(root, 'resource');
 const packageJson = JSON.parse(
   fs.readFileSync(path.join(root, 'package.json'), 'utf8'),
 );
-const alphaDistribution = {
-  id: 'alpha',
+const releaseChannel = process.env.AUTOWSGR_RELEASE_CHANNEL
+  ?? packageJson.build.publish.channel;
+assert.ok(
+  ['alpha', 'latest'].includes(releaseChannel),
+  `不支持的发布频道: ${releaseChannel}`,
+);
+const releaseDistribution = {
+  id: releaseChannel,
+  channel: releaseChannel,
 };
+const requireAlphaCompatibility = releaseChannel === 'latest';
 const v6MigrationPlans = [
   'bettle-E1炸鱼.yaml',
   'bettle-E5夜战.yaml',
@@ -205,7 +213,7 @@ function assertReleasePackage(distribution) {
     `${label}后端必须固定到明确提交`,
   );
 
-  const channel = packageJson.build.publish.channel;
+  const channel = distribution.channel;
   const appUpdate = yaml.load(fs.readFileSync(
     path.join(resources, 'app-update.yml'),
     'utf8',
@@ -226,6 +234,11 @@ function assertReleasePackage(distribution) {
     'utf8',
   ));
   assert.equal(
+    channelManifest.version,
+    packageJson.version,
+    `${label}更新清单版本不一致`,
+  );
+  assert.equal(
     channelManifest.path,
     artifactName,
     `${label}更新清单安装包名称不一致`,
@@ -239,10 +252,32 @@ function assertReleasePackage(distribution) {
     `${label} NSIS blockmap`,
   );
 
+  if (requireAlphaCompatibility) {
+    assert.equal(
+      channel,
+      'latest',
+      '只有 Stable 包可以生成 Alpha 兼容清单',
+    );
+    const alphaManifestPath = path.join(
+      releaseDirectory,
+      'alpha.yml',
+    );
+    assertFile(alphaManifestPath, `${label} Alpha 兼容更新清单`);
+    const alphaManifest = yaml.load(fs.readFileSync(
+      alphaManifestPath,
+      'utf8',
+    ));
+    assert.deepEqual(
+      alphaManifest,
+      channelManifest,
+      `${label} Alpha 兼容清单必须指向同一 Stable 安装包`,
+    );
+  }
+
   console.log(
     `${distribution.id} release package passed: `
     + `${packageJson.version} (${channel})`,
   );
 }
 
-assertReleasePackage(alphaDistribution);
+assertReleasePackage(releaseDistribution);

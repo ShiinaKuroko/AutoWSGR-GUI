@@ -190,8 +190,12 @@ userData/.migration-state.json
 集合只负责结果校验，不会让 electron-updater 同时读取两份频道清单；Alpha 到
 Stable 的发布桥接仍必须由目标 Stable Release 提供 Alpha 兼容更新清单。
 
-当前发布 workflow 只构建 Alpha。更新检查返回
-`available | up-to-date | error`，网络错误不能显示为最新版。
+发布 workflow 按版本分别构建 `alpha` 或 `latest`。Stable Release 同时携带
+内容一致的 `latest.yml` 和 `alpha.yml`，两份清单都指向本次 Stable 安装包，
+使仍在 `alpha` 频道的客户端能够发现 Stable；不得复用旧 Alpha Release 的清单
+或安装包。workflow 只发布个人仓库，不操作主库 Tag 或 Release。
+
+更新检查返回 `available | up-to-date | error`，网络错误不能显示为最新版。
 
 下载完成后用户选择立即重启或下次启动。pending 更新必须在任何迁移和窗口创建前
 处理。

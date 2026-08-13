@@ -174,7 +174,21 @@ function testGuiUpdatePolicy() {
     fs.readFileSync(path.join(root, 'package.json'), 'utf8'),
   );
   const packagePolicy = resolveGuiReleasePolicy(packageJson.version);
-  assert.equal(packageJson.build.publish.channel, packagePolicy.channel);
+  const alphaBuildConfig = require(path.join(
+    root,
+    'build',
+    'electron-builder.alpha.cjs',
+  ));
+  const stableBuildConfig = require(path.join(
+    root,
+    'build',
+    'electron-builder.stable.cjs',
+  ));
+  const releaseBuildConfig = packagePolicy.channel === 'latest'
+    ? stableBuildConfig
+    : alphaBuildConfig;
+  assert.equal(releaseBuildConfig.publish.channel, packagePolicy.channel);
+  assert.equal(stableBuildConfig.directories.output, 'release/latest');
 
   const workflow = fs.readFileSync(
     path.join(root, '.github', 'workflows', 'release.yml'),
@@ -186,9 +200,18 @@ function testGuiUpdatePolicy() {
     workflow,
     /release\/alpha\/alpha\.yml/,
   );
+  assert.match(workflow, /npm run dist:stable/);
+  assert.match(
+    workflow,
+    /Copy-Item -LiteralPath \$latest -Destination \$alpha/,
+  );
+  assert.match(workflow, /release\/latest\/latest\.yml/);
+  assert.match(workflow, /release\/latest\/alpha\.yml/);
   assert.match(workflow, /AutoWSGR-GUI-Setup-/);
   assert.match(workflow, /Pin latest Alpha backend/);
   assert.match(workflow, /ShiinaKuroko\/AutoWSGR/);
+  assert.doesNotMatch(workflow, /yltx\/AutoWSGR-GUI/);
+  assert.doesNotMatch(workflow, /LEGACY_RELEASE_TOKEN/);
   assert.doesNotMatch(workflow, /X\.Y\.Z-beta\.N/);
   assert.doesNotMatch(workflow, /X\.Y\.Z-dev\.N/);
   assert.doesNotMatch(workflow, /^\s+release\/latest\.yml\s*$/m);
