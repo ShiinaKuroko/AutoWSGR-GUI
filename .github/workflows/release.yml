@@ -5,12 +5,6 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      prerelease:
-        description: '标记为预发布'
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -32,8 +26,12 @@ jobs:
             $pkg = Get-Content package.json | ConvertFrom-Json
             $ver = $pkg.version
           }
+          if ($ver -notmatch '^\d+\.\d+\.\d+$') {
+            throw "稳定版版本 $ver 不符合 X.Y.Z"
+          }
           echo "VERSION=$ver" >> $env:GITHUB_OUTPUT
-          echo "Resolved version: $ver"
+          echo "CHANNEL=latest" >> $env:GITHUB_OUTPUT
+          echo "Resolved stable version: $ver"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -44,12 +42,93 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Sync package.json version
+      - name: Verify checked-in release version
         shell: pwsh
         run: |
           $pkg = Get-Content package.json | ConvertFrom-Json
-          $pkg.version = "${{ steps.version.outputs.VERSION }}"
-          $pkg | ConvertTo-Json -Depth 10 | Set-Content package.json -Encoding UTF8
+          $lockVersion = node -p "require('./package-lock.json').version"
+          if ($LASTEXITCODE -ne 0) {
+            throw "无法读取 package-lock.json 版本"
+          }
+          $lockRootVersion = node -p "require('./package-lock.json').packages[''].version"
+          if ($LASTEXITCODE -ne 0) {
+            throw "无法读取 package-lock.json 根包版本"
+          }
+          if ($pkg.version -ne "${{ steps.version.outputs.VERSION }}") {
+            throw "package.json 版本与 tag 不一致"
+          }
+          if ($lockVersion -ne $pkg.version -or $lockRootVersion -ne $pkg.version) {
+            throw "package-lock.json 版本与 package.json 不一致"
+          }
+          if ($pkg.build.publish.channel -ne "latest") {
+            throw "稳定版必须发布到 latest 频道"
+          }
+
+      - name: Verify pinned stable backend
+        id: backend
+        shell: pwsh
+        run: |
+          $manifest = Get-Content build/backend-distribution.json |
+            ConvertFrom-Json
+          if ($manifest.id -ne "stable") {
+            throw "后端发行清单必须使用 stable id"
+          }
+          if ($manifest.commit -notmatch '^[0-9a-f]{40}$') {
+            throw "后端发行清单必须固定到明确提交"
+          }
+          echo "repository=$($manifest.repository)" >> $env:GITHUB_OUTPUT
+          echo "commit=$($manifest.commit)" >> $env:GITHUB_OUTPUT
+          echo "Pinned backend: $($manifest.repository)@$($manifest.commit)"
+
+      - name: Checkout pinned AutoWSGR backend
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.backend.outputs.repository }}
+          ref: ${{ steps.backend.outputs.commit }}
+          path: AutoWSGR
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install pinned backend dependencies
+        shell: pwsh
+        run: |
+          uv sync --project AutoWSGR --no-dev
+          uv pip install `
+            --python AutoWSGR/.venv/Scripts/python.exe `
+            "requests>=2.32.5" `
+            "beautifulsoup4>=4.12.0"
+
+      - name: Run stable release gates
+        shell: pwsh
+        run: |
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          node scripts/sync-map-resources.js --backend "${{ github.workspace }}/AutoWSGR" --check
+          npm run test:build
+          npm run test:migrations
+          npm run test:main-services
+          npm run test:main-ipc
+          npm run test:scheduler-domain
+          npm run test:fleet-domain
+          npm run test:settings
+          npm run test:python-environment
+          npm run test:backend-distribution
+          npm run test:event-resources
+          npm run test:plan-management-delete
+          npm run test:daily-sortie-stats
+          npm run test:ship-library-updater
+          npm run test:ocr-log-analyzer
+          npm run test:map-intel
+          $env:AUTOWSGR_REPO = "${{ github.workspace }}/AutoWSGR"
+          $env:AUTOWSGR_PYTHON = "${{ github.workspace }}/AutoWSGR/.venv/Scripts/python.exe"
+          npm run test:api-contract
 
       - name: Build & Package
         run: npm run dist
@@ -60,25 +139,59 @@ jobs:
         shell: pwsh
         run: Get-ChildItem -Path release -Recurse -File | Select-Object FullName, Length
 
+      - name: Verify packaged runtime and resources
+        run: npm run test:release-package
+
+      - name: Verify update channel metadata
+        shell: pwsh
+        run: |
+          $stableRelease = Join-Path release "latest"
+          $expected = Join-Path $stableRelease "latest.yml"
+          if (-not (Test-Path $expected)) {
+            throw "缺少稳定版更新清单: $expected"
+          }
+          @('alpha', 'beta', 'dev') |
+            ForEach-Object {
+              $unexpected = Join-Path $stableRelease "$_.yml"
+              if (Test-Path $unexpected) {
+                throw "发布产物混入其他频道清单: $unexpected"
+              }
+            }
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.VERSION }}
           name: AutoWSGR-GUI v${{ steps.version.outputs.VERSION }}
-          prerelease: ${{ github.event.inputs.prerelease == 'true' }}
+          prerelease: false
           generate_release_notes: true
           files: |
-            release/*-Setup-*.exe
-            release/*.exe.blockmap
-            release/latest.yml
+            release/latest/AutoWSGR-GUI-Setup-*.exe
+            release/latest/*.exe.blockmap
+            release/latest/latest.yml
           body: |
             ## AutoWSGR-GUI v${{ steps.version.outputs.VERSION }}
 
-            ### 使用方法
-            1. 下载 `AutoWSGR-GUI-Setup-*.exe`（安装版）
+            GUI 2.0.0 正式稳定版，使用 `latest` 更新频道。
+
+            ### 主要变化
+            - 主导航统一为“作战 / 计划 / 设置”
+            - 新增可视化舰队规划、出征规划和计划管理
+            - 系统只读资源与用户配置、计划分离，执行前展开舰队引用
+            - 完善任务列表、执行队列、迁移、环境管理和更新边界
+
+            ### 安装与升级
+            1. 下载 `AutoWSGR-GUI-Setup-*.exe`
             2. 软件已内置 Python 3.12，无需单独安装
             3. 首次运行时程序会自动安装 Python 依赖（需联网）
-            4. 已安装用户将自动收到增量更新提示
+            4. 1.4.x 覆盖升级会先将旧用户数据备份到 `%LOCALAPPDATA%\AutoWSGR-GUI\legacy-upgrade`；确认迁移结果前不要删除该目录
+            5. 包括 `2.0.16-alpha` 在内的 Alpha 客户端不会跨频道自动切换到稳定版，需要手动运行本安装包
+
+            ### 自动强化
+            2.0.0 仅保存自动强化策略，不加入 Scheduler，生产路径为零后端调用，也不会操作舰船。
+
+            ### 回退
+            如需回退，请退出 2.0，使用旧安装器重新安装，并从 `legacy-upgrade` 备份恢复旧格式数据；不要让旧版直接写入或覆盖唯一的 2.0 `userData`。
 
             ### 系统要求
             - Windows 10/11 x64
