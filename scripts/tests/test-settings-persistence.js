@@ -399,6 +399,7 @@ async function runRendererTest(root, tempDirectory) {
     {
       ...sample,
       battleTimes: 8,
+      allowTestUpdates: false,
     },
     '设置页必须把历史战役次数强制归一化为 8',
   );
@@ -1293,6 +1294,33 @@ async function runRendererTest(root, tempDirectory) {
     },
     '旧版决战自动化原值没有被逐字段读取',
   );
+  const modelWithEmptyLegacyDecisiveTemplate = new ConfigModel();
+  modelWithEmptyLegacyDecisiveTemplate.loadFromYaml([
+    'daily_automation:',
+    "  decisive_template_id: ''",
+    '',
+  ].join('\n'));
+  rendererAssert.deepStrictEqual(
+    modelWithEmptyLegacyDecisiveTemplate.migratedLegacyDecisiveAutomation,
+    {},
+    '空旧版决战模板 ID 不应迁移为有效模板',
+  );
+  rendererAssert.deepStrictEqual(
+    modelWithEmptyLegacyDecisiveTemplate.unmigratedLegacyDecisiveFields,
+    [],
+    '空旧版决战模板 ID 表示未选择模板，不应报告格式错误',
+  );
+  const modelWithInvalidLegacyDecisiveTemplate = new ConfigModel();
+  modelWithInvalidLegacyDecisiveTemplate.loadFromYaml([
+    'daily_automation:',
+    '  decisive_template_id: 6',
+    '',
+  ].join('\n'));
+  rendererAssert.deepStrictEqual(
+    modelWithInvalidLegacyDecisiveTemplate.unmigratedLegacyDecisiveFields,
+    ['decisive_template_id'],
+    '非字符串旧版决战模板 ID 必须继续原样保留并报告格式错误',
+  );
   rendererAssert.deepStrictEqual(model.current.intensify, {
     target_ship: '胡德',
     material_ship_types: ['AP', 'BBG'],
@@ -1360,6 +1388,7 @@ async function runRendererTest(root, tempDirectory) {
       );
       writeGuiSettings({
         update_mode: request.updateMode,
+        allow_test_updates: request.allowTestUpdates,
         backend_port: request.backendPort,
         backend_startup_mode: request.backendStartupMode,
         backend_repo_path: request.backendRepoPath ?? '',
@@ -2149,6 +2178,7 @@ async function runRendererTest(root, tempDirectory) {
     'cfg-window-height',
     'cfg-remember-window-bounds',
     'cfg-update-mode',
+    'cfg-allow-test-updates',
     'cfg-theme-mode',
     'cfg-accent-color',
     'cfg-delay-min-range',

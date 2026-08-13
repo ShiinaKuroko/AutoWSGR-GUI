@@ -171,6 +171,7 @@ function createServices(userData, tempRoot) {
       combatRepository,
       teamRepository,
       atomicFiles,
+      combatCodec,
     ),
   };
 }

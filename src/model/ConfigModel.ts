@@ -681,11 +681,10 @@ export class ConfigModel {
         'decisive_template_id',
       )
     ) {
-      if (
-        typeof daily.decisive_template_id === 'string'
-        && daily.decisive_template_id.length > 0
-      ) {
-        output.templateId = daily.decisive_template_id;
+      if (typeof daily.decisive_template_id === 'string') {
+        if (daily.decisive_template_id.length > 0) {
+          output.templateId = daily.decisive_template_id;
+        }
       } else {
         invalid.push('decisive_template_id');
       }
