@@ -202,6 +202,7 @@ const planExportService = new PlanExportService(
   combatPlanRepository,
   teamPlanRepository,
   atomicFileStore,
+  combatPlanCodec,
 );
 const shipLibraryService = new ShipLibraryService(appPaths, {
   processId: process.pid,

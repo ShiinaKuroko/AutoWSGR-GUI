@@ -461,6 +461,9 @@ export interface ElectronBridge {
   exportUserPlans: (
     selections: UserPlanExportSelection[],
   ) => Promise<UserPlanExportResult>;
+  exportLegacy143Plans: (
+    selections: UserPlanExportSelection[],
+  ) => Promise<UserPlanExportResult>;
   importLocalCombatPlan: () => Promise<PlanFileOperationResult>;
   setPlanUnlinkedIgnored: (
     kind: 'battle' | 'team',
