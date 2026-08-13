@@ -34,6 +34,9 @@ export class PlanManagementView {
   onExportPlans?: (
     selections: readonly UserPlanExportSelection[],
   ) => Promise<void>;
+  onExportLegacy143Plans?: (
+    selections: readonly UserPlanExportSelection[],
+  ) => Promise<void>;
   onDeletePlans?: (
     selections: readonly UserPlanExportSelection[],
   ) => Promise<void>;
@@ -87,6 +90,9 @@ export class PlanManagementView {
   private readonly deleteButton = document.getElementById(
     'btn-delete-user-plans',
   ) as HTMLButtonElement | null;
+  private readonly legacyExportButton = document.getElementById(
+    'btn-export-legacy-143-plans',
+  ) as HTMLButtonElement | null;
 
   private source: ManagementSource = 'all';
   private kind: ManagementKind = 'all';
@@ -131,6 +137,14 @@ export class PlanManagementView {
       });
     this.exportButton?.addEventListener('click', () => {
       void this.exportSelectedPlans();
+    });
+    this.legacyExportButton?.addEventListener('click', () => {
+      const selections = filterVisibleSelections(
+        this.visibleSelections,
+        this.selections,
+        selection => this.selectionKey(selection),
+      ).filter(selection => selection.kind === 'battle');
+      void this.onExportLegacy143Plans?.(selections);
     });
     this.deleteButton?.addEventListener('click', () => {
       void this.deleteSelectedPlans();
@@ -626,6 +640,17 @@ export class PlanManagementView {
       this.exportButton.title = this.selections.size > 0
         ? `导出已选择的 ${this.selections.size} 个用户配置`
         : '请先选择用户配置';
+    }
+    if (this.legacyExportButton) {
+      const battleCount = [...this.selections.values()].filter(
+        selection => selection.kind === 'battle',
+      ).length;
+      this.legacyExportButton.disabled = (
+        this.exporting || this.deleting || battleCount === 0
+      );
+      this.legacyExportButton.title = battleCount > 0
+        ? `导出 ${battleCount} 个 1.4.3 兼容出征计划`
+        : '请先选择用户出征计划';
     }
     if (this.deleteButton) {
       this.deleteButton.disabled = (

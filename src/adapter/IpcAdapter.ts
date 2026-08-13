@@ -124,6 +124,7 @@ export type ConfigurationGateway = Pick<
   | 'getBackendStartupMode'
   | 'getCudaPath'
   | 'getGuiAutomationSettings'
+  | 'getAllowTestUpdates'
   | 'getOcrGpuMode'
   | 'getPythonPath'
   | 'getSaveBackendScreenshots'
@@ -244,6 +245,7 @@ export type FleetPlannerRepository = Pick<
   | 'listTeamPlans'
   | 'getPlanManagement'
   | 'exportUserPlans'
+  | 'exportLegacy143Plans'
   | 'setPlanUnlinkedIgnored'
   | 'renameUserCombatPlan'
   | 'deleteUserCombatPlan'
@@ -274,6 +276,10 @@ export const fleetPlannerRepository: FleetPlannerRepository = {
 
   exportUserPlans(selections) {
     return getRendererIpc().bridge.exportUserPlans(selections);
+  },
+
+  exportLegacy143Plans(selections) {
+    return getRendererIpc().bridge.exportLegacy143Plans(selections);
   },
 
   setPlanUnlinkedIgnored(kind, source, file, ignored) {

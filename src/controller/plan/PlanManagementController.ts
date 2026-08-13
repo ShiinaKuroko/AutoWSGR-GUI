@@ -24,6 +24,7 @@ export type PlanManagementRepository = Pick<
   FleetPlannerRepository,
   | 'getPlanManagement'
   | 'exportUserPlans'
+  | 'exportLegacy143Plans'
   | 'setPlanUnlinkedIgnored'
   | 'renameUserCombatPlan'
   | 'deleteUserCombatPlan'
@@ -68,6 +69,9 @@ export class PlanManagementController {
     this.view = view;
     this.view.onRefresh = () => this.load();
     this.view.onExportPlans = selections => this.exportPlans(selections);
+    this.view.onExportLegacy143Plans = selections => (
+      this.exportLegacy143Plans(selections)
+    );
     this.view.onDeletePlans = selections => this.deletePlans(selections);
     this.view.onToggleUnlinked = (
       kind,
@@ -151,6 +155,32 @@ export class PlanManagementController {
     } catch (error) {
       await this.dialogs.alert(
         '导出失败',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async exportLegacy143Plans(
+    selections: readonly UserPlanExportSelection[],
+  ): Promise<void> {
+    try {
+      const result = await this.repository.exportLegacy143Plans(
+        selections.filter(selection => selection.kind === 'battle'),
+      );
+      if (result.canceled) return;
+      if (!result.success) {
+        await this.dialogs.alert(
+          '降级备份失败',
+          result.error || '未知错误',
+        );
+        return;
+      }
+      this.dialogs.success(
+        `已保存 ${result.count ?? 0} 个 1.4.3 兼容出征计划`,
+      );
+    } catch (error) {
+      await this.dialogs.alert(
+        '降级备份失败',
         error instanceof Error ? error.message : String(error),
       );
     }
