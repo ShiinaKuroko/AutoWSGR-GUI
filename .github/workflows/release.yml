@@ -57,16 +57,10 @@ jobs:
           if ($pkg.version -ne $version) {
             throw "package.json 版本与发布版本不一致"
           }
-          if (
-            $lockVersion -ne $version
-            -or $lockRootVersion -ne $version
-          ) {
+          if ($lockVersion -ne $version -or $lockRootVersion -ne $version) {
             throw "package-lock.json 版本与发布版本不一致"
           }
-          if (
-            $pkg.build.publish.owner -ne "ShiinaKuroko"
-            -or $pkg.build.publish.repo -ne "AutoWSGR-GUI"
-          ) {
+          if ($pkg.build.publish.owner -ne "ShiinaKuroko" -or $pkg.build.publish.repo -ne "AutoWSGR-GUI") {
             throw "发布目标必须保持为 ShiinaKuroko/AutoWSGR-GUI"
           }
 
