@@ -201,16 +201,15 @@ function testGuiUpdatePolicy() {
     /release\/alpha\/alpha\.yml/,
   );
   assert.match(workflow, /npm run dist:stable/);
-  assert.match(
-    workflow,
-    /Copy-Item -LiteralPath \$latest -Destination \$alpha/,
-  );
+  assert.match(workflow, /Download Alpha compatibility bridge/);
+  assert.match(workflow, /release[\\/]alpha-compat/);
+  assert.match(workflow, /gh release download \$bridgeTag/);
   assert.match(workflow, /release\/latest\/latest\.yml/);
-  assert.match(workflow, /release\/latest\/alpha\.yml/);
+  assert.doesNotMatch(workflow, /release\/latest\/alpha\.yml/);
   assert.match(workflow, /AutoWSGR-GUI-Setup-/);
-  assert.match(workflow, /Pin latest Alpha backend/);
+  assert.match(workflow, /Verify pinned backend/);
   assert.match(workflow, /ShiinaKuroko\/AutoWSGR/);
-  assert.doesNotMatch(workflow, /yltx\/AutoWSGR-GUI/);
+  assert.doesNotMatch(workflow, /Set-Content build\/backend-distribution\.json/);
   assert.doesNotMatch(workflow, /LEGACY_RELEASE_TOKEN/);
   assert.doesNotMatch(workflow, /X\.Y\.Z-beta\.N/);
   assert.doesNotMatch(workflow, /X\.Y\.Z-dev\.N/);

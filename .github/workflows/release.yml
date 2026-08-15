@@ -64,28 +64,22 @@ jobs:
             throw "发布目标必须保持为 ShiinaKuroko/AutoWSGR-GUI"
           }
 
-      - name: Pin latest Alpha backend
+      - name: Verify pinned backend
         shell: pwsh
         run: |
-          $backendRepository = "ShiinaKuroko/AutoWSGR"
-          $backendRef = "ShiinaKuroko"
-          $remote = git ls-remote `
-            "https://github.com/$backendRepository.git" `
-            "refs/heads/$backendRef"
-          $backendCommit = ($remote -split '\s+')[0]
-          if ($backendCommit -notmatch '^[0-9a-f]{40}$') {
-            throw "无法解析 $backendRepository@$backendRef 的提交"
-          }
           $manifest = Get-Content build/backend-distribution.json |
             ConvertFrom-Json
-          $manifest.id = "alpha"
-          $manifest.repository = $backendRepository
-          $manifest.ref = $backendRef
-          $manifest.commit = $backendCommit
-          $manifest.forceUpdateOnInstall = $true
-          $manifest | ConvertTo-Json -Depth 10 |
-            Set-Content build/backend-distribution.json -Encoding UTF8
-          echo "Pinned backend: $backendRepository@$backendCommit"
+          if ($manifest.commit -notmatch '^[0-9a-f]{40}$') {
+            throw "后端发行清单必须固定到明确提交"
+          }
+          $remote = git ls-remote `
+            "https://github.com/$($manifest.repository).git" `
+            "refs/heads/$($manifest.ref)"
+          $remoteCommit = ($remote -split '\s+')[0]
+          if ($remoteCommit -ne $manifest.commit) {
+            throw "后端分支与固定提交不一致: $remoteCommit != $($manifest.commit)"
+          }
+          echo "Pinned backend: $($manifest.repository)@$($manifest.commit)"
 
       - name: Build & Package
         shell: pwsh
@@ -102,17 +96,33 @@ jobs:
         shell: pwsh
         run: Get-ChildItem -Path release -Recurse -File | Select-Object FullName, Length
 
-      - name: Create Alpha compatibility manifest
+      - name: Download Alpha compatibility bridge
         if: steps.version.outputs.CHANNEL == 'latest'
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $releaseRoot = Join-Path release "latest"
-          $latest = Join-Path $releaseRoot "latest.yml"
-          $alpha = Join-Path $releaseRoot "alpha.yml"
-          if (-not (Test-Path $latest)) {
-            throw "缺少 Stable 更新清单: $latest"
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $bridgeTag = gh release list `
+            --repo "${{ github.repository }}" `
+            --limit 100 `
+            --json tagName,isPrerelease `
+            --jq ".[] | select(.isPrerelease == true and (.tagName | startswith(\"v$version-alpha\"))) | .tagName" |
+            Select-Object -First 1
+          if (-not $bridgeTag) {
+            throw "找不到 Stable v$version 对应的 Alpha 桥接版"
           }
-          Copy-Item -LiteralPath $latest -Destination $alpha
+          $compat = Join-Path release "alpha-compat"
+          New-Item -ItemType Directory -Path $compat -Force | Out-Null
+          gh release download $bridgeTag `
+            --repo "${{ github.repository }}" `
+            --dir $compat `
+            --pattern 'alpha.yml' `
+            --pattern 'AutoWSGR-GUI-Setup-*.exe' `
+            --pattern 'AutoWSGR-GUI-Setup-*.exe.blockmap'
+          if (-not (Test-Path (Join-Path $compat 'alpha.yml'))) {
+            throw "Alpha 桥接资产不完整"
+          }
 
       - name: Verify packaged runtime and resources
         run: npm run test:release-package
@@ -128,11 +138,7 @@ jobs:
           if (-not (Test-Path $expected)) {
             throw "缺少 $channel 更新清单: $expected"
           }
-          $allowed = if ($channel -eq 'latest') {
-            @('latest', 'alpha')
-          } else {
-            @('alpha')
-          }
+          $allowed = @($channel)
           @('latest', 'beta', 'dev') |
             Where-Object { $_ -notin $allowed } |
             ForEach-Object {
@@ -181,12 +187,12 @@ jobs:
             release/latest/AutoWSGR-GUI-Setup-*.exe
             release/latest/*.exe.blockmap
             release/latest/latest.yml
-            release/latest/alpha.yml
+            release/alpha-compat/*
           body: |
             ## AutoWSGR-GUI v${{ steps.version.outputs.VERSION }}
 
-            本版本使用 `latest` 更新频道，并提供指向同一 Stable 安装包的
-            `alpha.yml`，使已安装的 Alpha 客户端能够完成升级。
+            本版本使用 `latest` 更新频道，并携带 `v2.1.0-alpha.1` 桥接资产，
+            使仍停留在旧 2.0 Alpha 的客户端先进入桥接版，再切换到 Stable。
 
             设置中关闭“允许测试版更新”时只接收 Stable；开启后也可接收
             版本号更高的 Alpha。
