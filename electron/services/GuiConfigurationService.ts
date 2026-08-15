@@ -49,7 +49,6 @@ export interface GuiConfigurationDependencies {
   clearPythonCache(): void;
   normalizeCudaPath(candidate: string): string;
   environmentPort?(): string | undefined;
-  defaultAllowTestUpdates?(): boolean;
 }
 
 /** 只接受有限数字或非空数字字符串，避免把 null/false 当成 0。 */
@@ -130,11 +129,7 @@ export class GuiConfigurationService {
 
   /** 是否使用个人 GUI 与后端组成的 Alpha 更新通道。 */
   allowTestUpdates(): boolean {
-    const settings = this.store.read();
-    if (typeof settings.allow_test_updates === 'boolean') {
-      return settings.allow_test_updates;
-    }
-    return this.dependencies.defaultAllowTestUpdates?.() === true;
+    return this.store.read().allow_test_updates === true;
   }
 
   /** 返回 managed 或 external 后端启动模式。 */
