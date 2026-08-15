@@ -298,22 +298,18 @@ function testGuiConfigurationService() {
 
   assert.equal(service.updateMode(), 'auto');
   assert.equal(service.allowTestUpdates(), false);
-  const alphaSettingsPath = path.join(
-    temporaryDirectory,
-    'alpha_gui_configuration.json',
+  const channelStore = new GuiSettingsStore(
+    () => path.join(temporaryDirectory, 'channel_configuration.json'),
+    new AtomicFileStore(),
   );
-  const alphaService = new GuiConfigurationService(
-    new GuiSettingsStore(
-      () => alphaSettingsPath,
-      new AtomicFileStore(),
-    ),
-    {
-      clearPythonCache: () => {},
-      normalizeCudaPath: candidate => candidate,
-      defaultAllowTestUpdates: () => true,
-    },
-  );
-  assert.equal(alphaService.allowTestUpdates(), true);
+  const channelService = new GuiConfigurationService(channelStore, {
+    clearPythonCache: () => {},
+    normalizeCudaPath: candidate => candidate,
+  });
+  channelStore.write({ allow_test_updates: true });
+  assert.equal(channelService.allowTestUpdates(), true);
+  channelStore.write({ allow_test_updates: false });
+  assert.equal(channelService.allowTestUpdates(), false);
   service.setUpdateMode('manual');
   assert.equal(service.updateMode(), 'manual');
   service.setUpdateMode('invalid');

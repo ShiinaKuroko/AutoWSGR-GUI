@@ -243,10 +243,6 @@ const guiConfigurationService = new GuiConfigurationService(
       cudaEnvironmentService.normalizePath(candidate)
     ),
     environmentPort: () => process.env.AUTOWSGR_PORT,
-    defaultAllowTestUpdates: () => (
-      resolveGuiUpdateSelectionPolicy(app.getVersion(), true).stage
-        === 'prerelease'
-    ),
   },
 );
 const pythonEnvironmentService = new PythonEnvironmentService(
