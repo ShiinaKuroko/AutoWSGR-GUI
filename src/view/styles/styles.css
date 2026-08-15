@@ -6771,6 +6771,21 @@ input[type=checkbox]:focus-visible {
   align-items: flex-end;
 }
 
+.config-update-channel-control {
+  flex-wrap: wrap;
+}
+.config-update-channel-control .config-update-channel-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: right;
+}
+.config-update-channel-control .config-switch {
+  flex: 0 0 auto;
+}
+
 .config-auto-task-control {
   flex-wrap: nowrap;
 }
