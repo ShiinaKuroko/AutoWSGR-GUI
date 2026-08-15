@@ -22,18 +22,6 @@
               </div>
               <div class="config-setting-row">
                 <div class="config-setting-copy">
-                  <strong>更新通道</strong>
-                  <span>Stable 使用主库 GUI 与后端；Alpha 使用个人仓库，可快速预览正在开发的新功能，但可能遇到尚未修复的 BUG。后端将在重启后切换。</span>
-                </div>
-                <div class="config-setting-control">
-                  <select id="cfg-allow-test-updates" class="input" data-config-select-width="180">
-                    <option value="stable">稳定版（Stable）</option>
-                    <option value="alpha">预览版（Alpha）</option>
-                  </select>
-                </div>
-              </div>
-              <div class="config-setting-row">
-                <div class="config-setting-copy">
                   <strong>模拟器路径</strong>
                   <span>模拟器程序路径，留空时由后端自动检测。</span>
                 </div>
@@ -210,6 +198,19 @@
                     <input type="checkbox" id="cfg-remember-window-bounds">
                     <span class="config-switch-track" aria-hidden="true"></span>
                     <span>启用</span>
+                  </label>
+                </div>
+              </div>
+              <div class="config-setting-row">
+                <div class="config-setting-copy">
+                  <strong>更新渠道</strong>
+                  <span>关闭时只接受稳定版推送，开启优先接受预览版推送。</span>
+                </div>
+                <div class="config-setting-control">
+                  <label class="config-switch">
+                    <input type="checkbox" id="cfg-allow-test-updates">
+                    <span class="config-switch-track" aria-hidden="true"></span>
+                    <span>开启</span>
                   </label>
                 </div>
               </div>
