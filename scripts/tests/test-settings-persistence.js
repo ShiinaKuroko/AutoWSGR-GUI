@@ -134,6 +134,7 @@ async function runRendererTest(root, tempDirectory) {
     emulatorSerial: '127.0.0.1:26555',
     gameApp: '小米',
     updateMode: 'manual',
+    allowTestUpdates: true,
     autoExpedition: false,
     expeditionInterval: 23,
     autoBattle: true,
@@ -1285,6 +1286,7 @@ async function runRendererTest(root, tempDirectory) {
 
   const guiSettings = {
     preserved_key: 'keep',
+    allow_test_updates: true,
     decisive_plan: {
       chapter: 5,
       use_quick_repair: false,
@@ -1323,6 +1325,7 @@ async function runRendererTest(root, tempDirectory) {
       exists: Boolean(guiSettings.automation),
       settings: structuredClone(guiSettings.automation ?? {}),
     }),
+    getAllowTestUpdates: () => guiSettings.allow_test_updates === true,
     setGuiAutomationSettings: async settings => {
       if (failGuiAutomationMigration) {
         throw new Error('模拟 GUI 自动化配置写入失败');
@@ -1343,6 +1346,7 @@ async function runRendererTest(root, tempDirectory) {
       );
       writeGuiSettings({
         update_mode: request.updateMode,
+        allow_test_updates: request.allowTestUpdates,
         backend_port: request.backendPort,
         backend_startup_mode: request.backendStartupMode,
         backend_repo_path: request.backendRepoPath ?? '',
@@ -2075,6 +2079,7 @@ async function runRendererTest(root, tempDirectory) {
     'cfg-window-height',
     'cfg-remember-window-bounds',
     'cfg-update-mode',
+    'cfg-allow-test-updates',
     'cfg-theme-mode',
     'cfg-accent-color',
     'cfg-delay-min-range',

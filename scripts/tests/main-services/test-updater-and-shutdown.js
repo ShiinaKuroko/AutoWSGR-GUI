@@ -22,6 +22,7 @@ const {
 const {
   classifyGuiUpdateCheck,
   resolveGuiReleasePolicy,
+  resolveGuiUpdateSelectionPolicy,
   validateGuiUpdateCandidate,
 } = require('../../../dist/electron/services/GuiUpdatePolicy.js');
 const {
@@ -128,12 +129,66 @@ function testGuiUpdatePolicy() {
     null,
   );
 
+  const stableOnly = resolveGuiUpdateSelectionPolicy('2.0.1', false);
+  assert.equal(stableOnly.channel, 'latest');
+  assert.equal(stableOnly.allowPrerelease, false);
+  assert.deepEqual(stableOnly.acceptedChannels, ['latest']);
+  assert.match(
+    validateGuiUpdateCandidate(stableOnly, '2.0.2-alpha.1'),
+    /只允许 latest 频道/,
+  );
+
+  const stableWithAlpha = resolveGuiUpdateSelectionPolicy('2.0.1', true);
+  assert.equal(stableWithAlpha.channel, 'alpha');
+  assert.equal(stableWithAlpha.allowPrerelease, true);
+  assert.deepEqual(
+    stableWithAlpha.acceptedChannels,
+    ['latest', 'alpha'],
+  );
+  assert.equal(
+    validateGuiUpdateCandidate(stableWithAlpha, '2.0.2-alpha.1'),
+    null,
+  );
+  assert.equal(
+    validateGuiUpdateCandidate(stableWithAlpha, '2.0.2'),
+    null,
+  );
+
+  const alphaStableOnly = resolveGuiUpdateSelectionPolicy(
+    '2.0.2-alpha.3',
+    false,
+  );
+  assert.equal(alphaStableOnly.channel, 'latest');
+  assert.deepEqual(alphaStableOnly.acceptedChannels, ['latest']);
+  assert.equal(
+    validateGuiUpdateCandidate(alphaStableOnly, '2.0.2'),
+    null,
+  );
+  assert.match(
+    validateGuiUpdateCandidate(alphaStableOnly, '2.0.3-alpha.1'),
+    /只允许 latest 频道/,
+  );
+
   const root = path.join(__dirname, '..', '..', '..');
   const packageJson = JSON.parse(
     fs.readFileSync(path.join(root, 'package.json'), 'utf8'),
   );
   const packagePolicy = resolveGuiReleasePolicy(packageJson.version);
-  assert.equal(packageJson.build.publish.channel, packagePolicy.channel);
+  const alphaBuildConfig = require(path.join(
+    root,
+    'build',
+    'electron-builder.alpha.cjs',
+  ));
+  const stableBuildConfig = require(path.join(
+    root,
+    'build',
+    'electron-builder.stable.cjs',
+  ));
+  const releaseBuildConfig = packagePolicy.channel === 'latest'
+    ? stableBuildConfig
+    : alphaBuildConfig;
+  assert.equal(releaseBuildConfig.publish.channel, packagePolicy.channel);
+  assert.equal(stableBuildConfig.directories.output, 'release/latest');
 
   const workflow = fs.readFileSync(
     path.join(root, '.github', 'workflows', 'release.yml'),
@@ -145,9 +200,17 @@ function testGuiUpdatePolicy() {
     workflow,
     /release\/alpha\/alpha\.yml/,
   );
+  assert.match(workflow, /npm run dist:stable/);
+  assert.match(workflow, /Download Alpha compatibility bridge/);
+  assert.match(workflow, /release[\\/]alpha-compat/);
+  assert.match(workflow, /gh release download \$bridgeTag/);
+  assert.match(workflow, /release\/latest\/latest\.yml/);
+  assert.doesNotMatch(workflow, /release\/latest\/alpha\.yml/);
   assert.match(workflow, /AutoWSGR-GUI-Setup-/);
-  assert.match(workflow, /Pin latest Alpha backend/);
+  assert.match(workflow, /Verify pinned backend/);
   assert.match(workflow, /ShiinaKuroko\/AutoWSGR/);
+  assert.doesNotMatch(workflow, /Set-Content build\/backend-distribution\.json/);
+  assert.doesNotMatch(workflow, /LEGACY_RELEASE_TOKEN/);
   assert.doesNotMatch(workflow, /X\.Y\.Z-beta\.N/);
   assert.doesNotMatch(workflow, /X\.Y\.Z-dev\.N/);
   assert.doesNotMatch(workflow, /^\s+release\/latest\.yml\s*$/m);

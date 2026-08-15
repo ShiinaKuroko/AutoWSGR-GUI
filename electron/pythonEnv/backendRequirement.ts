@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 export interface BackendDistribution {
-  id: 'alpha';
+  id: 'alpha' | 'stable';
   repository: string;
   ref: string;
   commit: string;
@@ -16,10 +16,10 @@ export interface BackendDistribution {
 }
 
 const DEFAULT_DISTRIBUTION: BackendDistribution = {
-  id: 'alpha',
+  id: 'stable',
   repository: 'ShiinaKuroko/AutoWSGR',
   ref: 'ShiinaKuroko',
-  commit: '35eda39ebe06c7550da384bb404e1212c9ba2da5',
+  commit: '77f34b7b30d18f7b86cf736bdd5cf17ae35d5f78',
   forceUpdateOnInstall: true,
 };
 
@@ -34,7 +34,7 @@ function readBackendDistribution(): BackendDistribution {
   try {
     const raw = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
     if (
-      raw.id === 'alpha'
+      (raw.id === 'alpha' || raw.id === 'stable')
       && typeof raw.repository === 'string'
       && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(raw.repository)
       && typeof raw.ref === 'string'

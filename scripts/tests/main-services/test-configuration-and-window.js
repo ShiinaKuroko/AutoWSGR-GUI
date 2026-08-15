@@ -297,6 +297,23 @@ function testGuiConfigurationService() {
   assert.equal(clearPythonCacheCalls, 2);
 
   assert.equal(service.updateMode(), 'auto');
+  assert.equal(service.allowTestUpdates(), false);
+  const alphaSettingsPath = path.join(
+    temporaryDirectory,
+    'alpha_gui_configuration.json',
+  );
+  const alphaService = new GuiConfigurationService(
+    new GuiSettingsStore(
+      () => alphaSettingsPath,
+      new AtomicFileStore(),
+    ),
+    {
+      clearPythonCache: () => {},
+      normalizeCudaPath: candidate => candidate,
+      defaultAllowTestUpdates: () => true,
+    },
+  );
+  assert.equal(alphaService.allowTestUpdates(), true);
   service.setUpdateMode('manual');
   assert.equal(service.updateMode(), 'manual');
   service.setUpdateMode('invalid');
@@ -638,6 +655,7 @@ function testGuiConfigurationService() {
 
   const committedAutomation = service.commitSettings({
     updateMode: 'manual',
+    allowTestUpdates: true,
     backendPort: 19438,
     backendStartupMode: 'external',
     backendRepoPath: '  C:\\AutoWSGR  ',
@@ -674,6 +692,7 @@ function testGuiConfigurationService() {
     '设置提交必须忽略历史自定义值并固定每日战役为 8 次',
   );
   assert.equal(committedSettings.update_mode, 'manual');
+  assert.equal(committedSettings.allow_test_updates, true);
   assert.equal(committedSettings.backend_port, 19438);
   assert.equal(
     committedSettings.backend_startup_mode,

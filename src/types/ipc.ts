@@ -32,6 +32,7 @@ export interface WindowPreferences {
 
 export interface GuiSettingsCommitRequest {
   updateMode: 'auto' | 'manual';
+  allowTestUpdates: boolean;
   backendPort: number;
   backendStartupMode: 'managed' | 'external';
   backendRepoPath: string | null;
@@ -422,6 +423,7 @@ export interface ElectronBridge {
     preferences: WindowPreferences,
   ) => Promise<WindowPreferences>;
   getUpdateMode: () => 'auto' | 'manual';
+  getAllowTestUpdates?: () => boolean;
   setUpdateMode: (mode: 'auto' | 'manual') => Promise<void>;
   getShipLibraryStatus: () => Promise<ShipLibraryStatus>;
   getShipLibraryManifest: () => Promise<ShipLibraryManifest>;
@@ -459,6 +461,9 @@ export interface ElectronBridge {
     keepIds: string[],
   ) => Promise<MigrationConflictResolutionResult>;
   exportUserPlans: (
+    selections: UserPlanExportSelection[],
+  ) => Promise<UserPlanExportResult>;
+  exportLegacy143Plans: (
     selections: UserPlanExportSelection[],
   ) => Promise<UserPlanExportResult>;
   importLocalCombatPlan: () => Promise<PlanFileOperationResult>;

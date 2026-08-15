@@ -1,6 +1,6 @@
 {
   "name": "wsgrgui",
-  "version": "2.0.16-alpha",
+  "version": "2.1.0",
   "description": "AutoWSGR YAML 管理与自动化桌面界面",
   "main": "dist/electron/main.js",
   "scripts": {
@@ -37,7 +37,8 @@
     "prepare-python": "node scripts/prepare-python.js",
     "prepare-adb": "node scripts/prepare-adb.js",
     "pack": "npm run clean:release && npm run build && electron-builder --dir --config build/electron-builder.alpha.cjs --publish never",
-    "dist": "npm run clean:release && npm run prepare-python && npm run prepare-adb && npm run build && electron-builder --config build/electron-builder.alpha.cjs --publish never"
+    "dist": "npm run clean:release && npm run prepare-python && npm run prepare-adb && npm run build && electron-builder --config build/electron-builder.alpha.cjs --publish never",
+    "dist:stable": "npm run clean:release && npm run prepare-python && npm run prepare-adb && npm run build && electron-builder --config build/electron-builder.stable.cjs --publish never"
   },
   "devDependencies": {
     "@electron/asar": "^3.4.1",

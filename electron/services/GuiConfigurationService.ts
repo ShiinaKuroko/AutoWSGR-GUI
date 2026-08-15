@@ -49,6 +49,7 @@ export interface GuiConfigurationDependencies {
   clearPythonCache(): void;
   normalizeCudaPath(candidate: string): string;
   environmentPort?(): string | undefined;
+  defaultAllowTestUpdates?(): boolean;
 }
 
 /** 只接受有限数字或非空数字字符串，避免把 null/false 当成 0。 */
@@ -125,6 +126,15 @@ export class GuiConfigurationService {
     this.store.write({
       update_mode: mode === 'manual' ? 'manual' : 'auto',
     });
+  }
+
+  /** 是否允许 stable 客户端接收更高版本的 alpha 更新。 */
+  allowTestUpdates(): boolean {
+    const settings = this.store.read();
+    if (typeof settings.allow_test_updates === 'boolean') {
+      return settings.allow_test_updates;
+    }
+    return this.dependencies.defaultAllowTestUpdates?.() === true;
   }
 
   /** 返回 managed 或 external 后端启动模式。 */
@@ -383,6 +393,7 @@ export class GuiConfigurationService {
     const patch: Record<string, unknown> = {
       ...additionalPatch,
       update_mode: settings.updateMode === 'manual' ? 'manual' : 'auto',
+      allow_test_updates: settings.allowTestUpdates === true,
       backend_port: Math.trunc(settings.backendPort),
       backend_startup_mode: settings.backendStartupMode === 'external'
         ? 'external'

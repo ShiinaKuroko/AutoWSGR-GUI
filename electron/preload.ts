@@ -139,6 +139,10 @@ const electronBridge = {
     return ipcRenderer.sendSync('get-update-mode-sync') as 'auto' | 'manual';
   },
 
+  getAllowTestUpdates: () => {
+    return ipcRenderer.sendSync('get-allow-test-updates-sync') as boolean;
+  },
+
   setUpdateMode: (mode: 'auto' | 'manual') => {
     return ipcRenderer.invoke('set-update-mode', mode);
   },
@@ -228,6 +232,10 @@ const electronBridge = {
   ) => {
     return ipcRenderer.invoke('export-user-plans', selections);
   },
+
+  exportLegacy143Plans: (
+    selections: Array<{ kind: 'battle' | 'team'; file: string }>,
+  ) => ipcRenderer.invoke('export-legacy-143-plans', selections),
 
   importLocalCombatPlan: () => {
     return ipcRenderer.invoke('import-local-combat-plan');

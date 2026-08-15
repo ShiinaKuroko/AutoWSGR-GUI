@@ -26,12 +26,16 @@ jobs:
             $pkg = Get-Content package.json | ConvertFrom-Json
             $ver = $pkg.version
           }
-          if ($ver -notmatch '^\d+\.\d+\.\d+-alpha(?:\.\d+)?$') {
-            throw "版本 $ver 不符合 X.Y.Z-alpha 或 X.Y.Z-alpha.N"
+          if ($ver -match '^\d+\.\d+\.\d+$') {
+            $channel = 'latest'
+          } elseif ($ver -match '^\d+\.\d+\.\d+-alpha(?:\.\d+)?$') {
+            $channel = 'alpha'
+          } else {
+            throw "版本 $ver 不符合 X.Y.Z、X.Y.Z-alpha 或 X.Y.Z-alpha.N"
           }
           echo "VERSION=$ver" >> $env:GITHUB_OUTPUT
-          echo "CHANNEL=alpha" >> $env:GITHUB_OUTPUT
-          echo "Resolved Alpha version: $ver"
+          echo "CHANNEL=$channel" >> $env:GITHUB_OUTPUT
+          echo "Resolved version: $ver ($channel)"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -42,44 +46,49 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Sync package.json version
+      - name: Verify checked-in release version
         shell: pwsh
         run: |
           $pkg = Get-Content package.json | ConvertFrom-Json
-          $pkg.version = "${{ steps.version.outputs.VERSION }}"
-          $pkg.build.publish.owner = "ShiinaKuroko"
-          $pkg.build.publish.repo = "AutoWSGR-GUI"
-          $pkg.build.publish | Add-Member `
-            -NotePropertyName channel `
-            -NotePropertyValue "${{ steps.version.outputs.CHANNEL }}" `
-            -Force
-          $pkg | ConvertTo-Json -Depth 10 | Set-Content package.json -Encoding UTF8
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $lockVersion = node -p "require('./package-lock.json').version"
+          $lockRootVersion = node -p `
+            "require('./package-lock.json').packages[''].version"
+          if ($pkg.version -ne $version) {
+            throw "package.json 版本与发布版本不一致"
+          }
+          if ($lockVersion -ne $version -or $lockRootVersion -ne $version) {
+            throw "package-lock.json 版本与发布版本不一致"
+          }
+          if ($pkg.build.publish.owner -ne "ShiinaKuroko" -or $pkg.build.publish.repo -ne "AutoWSGR-GUI") {
+            throw "发布目标必须保持为 ShiinaKuroko/AutoWSGR-GUI"
+          }
 
-      - name: Pin latest Alpha backend
+      - name: Verify pinned backend
         shell: pwsh
         run: |
-          $backendRepository = "ShiinaKuroko/AutoWSGR"
-          $backendRef = "ShiinaKuroko"
-          $remote = git ls-remote `
-            "https://github.com/$backendRepository.git" `
-            "refs/heads/$backendRef"
-          $backendCommit = ($remote -split '\s+')[0]
-          if ($backendCommit -notmatch '^[0-9a-f]{40}$') {
-            throw "无法解析 $backendRepository@$backendRef 的提交"
-          }
           $manifest = Get-Content build/backend-distribution.json |
             ConvertFrom-Json
-          $manifest.id = "alpha"
-          $manifest.repository = $backendRepository
-          $manifest.ref = $backendRef
-          $manifest.commit = $backendCommit
-          $manifest.forceUpdateOnInstall = $true
-          $manifest | ConvertTo-Json -Depth 10 |
-            Set-Content build/backend-distribution.json -Encoding UTF8
-          echo "Pinned backend: $backendRepository@$backendCommit"
+          if ($manifest.commit -notmatch '^[0-9a-f]{40}$') {
+            throw "后端发行清单必须固定到明确提交"
+          }
+          $remote = git ls-remote `
+            "https://github.com/$($manifest.repository).git" `
+            "refs/heads/$($manifest.ref)"
+          $remoteCommit = ($remote -split '\s+')[0]
+          if ($remoteCommit -ne $manifest.commit) {
+            throw "后端分支与固定提交不一致: $remoteCommit != $($manifest.commit)"
+          }
+          echo "Pinned backend: $($manifest.repository)@$($manifest.commit)"
 
       - name: Build & Package
-        run: npm run dist
+        shell: pwsh
+        run: |
+          if ("${{ steps.version.outputs.CHANNEL }}" -eq "latest") {
+            npm run dist:stable
+          } else {
+            npm run dist
+          }
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -87,26 +96,60 @@ jobs:
         shell: pwsh
         run: Get-ChildItem -Path release -Recurse -File | Select-Object FullName, Length
 
+      - name: Download Alpha compatibility bridge
+        if: steps.version.outputs.CHANNEL == 'latest'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $bridgeTag = gh release list `
+            --repo "${{ github.repository }}" `
+            --limit 100 `
+            --json tagName,isPrerelease `
+            --jq ".[] | select(.isPrerelease == true and (.tagName | startswith(\"v$version-alpha\"))) | .tagName" |
+            Select-Object -First 1
+          if (-not $bridgeTag) {
+            throw "找不到 Stable v$version 对应的 Alpha 桥接版"
+          }
+          $compat = Join-Path release "alpha-compat"
+          New-Item -ItemType Directory -Path $compat -Force | Out-Null
+          gh release download $bridgeTag `
+            --repo "${{ github.repository }}" `
+            --dir $compat `
+            --pattern 'alpha.yml' `
+            --pattern 'AutoWSGR-GUI-Setup-*.exe' `
+            --pattern 'AutoWSGR-GUI-Setup-*.exe.blockmap'
+          if (-not (Test-Path (Join-Path $compat 'alpha.yml'))) {
+            throw "Alpha 桥接资产不完整"
+          }
+
       - name: Verify packaged runtime and resources
         run: npm run test:release-package
+        env:
+          AUTOWSGR_RELEASE_CHANNEL: ${{ steps.version.outputs.CHANNEL }}
 
       - name: Verify update channel metadata
         shell: pwsh
         run: |
-          $alphaRelease = Join-Path release "alpha"
-          $expected = Join-Path $alphaRelease "alpha.yml"
+          $channel = "${{ steps.version.outputs.CHANNEL }}"
+          $releaseRoot = Join-Path release $channel
+          $expected = Join-Path $releaseRoot "$channel.yml"
           if (-not (Test-Path $expected)) {
-            throw "缺少 Alpha 更新清单: $expected"
+            throw "缺少 $channel 更新清单: $expected"
           }
+          $allowed = @($channel)
           @('latest', 'beta', 'dev') |
+            Where-Object { $_ -notin $allowed } |
             ForEach-Object {
-              $unexpected = Join-Path $alphaRelease "$_.yml"
+              $unexpected = Join-Path $releaseRoot "$_.yml"
               if (Test-Path $unexpected) {
                 throw "发布产物混入其他频道清单: $unexpected"
               }
             }
 
-      - name: Create Release
+      - name: Create Alpha Release
+        if: steps.version.outputs.CHANNEL == 'alpha'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.VERSION }}
@@ -129,5 +172,29 @@ jobs:
             ### 系统要求
             - Windows 10/11 x64
             - 网络连接（首次运行需安装 pip 依赖）
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Stable Release
+        if: steps.version.outputs.CHANNEL == 'latest'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.VERSION }}
+          name: AutoWSGR-GUI v${{ steps.version.outputs.VERSION }}
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            release/latest/AutoWSGR-GUI-Setup-*.exe
+            release/latest/*.exe.blockmap
+            release/latest/latest.yml
+            release/alpha-compat/*
+          body: |
+            ## AutoWSGR-GUI v${{ steps.version.outputs.VERSION }}
+
+            本版本使用 `latest` 更新频道，并携带 `v2.1.0-alpha.1` 桥接资产，
+            使仍停留在旧 2.0 Alpha 的客户端先进入桥接版，再切换到 Stable。
+
+            设置中关闭“允许测试版更新”时只接收 Stable；开启后也可接收
+            版本号更高的 Alpha。
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

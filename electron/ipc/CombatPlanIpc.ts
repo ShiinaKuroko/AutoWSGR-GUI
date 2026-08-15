@@ -72,6 +72,33 @@ export function registerCombatPlanIpc(
     }
   });
 
+  ipc.handle('export-legacy-143-plans', async (_event, selections: unknown) => {
+    try {
+      const archive = await dependencies.planExports.createLegacy143Archive(
+        selections,
+      );
+      const selected = await dependencies.dialog.showSaveDialog({
+        title: '导出 1.4.3 降级计划备份',
+        defaultPath: 'AutoWSGR-GUI-1.4.3-plans-backup.zip',
+        filters: [{ name: 'ZIP 压缩包', extensions: ['zip'] }],
+      });
+      if (selected.canceled || !selected.filePath) {
+        return { success: false, canceled: true };
+      }
+      dependencies.planExports.writeArchive(selected.filePath, archive);
+      return {
+        success: true,
+        path: selected.filePath,
+        count: archive.count,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
+
   ipc.handle('import-local-combat-plan', async () => {
     try {
       const selected = await dependencies.dialog.showOpenDialog({

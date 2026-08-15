@@ -57,6 +57,7 @@ AutoWSGR 业务设置。自动常规出击条目使用受管计划来源、文�
 backend_port
 python_path
 update_mode
+allow_test_updates
 backend_startup_mode
 backend_repo_path
 ocr_gpu_mode
@@ -151,6 +152,7 @@ preload 中的启动配置 getter 使用 `sendSync`，Main 必须使用 `ipcMain
 - OCR GPU/CUDA
 - 截图保存
 - 更新模式
+- 测试版更新开关
 - 窗口偏好
 
 不要单方面把同步 getter 改成 Promise；需要同时修改 preload、IPC 类型、Adapter、

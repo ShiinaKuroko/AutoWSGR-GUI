@@ -15,7 +15,7 @@ import type {
 } from '../services/GuiUpdateStateStore';
 import {
   classifyGuiUpdateCheck,
-  resolveGuiReleasePolicy,
+  resolveGuiUpdateSelectionPolicy,
   validateGuiUpdateCandidate,
 } from '../services/GuiUpdatePolicy';
 
@@ -27,6 +27,7 @@ type GuiUpdateCheckResult =
 export interface UpdaterContext {
   sendToRenderer(channel: string, ...args: unknown[]): boolean;
   getAppVersion(): string;
+  allowTestUpdates(): boolean;
   logger: Logger;
   updateStates: GuiUpdateStateStore;
   chooseDownload(
@@ -69,13 +70,25 @@ export function registerUpdaterIpc(
   ipc: IpcRegistrar,
   context: UpdaterContext,
 ): void {
-  const releasePolicy = resolveGuiReleasePolicy(context.getAppVersion());
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
-  autoUpdater.channel = releasePolicy.channel;
-  autoUpdater.allowPrerelease = releasePolicy.allowPrerelease;
   autoUpdater.allowDowngrade = false;
   autoUpdater.logger = context.logger;
+
+  let updatePolicy = resolveGuiUpdateSelectionPolicy(
+    context.getAppVersion(),
+    context.allowTestUpdates(),
+  );
+  const applyUpdatePolicy = (): void => {
+    updatePolicy = resolveGuiUpdateSelectionPolicy(
+      context.getAppVersion(),
+      context.allowTestUpdates(),
+    );
+    autoUpdater.channel = updatePolicy.channel;
+    autoUpdater.allowDowngrade = false;
+    autoUpdater.allowPrerelease = updatePolicy.allowPrerelease;
+  };
+  applyUpdatePolicy();
 
   let approvedUpdateVersion: string | null = null;
   let declinedUpdateVersion: string | null = null;
@@ -172,7 +185,7 @@ export function registerUpdaterIpc(
   });
   autoUpdater.on('update-available', (info: UpdateInfo) => {
     const mismatch = validateGuiUpdateCandidate(
-      releasePolicy,
+      updatePolicy,
       info.version,
     );
     if (mismatch) {
@@ -199,7 +212,7 @@ export function registerUpdaterIpc(
     'update-downloaded',
     (info: UpdateDownloadedEvent) => {
       const mismatch = validateGuiUpdateCandidate(
-        releasePolicy,
+        updatePolicy,
         info.version,
       );
       if (mismatch) {
@@ -245,9 +258,10 @@ export function registerUpdaterIpc(
     if (checkPromise) return checkPromise;
     checkPromise = (async (): Promise<GuiUpdateCheckResult> => {
       try {
+        applyUpdatePolicy();
         const result = await autoUpdater.checkForUpdates();
         const classified = classifyGuiUpdateCheck(
-          releasePolicy,
+          updatePolicy,
           result,
         );
         approvedUpdateVersion = classified.status === 'available'

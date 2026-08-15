@@ -174,6 +174,10 @@ export function registerConfigurationIpc(
     event.returnValue = configuration.updateMode();
   });
 
+  ipc.on('get-allow-test-updates-sync', (event) => {
+    event.returnValue = configuration.allowTestUpdates();
+  });
+
   ipc.handle(
     'set-update-mode',
     (_event, mode: UpdateMode) => {

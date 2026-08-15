@@ -1,5 +1,5 @@
 /**
- * Alpha 后端来源回归测试。
+ * 后端发行来源回归测试。
  *
  * 模拟安装包 resources 目录，验证运行时只读取个人仓库的固定提交，
  * 并确认安装后会清除环境标记以触发后端更新。
@@ -43,7 +43,7 @@ try {
     { encoding: 'utf8' },
   ));
 
-  assert.equal(result.distribution.id, 'alpha');
+  assert.equal(result.distribution.id, 'stable');
   assert.equal(
     result.distribution.repository,
     'ShiinaKuroko/AutoWSGR',
@@ -96,7 +96,7 @@ try {
     /\$\{If\} \$\{isUpdated\}[\s\S]*\$\{FileExists\} "\$newDesktopLink"[\s\S]*addDesktopLink "false"[\s\S]*\$\{FileExists\} "\$newStartMenuLink"[\s\S]*addStartMenuLink "false"/,
     '覆盖升级必须刷新已有快捷方式',
   );
-  console.log('alpha backend distribution test passed');
+  console.log('backend distribution test passed');
 } finally {
   fs.rmSync(resources, { recursive: true, force: true });
 }
