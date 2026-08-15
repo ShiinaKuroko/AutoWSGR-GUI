@@ -133,6 +133,10 @@ function testGuiUpdatePolicy() {
   assert.equal(stableOnly.channel, 'latest');
   assert.equal(stableOnly.allowPrerelease, false);
   assert.deepEqual(stableOnly.acceptedChannels, ['latest']);
+  assert.deepEqual(stableOnly.repository, {
+    owner: 'yltx',
+    repo: 'AutoWSGR-GUI',
+  });
   assert.match(
     validateGuiUpdateCandidate(stableOnly, '2.0.2-alpha.1'),
     /只允许 latest 频道/,
@@ -145,6 +149,10 @@ function testGuiUpdatePolicy() {
     stableWithAlpha.acceptedChannels,
     ['latest', 'alpha'],
   );
+  assert.deepEqual(stableWithAlpha.repository, {
+    owner: 'ShiinaKuroko',
+    repo: 'AutoWSGR-GUI',
+  });
   assert.equal(
     validateGuiUpdateCandidate(stableWithAlpha, '2.0.2-alpha.1'),
     null,
@@ -160,6 +168,10 @@ function testGuiUpdatePolicy() {
   );
   assert.equal(alphaStableOnly.channel, 'latest');
   assert.deepEqual(alphaStableOnly.acceptedChannels, ['latest']);
+  assert.deepEqual(alphaStableOnly.repository, {
+    owner: 'yltx',
+    repo: 'AutoWSGR-GUI',
+  });
   assert.equal(
     validateGuiUpdateCandidate(alphaStableOnly, '2.0.2'),
     null,
@@ -189,6 +201,9 @@ function testGuiUpdatePolicy() {
     : alphaBuildConfig;
   assert.equal(releaseBuildConfig.publish.channel, packagePolicy.channel);
   assert.equal(stableBuildConfig.directories.output, 'release/latest');
+  assert.equal(alphaBuildConfig.publish.owner, 'ShiinaKuroko');
+  assert.equal(stableBuildConfig.publish.owner, 'yltx');
+  assert.equal(stableBuildConfig.publish.repo, 'AutoWSGR-GUI');
 
   const workflow = fs.readFileSync(
     path.join(root, '.github', 'workflows', 'release.yml'),
@@ -208,6 +223,7 @@ function testGuiUpdatePolicy() {
   assert.doesNotMatch(workflow, /release\/latest\/alpha\.yml/);
   assert.match(workflow, /AutoWSGR-GUI-Setup-/);
   assert.match(workflow, /Verify pinned backend/);
+  assert.match(workflow, /foreach \(\$channel in @\("stable", "alpha"\)\)/);
   assert.match(workflow, /ShiinaKuroko\/AutoWSGR/);
   assert.doesNotMatch(workflow, /Set-Content build\/backend-distribution\.json/);
   assert.doesNotMatch(workflow, /LEGACY_RELEASE_TOKEN/);

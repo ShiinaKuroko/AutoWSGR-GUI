@@ -26,11 +26,20 @@ const sourceResources = path.join(root, 'resource');
 const packageJson = JSON.parse(
   fs.readFileSync(path.join(root, 'package.json'), 'utf8'),
 );
+const releaseVersion = process.env.AUTOWSGR_RELEASE_VERSION
+  ?? packageJson.version;
 const releaseChannel = process.env.AUTOWSGR_RELEASE_CHANNEL
   ?? packageJson.build.publish.channel;
 assert.ok(
   ['alpha', 'latest'].includes(releaseChannel),
   `不支持的发布频道: ${releaseChannel}`,
+);
+assert.match(
+  releaseVersion,
+  releaseChannel === 'latest'
+    ? /^\d+\.\d+\.\d+$/
+    : /^\d+\.\d+\.\d+-alpha\.\d+$/,
+  `版本 ${releaseVersion} 与 ${releaseChannel} 频道不匹配`,
 );
 const releaseDistribution = {
   id: releaseChannel,
@@ -88,7 +97,7 @@ function assertReleasePackage(distribution) {
   const resources = path.join(unpacked, 'resources');
   const packagedResources = path.join(resources, 'resource');
   const artifactName = (
-    `AutoWSGR-GUI-Setup-${packageJson.version}.exe`
+    `AutoWSGR-GUI-Setup-${releaseVersion}.exe`
   );
   const label = `${distribution.id} 包`;
 
@@ -206,11 +215,19 @@ function assertReleasePackage(distribution) {
     expectedBackendManifest,
     `${label}后端发行清单不一致`,
   );
-  assert.match(
-    packagedBackendManifest.commit,
-    /^[0-9a-f]{40}$/,
-    `${label}后端必须固定到明确提交`,
-  );
+  for (const backendChannel of ['stable', 'alpha']) {
+    const backend = packagedBackendManifest[backendChannel];
+    assert.equal(
+      backend?.id,
+      backendChannel,
+      `${label}${backendChannel} 后端频道不一致`,
+    );
+    assert.match(
+      backend?.commit ?? '',
+      /^[0-9a-f]{40}$/,
+      `${label}${backendChannel} 后端必须固定到明确提交`,
+    );
+  }
 
   const channel = distribution.channel;
   const appUpdate = yaml.load(fs.readFileSync(
@@ -221,6 +238,16 @@ function assertReleasePackage(distribution) {
     appUpdate.channel,
     channel,
     `${label} app-update.yml 频道不一致`,
+  );
+  assert.equal(
+    appUpdate.owner,
+    channel === 'latest' ? 'yltx' : 'ShiinaKuroko',
+    `${label} app-update.yml 更新源不一致`,
+  );
+  assert.equal(
+    appUpdate.repo,
+    'AutoWSGR-GUI',
+    `${label} app-update.yml 仓库不一致`,
   );
 
   const channelManifestPath = path.join(
@@ -234,7 +261,7 @@ function assertReleasePackage(distribution) {
   ));
   assert.equal(
     channelManifest.version,
-    packageJson.version,
+    releaseVersion,
     `${label}更新清单版本不一致`,
   );
   assert.equal(
@@ -253,7 +280,7 @@ function assertReleasePackage(distribution) {
 
   console.log(
     `${distribution.id} release package passed: `
-    + `${packageJson.version} (${channel})`,
+    + `${releaseVersion} (${channel})`,
   );
 }
 

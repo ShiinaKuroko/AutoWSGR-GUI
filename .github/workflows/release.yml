@@ -69,17 +69,23 @@ jobs:
         run: |
           $manifest = Get-Content build/backend-distribution.json |
             ConvertFrom-Json
-          if ($manifest.commit -notmatch '^[0-9a-f]{40}$') {
-            throw "后端发行清单必须固定到明确提交"
+          foreach ($channel in @("stable", "alpha")) {
+            $distribution = $manifest.$channel
+            if (
+              $distribution.id -ne $channel -or
+              $distribution.commit -notmatch '^[0-9a-f]{40}$'
+            ) {
+              throw "$channel 后端发行清单必须固定到明确提交"
+            }
+            $remote = git ls-remote `
+              "https://github.com/$($distribution.repository).git" `
+              "refs/heads/$($distribution.ref)"
+            $remoteCommit = ($remote -split '\s+')[0]
+            if ($remoteCommit -ne $distribution.commit) {
+              throw "$channel 后端分支与固定提交不一致: $remoteCommit != $($distribution.commit)"
+            }
+            echo "Pinned $channel backend: $($distribution.repository)@$($distribution.commit)"
           }
-          $remote = git ls-remote `
-            "https://github.com/$($manifest.repository).git" `
-            "refs/heads/$($manifest.ref)"
-          $remoteCommit = ($remote -split '\s+')[0]
-          if ($remoteCommit -ne $manifest.commit) {
-            throw "后端分支与固定提交不一致: $remoteCommit != $($manifest.commit)"
-          }
-          echo "Pinned backend: $($manifest.repository)@$($manifest.commit)"
 
       - name: Build & Package
         shell: pwsh
