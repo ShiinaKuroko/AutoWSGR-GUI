@@ -52,6 +52,19 @@ if (
 ) {
   throw new Error('Update channel description does not match the UI contract');
 }
+const updateChannelHintIndex = html.indexOf(
+  '<span class="config-update-channel-hint">'
+  + '开启预览版更新渠道，将在保存设置后生效</span>',
+);
+const updateChannelControlIndex = html.indexOf(
+  'id="cfg-allow-test-updates"',
+);
+if (
+  updateChannelHintIndex < updateChannelIndex
+  || updateChannelControlIndex < updateChannelHintIndex
+) {
+  throw new Error('Update channel save hint must be left of the switch');
+}
 const htmlIds = collectMatches(
   html,
   /\bid\s*=\s*["']([^"']+)["']/g,
