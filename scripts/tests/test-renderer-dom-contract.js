@@ -28,23 +28,29 @@ function collectMatches(content, pattern) {
 
 const html = fs.readFileSync(htmlPath, 'utf8');
 const updateChannelControl = html.match(
-  /<select\b[^>]*\bid=["']cfg-allow-test-updates["'][^>]*>([\s\S]*?)<\/select>/,
+  /<input\b(?=[^>]*\btype=["']checkbox["'])(?=[^>]*\bid=["']cfg-allow-test-updates["'])[^>]*>/,
 );
 if (!updateChannelControl) {
-  throw new Error('Update channel control must be a select element');
+  throw new Error('Update channel control must be a checkbox');
 }
-const updateChannelOptions = collectMatches(
-  updateChannelControl[1],
-  /<option\b[^>]*\bvalue=["']([^"']+)["']/g,
-);
+const updateSectionIndex = html.indexOf('<h3>更新与界面</h3>');
+const updateChannelIndex = html.indexOf('<strong>更新渠道</strong>');
+const updateModeIndex = html.indexOf('<strong>更新模式</strong>');
 if (
-  updateChannelOptions.length !== 2
-  || updateChannelOptions[0] !== 'stable'
-  || updateChannelOptions[1] !== 'alpha'
+  updateSectionIndex < 0
+  || updateChannelIndex < updateSectionIndex
+  || updateModeIndex < updateChannelIndex
 ) {
   throw new Error(
-    'Update channel control must contain stable and alpha options',
+    'Update channel control must be above update mode in the update section',
   );
+}
+if (
+  !html.includes(
+    '<span>关闭时只接受稳定版推送，开启优先接受预览版推送。</span>',
+  )
+) {
+  throw new Error('Update channel description does not match the UI contract');
 }
 const htmlIds = collectMatches(
   html,
