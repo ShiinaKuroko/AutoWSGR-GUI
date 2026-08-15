@@ -37,15 +37,20 @@ IPC 通过 `PythonEnvironmentService` 使用这些能力。
 
 | 模式 | 后端来源 | 依赖位置 |
 |---|---|---|
-| `managed` | `build/backend-distribution.json` 指定的 GUI 受控 AutoWSGR | `{appRoot}/python/site-packages` |
+| `managed` | `build/backend-distribution.json` 按 GUI 更新通道指定的受控 AutoWSGR | `{appRoot}/python/site-packages` |
 | `external` + 内置 Python | 用户指定本地 AutoWSGR 仓库 | GUI `site-packages` + 仓库 |
 | `external` + 外部 Python | 用户指定仓库和解释器 | 解释器自身环境 + 仓库 |
 
 external 仓库无效时直接失败，不能回退 managed，也不能把 GUI site-packages
 偷偷混入外部解释器。
 
-发布流程把 Alpha 后端固定到 `ShiinaKuroko/AutoWSGR` 的指定分支提交。安装后
-清除 `.env_ready`，首次启动按 `forceUpdateOnInstall` 完成受控更新和复核。
+发行清单同时固定两条后端来源：
+
+- Stable：`OpenWSGR/AutoWSGR@main` 的明确提交。
+- Alpha：`ShiinaKuroko/AutoWSGR@ShiinaKuroko` 的明确提交。
+
+运行时使用与 GUI 相同的 `allow_test_updates` 选择后端。安装后清除
+`.env_ready`，首次启动按 `forceUpdateOnInstall` 完成受控更新和复核。
 
 ## `.env_ready`
 
@@ -53,11 +58,13 @@ external 仓库无效时直接失败，不能回退 managed，也不能把 GUI s
 
 - Python 路径和版本。
 - AutoWSGR 版本/来源。
+- 当前受管后端固定来源（仓库和提交）。
 - managed/external 模式和仓库。
 - 依赖安装目标。
 
-快速路径仍会检查解释器、环境身份和后端契约。配置、安装目标或后端来源变化后
-删除标记；失败时不写完成标记，使下次启动继续检查。
+快速路径仍会检查解释器、环境身份和后端契约。配置、安装目标、GUI 更新通道或
+后端固定来源变化后删除标记；失败时不写完成标记，使下次启动继续检查。
+external 模式始终使用用户指定仓库，不受 GUI 更新通道影响。
 
 ## CUDA 与 OCR
 
@@ -179,21 +186,24 @@ userData/.migration-state.json
 
 `gui_settings.json.allow_test_updates` 控制 Stable/Alpha 候选范围：
 
-- Stable 缺少配置时默认关闭，只读取 `latest`。
-- Alpha 缺少配置时默认开启，保持读取 `alpha` 的现有行为。
-- 用户关闭后读取 `latest`；开启后读取 `alpha`，并允许校验 `latest` 和 `alpha`
-  候选。
-- Beta 和 Dev 始终保持构建自身频道，不受该开关影响。
+- Stable 缺少配置时默认关闭，从 `yltx/AutoWSGR-GUI` 读取 `latest`。
+- Alpha 缺少配置时默认开启，从 `ShiinaKuroko/AutoWSGR-GUI` 读取 `alpha`。
+- 用户关闭后同时切换到主库和 `latest`；开启后同时切换到个人仓库和 `alpha`，
+  并允许校验 `latest` 和 `alpha` 候选。
+- 同一个设置同时选择受管后端：Stable 对应 `OpenWSGR/AutoWSGR@main`，
+  Alpha 对应 `ShiinaKuroko/AutoWSGR@ShiinaKuroko`。
+- Beta 和 Dev 始终保持个人仓库及构建自身频道，不受该开关影响。
 
 每次设置 `autoUpdater.channel` 后必须重新设置
 `autoUpdater.allowDowngrade = false`，因为频道 setter 会重新允许降级。候选频道
-集合只负责结果校验，不会让 electron-updater 同时读取两份频道清单；Alpha 到
-Stable 的发布桥接仍必须由目标 Stable Release 提供 Alpha 兼容更新清单。
+集合只负责结果校验，不会让 electron-updater 同时读取两份频道清单；更新源和
+频道必须作为同一个策略结果切换，避免 Alpha 关闭测试版后仍访问个人仓库。
 
-发布 workflow 按版本分别构建 `alpha` 或 `latest`。Stable Release 同时携带
-内容一致的 `latest.yml` 和 `alpha.yml`，两份清单都指向本次 Stable 安装包，
-使仍在 `alpha` 频道的客户端能够发现 Stable；不得复用旧 Alpha Release 的清单
-或安装包。workflow 只发布个人仓库，不操作主库 Tag 或 Release。
+首次 `2.1.0` 迁移仍按
+[项目发布门禁](../../AGENTS.md#84-主库版本协同与打包门禁)
+保留个人仓库桥接 Release：完整 Stable 三件套用于已关闭测试版的桥接客户端，
+原 `2.1.0-alpha.1` 三件套用于晚恢复更新的旧 Alpha。不得用版本号与安装包不一致
+的清单代替这两条单调升级路径。
 
 更新检查返回 `available | up-to-date | error`，网络错误不能显示为最新版。
 

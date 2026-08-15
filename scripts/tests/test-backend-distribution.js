@@ -1,8 +1,8 @@
 /**
  * 后端发行来源回归测试。
  *
- * 模拟安装包 resources 目录，验证运行时只读取个人仓库的固定提交，
- * 并确认安装后会清除环境标记以触发后端更新。
+ * 模拟安装包 resources 目录，验证 Stable/Alpha 分别读取主库和个人仓库
+ * 的固定提交，并确认安装后会清除环境标记以触发后端更新。
  */
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
@@ -32,9 +32,24 @@ try {
     '  value: process.argv[1],',
     '});',
     'const requirement = require(process.argv[2]);',
+    'const stable = requirement.resolveBackendDistribution(false);',
+    'const alpha = requirement.resolveBackendDistribution(true);',
+    "const sharedCommit = '0'.repeat(40);",
     'process.stdout.write(JSON.stringify({',
-    '  distribution: requirement.BACKEND_DISTRIBUTION,',
-    '  requirement: requirement.MANAGED_AUTOWSGR_REQUIREMENT,',
+    '  stable,',
+    '  alpha,',
+    '  stableRequirement:',
+    '    requirement.buildManagedAutowsgrRequirement(stable),',
+    '  alphaRequirement:',
+    '    requirement.buildManagedAutowsgrRequirement(alpha),',
+    '  sameCommitStableRequirement:',
+    '    requirement.buildManagedAutowsgrRequirement({',
+    '      ...stable, commit: sharedCommit,',
+    '    }),',
+    '  sameCommitAlphaRequirement:',
+    '    requirement.buildManagedAutowsgrRequirement({',
+    '      ...alpha, commit: sharedCommit,',
+    '    }),',
     '}));',
   ].join('\n');
   const result = JSON.parse(execFileSync(
@@ -43,14 +58,24 @@ try {
     { encoding: 'utf8' },
   ));
 
-  assert.equal(result.distribution.id, 'stable');
+  assert.equal(result.stable.id, 'stable');
   assert.equal(
-    result.distribution.repository,
-    'ShiinaKuroko/AutoWSGR',
+    result.stable.repository,
+    'OpenWSGR/AutoWSGR',
   );
-  assert.equal(result.distribution.ref, 'ShiinaKuroko');
-  assert.equal(result.distribution.forceUpdateOnInstall, true);
-  assert.match(result.requirement, /ShiinaKuroko\/AutoWSGR/);
+  assert.equal(result.stable.ref, 'main');
+  assert.equal(result.stable.forceUpdateOnInstall, true);
+  assert.match(result.stableRequirement, /OpenWSGR\/AutoWSGR/);
+  assert.equal(result.alpha.id, 'alpha');
+  assert.equal(result.alpha.repository, 'ShiinaKuroko/AutoWSGR');
+  assert.equal(result.alpha.ref, 'ShiinaKuroko');
+  assert.equal(result.alpha.forceUpdateOnInstall, true);
+  assert.match(result.alphaRequirement, /ShiinaKuroko\/AutoWSGR/);
+  assert.notEqual(
+    result.sameCommitStableRequirement,
+    result.sameCommitAlphaRequirement,
+    '相同提交位于不同仓库时仍必须视为不同后端来源',
+  );
 
   const installer = fs.readFileSync(
     path.join(root, 'build', 'installer.nsh'),

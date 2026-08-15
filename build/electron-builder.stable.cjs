@@ -8,6 +8,8 @@ module.exports = {
   },
   publish: {
     ...alpha.publish,
+    owner: 'yltx',
+    repo: 'AutoWSGR-GUI',
     channel: 'latest',
   },
 };
