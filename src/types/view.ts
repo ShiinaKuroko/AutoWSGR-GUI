@@ -122,6 +122,7 @@ export interface ConfigViewObject {
   emulatorSerial: string;
   gameApp: string;
   updateMode: 'auto' | 'manual';
+  allowTestUpdates: boolean;
   autoExpedition: boolean;
   expeditionInterval: number;
   autoBattle: boolean;

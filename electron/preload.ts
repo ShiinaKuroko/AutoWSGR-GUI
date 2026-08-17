@@ -64,8 +64,16 @@ contextBridge.exposeInMainWorld('electronBridge', {
     return ipcRenderer.sendSync('get-update-mode-sync') as 'auto' | 'manual';
   },
 
+  getAllowTestUpdates: () => {
+    return ipcRenderer.sendSync('get-allow-test-updates-sync') as boolean;
+  },
+
   setUpdateMode: (mode: 'auto' | 'manual') => {
     return ipcRenderer.invoke('set-update-mode', mode);
+  },
+
+  setAllowTestUpdates: (enabled: boolean) => {
+    return ipcRenderer.invoke('set-allow-test-updates', enabled);
   },
 
   openDirectoryDialog: (title?: string) => {

@@ -16,6 +16,7 @@ import {
 } from './pythonEnv';
 import { detectEmulator } from './emulatorDetect';
 import { initBackend, getBackendProcess, startBackend, stopBackend, runSetupScript } from './backend';
+import { resolveGuiUpdateChannelPolicy } from './guiUpdateChannel';
 
 const execAsync = promisify(exec);
 
@@ -68,6 +69,10 @@ function getConfiguredPythonPath(): string | null {
 function getUpdateMode(): 'auto' | 'manual' {
   const settings = readGuiSettings();
   return settings.update_mode === 'manual' ? 'manual' : 'auto';
+}
+
+function getAllowTestUpdates(): boolean {
+  return readGuiSettings().allow_test_updates === true;
 }
 
 type BackendStartupMode = 'managed' | 'external';
@@ -428,9 +433,18 @@ ipcMain.on('get-update-mode-sync', (event) => {
   event.returnValue = getUpdateMode();
 });
 
+ipcMain.on('get-allow-test-updates-sync', (event) => {
+  event.returnValue = getAllowTestUpdates();
+});
+
 ipcMain.handle('set-update-mode', (_event, mode: 'auto' | 'manual') => {
   const normalized = mode === 'manual' ? 'manual' : 'auto';
   writeGuiSettings({ update_mode: normalized });
+});
+
+ipcMain.handle('set-allow-test-updates', (_event, enabled: boolean) => {
+  writeGuiSettings({ allow_test_updates: enabled === true });
+  applyGuiUpdateChannelPolicy();
 });
 
 ipcMain.handle('set-python-path', (_event, pythonPath: string | null) => {
@@ -525,10 +539,24 @@ ipcMain.handle('start-backend', async () => {
 // GUI 自动更新 (electron-updater)
 // ════════════════════════════════════════
 
+function applyGuiUpdateChannelPolicy(): void {
+  const policy = resolveGuiUpdateChannelPolicy(getAllowTestUpdates());
+  autoUpdater.setFeedURL({
+    provider: 'github',
+    owner: policy.repository.owner,
+    repo: policy.repository.repo,
+    channel: policy.channel,
+  });
+  autoUpdater.channel = policy.channel;
+  autoUpdater.allowPrerelease = policy.allowPrerelease;
+  autoUpdater.allowDowngrade = false;
+}
+
 /** 初始化自动更新 */
 function initAutoUpdater(): void {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
+  applyGuiUpdateChannelPolicy();
 
   autoUpdater.on('update-available', (info: UpdateInfo) => {
     mainWindow?.webContents.send('update-status', {
@@ -568,6 +596,7 @@ function initAutoUpdater(): void {
 
 ipcMain.handle('check-gui-updates', async () => {
   try {
+    applyGuiUpdateChannelPolicy();
     const result = await autoUpdater.checkForUpdates();
     return result?.updateInfo ? { version: result.updateInfo.version } : null;
   } catch {

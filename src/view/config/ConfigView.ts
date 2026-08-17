@@ -10,6 +10,7 @@ export class ConfigView {
   private emuSerial: HTMLInputElement;
   private gameApp: HTMLSelectElement;
   private updateMode: HTMLSelectElement;
+  private allowTestUpdates: HTMLInputElement;
   private autoExpedition: HTMLInputElement;
   private expeditionInterval: HTMLInputElement;
   private autoBattle: HTMLInputElement;
@@ -54,6 +55,7 @@ export class ConfigView {
     this.emuSerial = document.getElementById('cfg-emu-serial') as HTMLInputElement;
     this.gameApp = document.getElementById('cfg-game-app') as HTMLSelectElement;
     this.updateMode = document.getElementById('cfg-update-mode') as HTMLSelectElement;
+    this.allowTestUpdates = document.getElementById('cfg-allow-test-updates') as HTMLInputElement;
     this.autoExpedition = document.getElementById('cfg-auto-expedition') as HTMLInputElement;
     this.expeditionInterval = document.getElementById('cfg-expedition-interval') as HTMLInputElement;
     this.autoBattle = document.getElementById('cfg-auto-battle') as HTMLInputElement;
@@ -124,6 +126,7 @@ export class ConfigView {
     this.emuSerial.value = vo.emulatorSerial;
     this.gameApp.value = vo.gameApp;
     this.updateMode.value = vo.updateMode;
+    this.allowTestUpdates.checked = vo.allowTestUpdates;
     this.autoExpedition.checked = vo.autoExpedition;
     this.expeditionInterval.value = String(vo.expeditionInterval);
     this.autoBattle.checked = vo.autoBattle;
@@ -198,6 +201,7 @@ export class ConfigView {
       emulatorSerial: this.emuSerial.value,
       gameApp: this.gameApp.value,
       updateMode: this.updateMode.value === 'manual' ? 'manual' : 'auto',
+      allowTestUpdates: this.allowTestUpdates.checked,
       autoExpedition: this.autoExpedition.checked,
       expeditionInterval: Math.max(1, Math.min(120, Number(this.expeditionInterval.value) || 15)),
       autoBattle: this.autoBattle.checked,

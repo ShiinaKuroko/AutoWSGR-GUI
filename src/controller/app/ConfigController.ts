@@ -55,6 +55,7 @@ export class ConfigController {
       gameApp: cfg.account.game_app,
       updateMode: window.electronBridge?.getUpdateMode?.()
         ?? (localStorage.getItem('updateMode') === 'manual' ? 'manual' : 'auto'),
+      allowTestUpdates: window.electronBridge?.getAllowTestUpdates?.() === true,
       autoExpedition: cfg.daily_automation.auto_expedition,
       expeditionInterval: cfg.daily_automation.expedition_interval,
       autoBattle: cfg.daily_automation.auto_battle,
@@ -104,6 +105,9 @@ export class ConfigController {
 
     if (bridge?.setUpdateMode) {
       await bridge.setUpdateMode(collected.updateMode);
+    }
+    if (bridge?.setAllowTestUpdates) {
+      await bridge.setAllowTestUpdates(collected.allowTestUpdates);
     }
 
     // 后端端口 / Python 路径（修改后需重启）

@@ -60,6 +60,8 @@ export interface ElectronBridge {
   setSaveBackendScreenshots: (enabled: boolean) => Promise<void>;
   getUpdateMode: () => 'auto' | 'manual';
   setUpdateMode: (mode: 'auto' | 'manual') => Promise<void>;
+  getAllowTestUpdates: () => boolean;
+  setAllowTestUpdates: (enabled: boolean) => Promise<void>;
   getPythonPath: () => string | null;
   setPythonPath: (pythonPath: string | null) => Promise<void>;
   validatePython: (pythonPath: string) => Promise<{ valid: boolean; version: string | null; error?: string }>;
