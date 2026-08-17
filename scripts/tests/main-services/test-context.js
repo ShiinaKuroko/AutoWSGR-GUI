@@ -88,6 +88,9 @@ const {
 const {
   PythonEnvironmentService,
 } = require('../../../dist/electron/services/PythonEnvironmentService.js');
+const {
+  BackendUpdateService,
+} = require('../../../dist/electron/services/BackendUpdateService.js');
 
 const temporaryDirectory = fs.mkdtempSync(
   path.join(os.tmpdir(), 'autowsgr-main-services-'),
@@ -127,5 +130,6 @@ module.exports = {
   GuiConfigurationService,
   GuiSettingsCommitService,
   PythonEnvironmentService,
+  BackendUpdateService,
   temporaryDirectory,
 };

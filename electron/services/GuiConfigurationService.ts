@@ -31,6 +31,7 @@ import type {
 export type BackendStartupMode = 'managed' | 'external';
 export type OcrGpuMode = 'auto' | 'cpu' | 'cuda';
 export type UpdateMode = 'auto' | 'manual';
+export type BackendUpdateMode = 'auto' | 'manual';
 
 export interface GuiAutomationSettings {
   expeditionInterval: number;
@@ -113,17 +114,36 @@ export class GuiConfigurationService {
     this.dependencies.clearPythonCache();
   }
 
-  /** 返回 autowsgr 更新模式。 */
+  /** 返回 GUI 更新检查模式。 */
   updateMode(): UpdateMode {
     return this.store.read().update_mode === 'manual'
       ? 'manual'
       : 'auto';
   }
 
-  /** 保存归一化后的 autowsgr 更新模式。 */
+  /** 保存归一化后的 GUI 更新检查模式。 */
   setUpdateMode(mode: UpdateMode): void {
     this.store.write({
       update_mode: mode === 'manual' ? 'manual' : 'auto',
+    });
+  }
+
+  /** 返回后端独立更新检查模式。 */
+  backendUpdateMode(): BackendUpdateMode {
+    const settings = this.store.read();
+    if (settings.backend_update_mode !== 'auto'
+      && settings.backend_update_mode !== 'manual') {
+      return settings.update_mode === 'manual' ? 'manual' : 'auto';
+    }
+    return settings.backend_update_mode === 'manual'
+      ? 'manual'
+      : 'auto';
+  }
+
+  /** 保存归一化后的后端独立更新检查模式。 */
+  setBackendUpdateMode(mode: BackendUpdateMode): void {
+    this.store.write({
+      backend_update_mode: mode === 'manual' ? 'manual' : 'auto',
     });
   }
 
@@ -388,6 +408,9 @@ export class GuiConfigurationService {
     const patch: Record<string, unknown> = {
       ...additionalPatch,
       update_mode: settings.updateMode === 'manual' ? 'manual' : 'auto',
+      backend_update_mode: settings.backendUpdateMode === 'manual'
+        ? 'manual'
+        : 'auto',
       allow_test_updates: settings.allowTestUpdates === true,
       backend_port: Math.trunc(settings.backendPort),
       backend_startup_mode: settings.backendStartupMode === 'external'

@@ -54,6 +54,14 @@ export class SettingsController {
     this.gateway?.onUpdateStatus((status) => {
       configView.setGuiUpdateStatus(status);
     });
+    this.gateway?.onBackendUpdateStatus((status) => {
+      configView.setBackendUpdateCheckLoading(
+        status.status === 'checking'
+        || status.status === 'available'
+        || status.status === 'downloading',
+      );
+      configView.setBackendUpdateStatus(status);
+    });
 
     configView.bindActions({
       onSave: () => void this.host.saveConfig(),
@@ -85,6 +93,7 @@ export class SettingsController {
       onValidateCuda: () => void this.validateCuda(),
       onValidatePython: () => void this.validatePython(),
       onCheckUpdates: () => void this.checkUpdatesManually(),
+      onCheckBackendUpdates: () => void this.checkBackendUpdates(),
       onUpdateShipLibrary: () => void this.updateShipLibrary(),
       onConnectAdb: () => void this.changeAdbConnection('connect'),
       onDisconnectAdb: () => void this.changeAdbConnection('disconnect'),
@@ -555,6 +564,40 @@ export class SettingsController {
       }
     } finally {
       this.host.configView.setUpdateCheckLoading(false);
+    }
+  }
+
+  /** 检查后端独立更新并准备暂存包；进度经 onBackendUpdateStatus 推送。 */
+  private async checkBackendUpdates(): Promise<void> {
+    if (!this.gateway) return;
+    const { configView } = this.host;
+    configView.setBackendUpdateCheckLoading(true);
+    configView.setBackendUpdateStatus({ status: 'checking' });
+    try {
+      const result = await this.gateway.checkBackendUpdates();
+      if (result.status === 'error') {
+        configView.setBackendUpdateStatus({
+          status: 'error',
+          message: result.message,
+        });
+        return;
+      }
+      if (result.status !== 'available') {
+        configView.setBackendUpdateStatus({ status: 'up-to-date' });
+        return;
+      }
+      configView.setBackendUpdateStatus({
+        status: 'available',
+        commit: result.commit,
+      });
+      await this.gateway.prepareBackendUpdate(result.commit);
+    } catch (error) {
+      configView.setBackendUpdateStatus({
+        status: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      configView.setBackendUpdateCheckLoading(false);
     }
   }
 

@@ -81,6 +81,7 @@ export class StartupController {
       Logger.error(`后端启动失败: ${backendResult.message}`);
       return;
     }
+    void bridge.autoCheckBackendUpdates?.().catch(() => {});
     waitForBackendAndConnect(this.host);
   }
 

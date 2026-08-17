@@ -1,6 +1,10 @@
 /** 处理主页面导航、标签切换和当前页面状态。 */
 import { NavigationView } from '../../view/main/NavigationView';
 import { showConfirm } from '../../view/shared/DialogHelper';
+import {
+  getNavigationGateway,
+  type NavigationGateway,
+} from '../../adapter/IpcAdapter.js';
 
 export interface NavigationControllerHost {
   loadFleetPlanner(): Promise<void>;
@@ -17,10 +21,27 @@ export class NavigationController {
   constructor(
     private readonly host: NavigationControllerHost,
     private readonly view = new NavigationView(),
+    private readonly gateway: NavigationGateway | undefined =
+      getNavigationGateway(),
   ) {}
 
   bindNavigation(): void {
     this.view.onPageSelected = pageId => void this.switchPage(pageId);
+  }
+
+  /** 开启窗口记忆时恢复上次退出时所在的主导航页面。 */
+  restoreLastActivePage(): void {
+    if (!this.gateway) return;
+    let preferences;
+    try {
+      preferences = this.gateway.getWindowPreferences();
+    } catch {
+      return;
+    }
+    if (!preferences.rememberBounds) return;
+    const target = preferences.lastActivePage;
+    if (!target || this.view.getActivePage() === target) return;
+    void this.switchPage(target);
   }
 
   bindPlanNavigation(): void {
@@ -58,6 +79,7 @@ export class NavigationController {
     }
 
     this.view.showPage(pageId);
+    void this.gateway?.rememberActivePage(pageId);
     if (pageId === 'plan') {
       if (planTab) this.showPlanTab(planTab);
       const activeTab = this.view.getActivePlanTab();

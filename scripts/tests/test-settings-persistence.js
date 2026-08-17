@@ -254,13 +254,52 @@ async function runRendererTest(root, tempDirectory) {
   );
   const updateStatus = document.getElementById('gui-update-status');
   const updatePercent = document.getElementById('gui-update-percent');
-  const updateControls = document.querySelector('.config-update-controls');
+  const updateControls = updateProgress.closest('.config-update-controls');
+  const backendUpdateProgress = document.getElementById(
+    'backend-update-progress',
+  );
+  const backendUpdateControls = backendUpdateProgress.closest(
+    '.config-update-controls',
+  );
+  rendererAssert.notEqual(
+    backendUpdateControls,
+    updateControls,
+    '后端更新与 GUI 更新必须位于不同的设置行',
+  );
   rendererAssert.equal(
     updateProgress.parentElement,
     updateControls,
     'GUI 更新进度必须与更新模式和检查按钮位于同一行',
   );
   rendererAssert.equal(updateProgress.hidden, true);
+  rendererAssert.equal(backendUpdateProgress.hidden, true);
+  view.setBackendUpdateStatus({ status: 'checking' });
+  rendererAssert.equal(backendUpdateProgress.hidden, false);
+  rendererAssert.equal(
+    document.getElementById('backend-update-percent').textContent,
+    '检查中',
+  );
+  view.setBackendUpdateStatus({
+    status: 'downloading',
+    progress: 42,
+  });
+  rendererAssert.equal(
+    document.getElementById('backend-update-status').textContent,
+    '正在下载后端更新…',
+  );
+  rendererAssert.equal(
+    document.getElementById('backend-update-percent').textContent,
+    '42%',
+  );
+  view.setBackendUpdateStatus({ status: 'downloaded', commit: 'b'.repeat(40) });
+  rendererAssert.equal(
+    backendUpdateProgress.dataset.state,
+    'complete',
+  );
+  rendererAssert.equal(
+    document.getElementById('backend-update-status').textContent,
+    '后端更新已准备完成，重启 GUI 后生效',
+  );
   view.setGuiUpdateStatus({ status: 'checking' });
   rendererAssert.equal(updateProgress.hidden, false);
   rendererAssert.equal(updatePercent.textContent, '检查中');
@@ -350,6 +389,43 @@ async function runRendererTest(root, tempDirectory) {
     );
   });
   view.render(sample);
+  const backendUpdateRow = document.getElementById(
+    'cfg-backend-update-row',
+  );
+  const backendUpdateMode = document.getElementById(
+    'cfg-backend-update-mode',
+  );
+  const backendUpdateButton = document.getElementById(
+    'btn-check-backend-updates',
+  );
+  const allowTestUpdates = document.getElementById(
+    'cfg-allow-test-updates',
+  );
+  const externalBackend = document.getElementById(
+    'cfg-use-external-backend',
+  );
+  rendererAssert.equal(backendUpdateRow.hidden, false);
+  rendererAssert.equal(
+    backendUpdateButton.disabled,
+    true,
+    'external 模式不得触发 managed 后端更新',
+  );
+  allowTestUpdates.checked = false;
+  allowTestUpdates.dispatchEvent(new Event('change'));
+  rendererAssert.equal(backendUpdateRow.hidden, true);
+  rendererAssert.equal(backendUpdateMode.disabled, true);
+  allowTestUpdates.checked = true;
+  allowTestUpdates.dispatchEvent(new Event('change'));
+  externalBackend.checked = false;
+  externalBackend.dispatchEvent(new Event('change'));
+  rendererAssert.equal(backendUpdateRow.hidden, false);
+  rendererAssert.equal(backendUpdateButton.disabled, false);
+  view.setBackendUpdateCheckLoading(true);
+  rendererAssert.equal(backendUpdateButton.disabled, true);
+  view.setBackendUpdateCheckLoading(false);
+  rendererAssert.equal(backendUpdateButton.disabled, false);
+  externalBackend.checked = true;
+  externalBackend.dispatchEvent(new Event('change'));
   rendererAssert.equal(
     document.querySelector('#cfg-normal-fight-tasks .config-task-remaining')
       ?.textContent,
@@ -396,6 +472,7 @@ async function runRendererTest(root, tempDirectory) {
     {
       ...sample,
       battleTimes: 8,
+      backendUpdateMode: 'auto',
     },
     '设置页必须把历史战役次数强制归一化为 8',
   );
@@ -1346,6 +1423,7 @@ async function runRendererTest(root, tempDirectory) {
       );
       writeGuiSettings({
         update_mode: request.updateMode,
+        backend_update_mode: request.backendUpdateMode,
         allow_test_updates: request.allowTestUpdates,
         backend_port: request.backendPort,
         backend_startup_mode: request.backendStartupMode,
@@ -1418,6 +1496,7 @@ async function runRendererTest(root, tempDirectory) {
         update_mode: mode,
       });
     },
+    rememberActivePage: async () => {},
     setWindowPreferences: async preferences => {
       writeGuiSettings({
         default_window_width: preferences.defaultWidth,
@@ -1903,6 +1982,7 @@ async function runRendererTest(root, tempDirectory) {
   );
   rendererAssert.equal(savedGui.python_path, sample.pythonPath);
   rendererAssert.equal(savedGui.update_mode, sample.updateMode);
+  rendererAssert.equal(savedGui.backend_update_mode, 'auto');
   rendererAssert.equal(
     savedGui.default_window_width,
     sample.defaultWindowWidth,
@@ -2079,6 +2159,7 @@ async function runRendererTest(root, tempDirectory) {
     'cfg-window-height',
     'cfg-remember-window-bounds',
     'cfg-update-mode',
+    'cfg-backend-update-mode',
     'cfg-allow-test-updates',
     'cfg-theme-mode',
     'cfg-accent-color',

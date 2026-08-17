@@ -205,10 +205,33 @@ userData/.migration-state.json
 原 `2.1.0-alpha.1` 三件套用于晚恢复更新的旧 Alpha。不得用版本号与安装包不一致
 的清单代替这两条单调升级路径。
 
+## Alpha 后端独立更新
+
+后端独立更新只在 `allow_test_updates=true` 且后端为 `managed` 时启用。Stable
+继续使用 GUI 绑定的固定后端提交，external 后端继续由本地仓库自行管理。
+
+- `BackendUpdateService` 独占渠道门禁、更新决策和启动/退出用例编排。
+- `BackendUpdateRemoteRepository` 独占 GitHub 请求、归档下载和解压。
+- `BackendUpdateRepository` 独占状态文件、暂存路径、差异应用和回滚。
+- Main 只装配上述依赖，并在启动和退出生命周期调用 Service。
+- GUI 更新模式保存在 `update_mode`；Alpha 后端更新模式保存在
+  `backend_update_mode`。旧配置缺少后端字段时继承原更新模式。
+- 当前应用提交、GUI 绑定提交和待应用更新记录在
+  `python/site-packages/.autowsgr-update-state.json`。
+- 下载和解压位于 `userData/.backend-update-staging`，不会直接修改运行中的后端。
+- 常规提交在退出并停止后端后按文件差异新增、覆盖和删除。
+- `pyproject.toml` 变化、提交历史不连续或差异超过阈值时改走完整安装。
+- 增量失败时恢复受影响文件；完整安装失败时恢复整个受管 `site-packages`。
+  两种失败都会保留待应用状态，下次退出继续重试。
+- 切换 Stable 或 external 后不会应用已暂存的 Alpha 更新。GUI 覆盖升级会重新安装
+  发行清单绑定的后端，并清除独立更新状态。
+
+准备新提交时使用独立候选目录；下载或解压失败不得删除上一次已经可用的暂存。
+
 更新检查返回 `available | up-to-date | error`，网络错误不能显示为最新版。
 
-下载完成后用户选择立即重启或下次启动。pending 更新必须在任何迁移和窗口创建前
-处理。
+下载完成后用户选择立即重启或下次启动。pending 恢复和增量重试必须在后端启动及
+窗口创建前处理。
 
 Windows 安装产物包含 `resources/.autowsgr-install-manifest.json`，以相对路径
 记录当前版本拥有的程序文件。兼容版升级前暂存旧清单，旧卸载器在升级模式下保留

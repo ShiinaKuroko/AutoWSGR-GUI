@@ -60,16 +60,19 @@ export function getTemplateRepository(
 export type SettingsGateway = Pick<
   ElectronBridge,
   | 'checkAdbDevices'
+  | 'checkBackendUpdates'
   | 'checkGuiUpdates'
   | 'connectAdbDevice'
   | 'disconnectAdbDevice'
   | 'getShipLibraryStatus'
   | 'getUpdateMode'
+  | 'onBackendUpdateStatus'
   | 'onShipLibraryUpdateProgress'
   | 'onUpdateStatus'
   | 'openDirectoryDialog'
   | 'openFileDialog'
   | 'openFolder'
+  | 'prepareBackendUpdate'
   | 'readManagedCombatPlan'
   | 'updateShipLibrary'
   | 'validateCudaPath'
@@ -77,6 +80,15 @@ export type SettingsGateway = Pick<
 >;
 
 export function getSettingsGateway(): SettingsGateway | undefined {
+  return window.electronBridge;
+}
+
+export type NavigationGateway = Pick<
+  ElectronBridge,
+  'getWindowPreferences' | 'rememberActivePage'
+>;
+
+export function getNavigationGateway(): NavigationGateway | undefined {
   return window.electronBridge;
 }
 
@@ -92,6 +104,7 @@ export function getAppRuntimeGateway(): AppRuntimeGateway | undefined {
 export type StartupGateway = Pick<
   ElectronBridge,
   | 'appendFile'
+  | 'autoCheckBackendUpdates'
   | 'checkEnvironment'
   | 'checkGuiUpdates'
   | 'getAppRoot'
@@ -122,6 +135,7 @@ export type ConfigurationGateway = Pick<
   | 'getBackendPort'
   | 'getBackendRepoPath'
   | 'getBackendStartupMode'
+  | 'getBackendUpdateMode'
   | 'getCudaPath'
   | 'getGuiAutomationSettings'
   | 'getAllowTestUpdates'

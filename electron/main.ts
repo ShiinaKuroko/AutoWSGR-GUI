@@ -5,9 +5,13 @@ import { app, BrowserWindow, ipcMain, dialog, screen, shell } from 'electron';
 import * as path from 'path';
 import {
   initPythonEnv, clearPythonCache,
-  isAllowedPythonVersion, findPython, checkEnvironment,
+  isAllowedPythonVersion, findPython, checkEnvironment, buildAutoUpdateDeps,
   installDependencies, installPortablePython,
   backendShipNamesPath,
+  installBackendArchive,
+  verifyBackendRuntimeContract,
+  localSitePackages,
+  BACKEND_DISTRIBUTIONS,
 } from './pythonEnv';
 import { detectEmulator } from './emulatorDetect';
 import {
@@ -75,6 +79,9 @@ import { ShipNameSynchronizer } from './services/ShipNameSynchronizer';
 import { AdbService } from './services/AdbService';
 import { CudaEnvironmentService } from './services/CudaEnvironmentService';
 import { GuiConfigurationService } from './services/GuiConfigurationService';
+import {
+  BackendUpdateService,
+} from './services/BackendUpdateService';
 import {
   GuiSettingsCommitService,
 } from './services/GuiSettingsCommitService';
@@ -267,11 +274,92 @@ const windowService = new WindowService(guiSettingsStore, {
     void dialog.showMessageBox(options);
   },
 });
+
+async function chooseRestartTiming(
+  title: string,
+  message: string,
+  detail: string,
+): Promise<'restart' | 'next-launch'> {
+  const options = {
+    type: 'question' as const,
+    title,
+    message,
+    detail,
+    buttons: ['立即重启', '下次启动'],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  };
+  const mainWindow = windowService.getMainWindow();
+  const result = mainWindow
+    ? await dialog.showMessageBox(mainWindow, options)
+    : await dialog.showMessageBox(options);
+  return result.response === 0 ? 'restart' : 'next-launch';
+}
+
 const guiSettingsCommitService = new GuiSettingsCommitService(
   guiConfigurationService,
   secureFileService,
   windowService,
 );
+const backendUpdateService = new BackendUpdateService({
+  getStagingRoot: () => path.join(
+    appPaths.userDataRoot(),
+    '.backend-update-staging',
+  ),
+  getStatePath: () => path.join(
+    localSitePackages(),
+    '.autowsgr-update-state.json',
+  ),
+  getInstalledPackageDir: () => path.join(
+    localSitePackages(),
+    'autowsgr',
+  ),
+  getAppVersion: () => app.getVersion(),
+  allowTestUpdates: () => guiConfigurationService.allowTestUpdates(),
+  backendStartupMode: () => guiConfigurationService.backendStartupMode(),
+  alphaDistribution: () => BACKEND_DISTRIBUTIONS.alpha,
+  atomicFiles: atomicFileStore,
+  sendStatus: status => {
+    windowService.sendToRenderer('backend-update-status', status);
+  },
+  chooseRestartTiming: commit => chooseRestartTiming(
+    '后端更新准备完成',
+    `后端提交 ${commit.slice(0, 7)} 已下载并校验完成`,
+    [
+      '“立即重启”会安全停止后端和 ADB，退出前应用后端更新。',
+      '“下次启动”会继续当前任务，本次退出时应用更新。',
+    ].join('\n'),
+  ),
+  restartApplication: () => {
+    app.relaunch();
+    app.quit();
+  },
+  log: message => {
+    console.log(`[BackendUpdate] ${message}`);
+    guiUpdaterLogger.info(message);
+  },
+  runtime: {
+    findPython,
+    validateBackend: (pythonCmd) => (
+      verifyBackendRuntimeContract(
+        pythonCmd,
+        buildAutoUpdateDeps(
+          message => console.log(`[BackendUpdate] ${message}`),
+        ),
+      )
+    ),
+    installArchive: (pythonCmd, zipPath) => (
+      installBackendArchive(
+        pythonCmd,
+        buildAutoUpdateDeps(
+          message => console.log(`[BackendUpdate] ${message}`),
+        ),
+        zipPath,
+      )
+    ),
+  },
+});
 singleInstanceService.setMainWindowProvider(
   () => windowService.getMainWindow(),
 );
@@ -575,6 +663,9 @@ function initializeApplicationLifecycle(): void {
         guiConfigurationService.configuredPythonPath()
       ),
       getUpdateMode: () => guiConfigurationService.updateMode(),
+      getBackendUpdateMode: () => (
+        guiConfigurationService.backendUpdateMode()
+      ),
       allowTestUpdates: () => (
         guiConfigurationService.allowTestUpdates()
       ),
@@ -585,6 +676,15 @@ function initializeApplicationLifecycle(): void {
         guiConfigurationService.backendRepoPath()
       ),
       getTempDir: () => app.getPath('temp'),
+      beforeManagedBackendInstall: () => (
+        backendUpdateService.beginManagedBackendInstall()
+      ),
+      onManagedBackendInstalled: () => {
+        backendUpdateService.clearStateAfterManagedInstall();
+      },
+      afterManagedBackendInstall: () => {
+        backendUpdateService.endManagedBackendInstall();
+      },
     });
     initBackend({
       appRoot,
@@ -629,8 +729,12 @@ function initializeApplicationLifecycle(): void {
       ),
       getAppVersion: () => app.getVersion(),
       allowTestUpdates: () => guiConfigurationService.allowTestUpdates(),
+      getBackendUpdateMode: () => (
+        guiConfigurationService.backendUpdateMode()
+      ),
       logger: guiUpdaterLogger,
       updateStates: guiUpdateStateStore,
+      backendUpdates: backendUpdateService,
       chooseDownload: async (version) => {
         const options = {
           type: 'question' as const,
@@ -652,26 +756,14 @@ function initializeApplicationLifecycle(): void {
         return result.response === 0 ? 'now' : 'later';
       },
       chooseRestartTiming: async (version) => {
-        const options = {
-          type: 'question' as const,
-          title: 'GUI 更新准备完成',
-          message: `GUI v${version} 已下载并校验完成`,
-          detail: [
+        return chooseRestartTiming(
+          'GUI 更新准备完成',
+          `GUI v${version} 已下载并校验完成`,
+          [
             '“立即重启”会安全停止后端和 ADB，静默安装完成后启动新版本。',
             '“下次启动”会继续当前任务，下次打开 GUI 时先完成更新再显示主窗口。',
           ].join('\n'),
-          buttons: ['立即重启', '下次启动'],
-          defaultId: 1,
-          cancelId: 1,
-          noLink: true,
-        };
-        const mainWindow = windowService.getMainWindow();
-        const result = mainWindow
-          ? await dialog.showMessageBox(mainWindow, options)
-          : await dialog.showMessageBox(options);
-        return result.response === 0
-          ? 'restart'
-          : 'next-launch';
+        );
       },
       installDownloadedUpdate: async () => {
         await stopRuntimeResources();
@@ -680,6 +772,7 @@ function initializeApplicationLifecycle(): void {
         app.quit();
       },
     });
+    await backendUpdateService.recoverAndApplyOnStartup();
     windowService.createWindow();
     const migrationNotice = buildLegacyMigrationNotice(
       legacyMigrationResult,
@@ -704,7 +797,8 @@ function initializeApplicationLifecycle(): void {
     if (runtimeShutdownInProgress) return;
 
     runtimeShutdownInProgress = true;
-    void stopRuntimeResources().then(() => {
+    void stopRuntimeResources().then(async () => {
+      await backendUpdateService.applyBeforeExit();
       runtimeShutdownComplete = true;
       runtimeShutdownInProgress = false;
       app.quit();

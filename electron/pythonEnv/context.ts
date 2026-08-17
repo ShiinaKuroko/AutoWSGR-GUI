@@ -7,10 +7,14 @@ export interface PythonEnvContext {
   sendProgress: (msg: string) => void;
   getConfiguredPythonPath: () => string | null;
   getUpdateMode: () => 'auto' | 'manual';
+  getBackendUpdateMode: () => 'auto' | 'manual';
   allowTestUpdates: () => boolean;
   getBackendStartupMode: () => 'managed' | 'external';
   getBackendRepoPath: () => string;
   getTempDir: () => string;
+  beforeManagedBackendInstall?: () => Promise<void>;
+  onManagedBackendInstalled?: () => void;
+  afterManagedBackendInstall?: () => void;
 }
 
 let ctx: PythonEnvContext;

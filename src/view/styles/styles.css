@@ -6884,12 +6884,12 @@ input[type=checkbox]:focus-visible {
   color: var(--text-muted);
   font-size: 10px;
 }
-.config-update-progress-copy #gui-update-status {
+.config-update-progress-copy > span:first-child {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.config-update-progress-copy #gui-update-percent {
+.config-update-progress-copy > span:last-child {
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
 }

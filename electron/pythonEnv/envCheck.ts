@@ -141,10 +141,12 @@ function writeEnvMarker(
 // autowsgr 更新桥接
 
 /** 构造 autoUpdateAutowsgr 的依赖对象。 */
-function buildAutoUpdateDeps(): AutoUpdateDeps {
+export function buildAutoUpdateDeps(
+  sendProgress?: AutoUpdateDeps['sendProgress'],
+): AutoUpdateDeps {
   const ctx = getCtx();
   return {
-    sendProgress: ctx.sendProgress,
+    sendProgress: sendProgress ?? ctx.sendProgress,
     getTempDir: ctx.getTempDir,
     appRoot: ctx.appRoot,
     localSitePackages,
@@ -154,10 +156,34 @@ function buildAutoUpdateDeps(): AutoUpdateDeps {
   };
 }
 
+async function updateManagedBackend(
+  pythonCmd: string,
+  forceInstall = false,
+): Promise<string | null> {
+  const ctx = getCtx();
+  await ctx.beforeManagedBackendInstall?.();
+  try {
+    const updatedVer = await autoUpdateAutowsgr(
+      pythonCmd,
+      buildAutoUpdateDeps(),
+      forceInstall,
+    );
+    if (forceInstall && updatedVer) {
+      ctx.onManagedBackendInstalled?.();
+    }
+    return updatedVer;
+  } finally {
+    ctx.afterManagedBackendInstall?.();
+  }
+}
+
 function shouldAutoUpdate(environment: PythonEnvironment): boolean {
   const ctx = getCtx();
+  const updateMode = ctx.allowTestUpdates()
+    ? ctx.getBackendUpdateMode()
+    : ctx.getUpdateMode();
   return environment.startupMode === 'managed'
-    && ctx.getUpdateMode() !== 'manual';
+    && updateMode !== 'manual';
 }
 
 /** 发行包在安装器清除环境标记后必须重新安装一次指定后端。 */
@@ -175,7 +201,7 @@ function shouldForceManagedBackendInstall(
 function autoUpdateSkipMessage(environment: PythonEnvironment): string {
   return environment.startupMode === 'external'
     ? '本地后端调试模式：跳过 autowsgr 自动更新检查'
-    : '手动更新模式：跳过 autowsgr 自动更新检查';
+    : '手动后端更新模式：跳过 autowsgr 自动更新检查';
 }
 
 type CoreDepProbeResult = {
@@ -334,7 +360,7 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
       const markerAutowsgrVersion = markerProbe?.autowsgr ?? marker.autowsgrVersion;
       let finalVer = markerAutowsgrVersion;
       if (shouldAutoUpdate(marker.environment)) {
-        const updatedVer = await autoUpdateAutowsgr(marker.pythonCmd, buildAutoUpdateDeps());
+        const updatedVer = await updateManagedBackend(marker.pythonCmd);
         finalVer = updatedVer ?? markerAutowsgrVersion;
         if (updatedVer && updatedVer !== markerAutowsgrVersion) {
           writeEnvMarker(
@@ -444,11 +470,7 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
   const allReady = missingPackages.length === 0;
   if (!allReady && forceBackendInstall) {
     ctx.sendProgress('覆盖安装后正在增量更新后端及依赖…');
-    const updatedVer = await autoUpdateAutowsgr(
-      pythonCmd,
-      buildAutoUpdateDeps(),
-      true,
-    );
+    const updatedVer = await updateManagedBackend(pythonCmd, true);
     if (updatedVer) {
       writeEnvMarker(environment, pythonVersion || '', updatedVer);
       ctx.sendProgress(`环境增量更新完成 (autowsgr ${updatedVer}) ✓`);
@@ -477,9 +499,8 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
     // 自动模式下检查并更新 autowsgr。
     let finalVer = autowsgrVersion;
     if (shouldAutoUpdate(environment) || forceBackendInstall) {
-      const updatedVer = await autoUpdateAutowsgr(
+      const updatedVer = await updateManagedBackend(
         pythonCmd,
-        buildAutoUpdateDeps(),
         forceBackendInstall,
       );
       finalVer = updatedVer || autowsgrVersion;

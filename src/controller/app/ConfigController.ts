@@ -319,6 +319,7 @@ export class ConfigController {
       defaultWidth: 1280,
       defaultHeight: 720,
       rememberBounds: false,
+      lastActivePage: 'main',
     };
     const vo: ConfigViewObject = {
       emulatorType: cfg.emulator.type,
@@ -329,6 +330,8 @@ export class ConfigController {
         ?? (browserStorageStore.get('updateMode') === 'manual'
           ? 'manual'
           : 'auto'),
+      backendUpdateMode: this.gateway?.getBackendUpdateMode()
+        ?? 'auto',
       allowTestUpdates: this.gateway?.getAllowTestUpdates?.() === true,
       autoExpedition: cfg.daily_automation.auto_expedition,
       expeditionInterval: gui.expeditionInterval,
@@ -444,6 +447,7 @@ export class ConfigController {
 
       const committed = await bridge.commitGuiSettings({
         updateMode: collected.updateMode,
+        backendUpdateMode: collected.backendUpdateMode,
         allowTestUpdates: collected.allowTestUpdates,
         backendPort: collected.backendPort,
         backendStartupMode: collected.backendStartupMode,

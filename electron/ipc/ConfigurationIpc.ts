@@ -174,6 +174,17 @@ export function registerConfigurationIpc(
     event.returnValue = configuration.updateMode();
   });
 
+  ipc.on('get-backend-update-mode-sync', (event) => {
+    event.returnValue = configuration.backendUpdateMode();
+  });
+
+  ipc.handle(
+    'set-last-active-page',
+    (_event, pageId: string) => {
+      dependencies.windows.rememberActivePage(pageId);
+    },
+  );
+
   ipc.on('get-allow-test-updates-sync', (event) => {
     event.returnValue = configuration.allowTestUpdates();
   });

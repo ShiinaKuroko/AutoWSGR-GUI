@@ -1,5 +1,8 @@
 /** 渲染设置页运行环境状态、按钮 loading 和 GUI 更新进度。 */
-import type { GuiUpdateStatus } from '../../types/ipc.js';
+import type {
+  BackendUpdateStatus,
+  GuiUpdateStatus,
+} from '../../types/ipc.js';
 
 export type ConfigStatusKind = 'ok' | 'error' | 'unknown';
 
@@ -24,6 +27,21 @@ export class ConfigRuntimeView {
   );
   private readonly guiUpdateProgressFill = element<HTMLElement>(
     'gui-update-progress-fill',
+  );
+  private readonly backendUpdateProgress = element<HTMLElement>(
+    'backend-update-progress',
+  );
+  private readonly backendUpdateStatus = element<HTMLElement>(
+    'backend-update-status',
+  );
+  private readonly backendUpdatePercent = element<HTMLElement>(
+    'backend-update-percent',
+  );
+  private readonly backendUpdateProgressTrack = element<HTMLElement>(
+    'backend-update-progress-track',
+  );
+  private readonly backendUpdateProgressFill = element<HTMLElement>(
+    'backend-update-progress-fill',
   );
   private readonly backendStatus = document.getElementById(
     'cfg-backend-status',
@@ -214,6 +232,78 @@ export class ConfigRuntimeView {
       this.guiUpdateProgressTrack.removeAttribute('aria-valuenow');
     } else {
       this.guiUpdateProgressTrack.setAttribute(
+        'aria-valuenow',
+        String(percent),
+      );
+    }
+  }
+
+  setBackendUpdateCheckLoading(loading: boolean): void {
+    this.setButtonLoading(
+      'btn-check-backend-updates',
+      loading,
+      '检查中…',
+      '立即检查',
+    );
+  }
+
+  setBackendUpdateStatus(status: BackendUpdateStatus): void {
+    let text: string;
+    let percent: number | null = 0;
+    let state: 'active' | 'complete' | 'error' = 'active';
+    let percentText: string | null = null;
+
+    switch (status.status) {
+      case 'checking':
+        text = '正在检查后端更新…';
+        percent = null;
+        percentText = '检查中';
+        break;
+      case 'available':
+        text = `发现后端更新 (${status.commit.slice(0, 7)})，正在准备…`;
+        break;
+      case 'up-to-date':
+        text = '后端已是最新版本';
+        percent = 100;
+        state = 'complete';
+        break;
+      case 'downloading':
+        percent = status.progress;
+        text = '正在下载后端更新…';
+        percentText = `${percent}%`;
+        break;
+      case 'downloaded':
+        text = '后端更新已准备完成，重启 GUI 后生效';
+        percent = 100;
+        state = 'complete';
+        break;
+      case 'deferred':
+        text = '后端更新将在重启 GUI 时应用';
+        percent = 100;
+        state = 'complete';
+        break;
+      case 'error':
+        text = `后端更新失败：${status.message}`;
+        percentText = '失败';
+        state = 'error';
+        break;
+    }
+
+    this.backendUpdateProgress.hidden = false;
+    this.backendUpdateProgress.dataset['state'] = state;
+    this.backendUpdateProgress.title = text;
+    this.backendUpdateStatus.textContent = text;
+    this.backendUpdatePercent.textContent = percentText
+      ?? `${percent ?? 0}%`;
+    this.backendUpdateProgressTrack.classList.toggle(
+      'is-indeterminate',
+      percent === null,
+    );
+    this.backendUpdateProgressFill.style.width = `${percent ?? 0}%`;
+    if (percent === null) {
+      this.backendUpdateProgressTrack.removeAttribute('aria-valuenow');
+    } else {
+      this.backendUpdateProgressTrack.setAttribute(
         'aria-valuenow',
         String(percent),
       );

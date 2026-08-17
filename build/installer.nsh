@@ -6,6 +6,9 @@
 !define LEGACY_SITE_PACKAGES_BACKUP "$INSTDIR.site-packages-update"
 !define LEGACY_LOG_BACKUP "$INSTDIR.autowsgr-log-update"
 !define LEGACY_LOGS_BACKUP "$INSTDIR.autowsgr-logs-update"
+!define INSTALL_SHAPE_BACKUP "$INSTDIR.autowsgr-shape-update"
+!define CURRENT_INSTALL_MANIFEST "$PLUGINSDIR\autowsgr-current-install-manifest.json"
+!define MANAGED_FILE_SCRIPT "$PLUGINSDIR\remove-managed-install-files.ps1"
 
 ; 只结束安装目录内置 adb.exe，避免影响系统或其他工具的 ADB。
 !macro StopBundledAdb LABEL_SUFFIX
@@ -32,6 +35,66 @@
   Rename "${BACKUP}" "${DESTINATION}"
   IfErrors ${FAILURE_LABEL} LegacyDirectoryRestored_${LABEL_SUFFIX}
   LegacyDirectoryRestored_${LABEL_SUFFIX}:
+!macroend
+
+!macro RestoreManagedInstallShape LABEL_SUFFIX
+  IfFileExists \
+    "${INSTALL_SHAPE_BACKUP}\.shape-conflicts.json" \
+    0 ManagedInstallShapeRestored_${LABEL_SUFFIX}
+  IfFileExists \
+    "${MANAGED_FILE_SCRIPT}" \
+    0 ManagedInstallShapeRestoreFailed_${LABEL_SUFFIX}
+  nsExec::ExecToLog \
+    '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${MANAGED_FILE_SCRIPT}" -InstallDirectory "$INSTDIR" -PreviousManifestPath "${PREVIOUS_INSTALL_MANIFEST}" -CurrentManifestPath "${CURRENT_INSTALL_MANIFEST}" -Mode RestoreShape -ShapeBackupDirectory "${INSTALL_SHAPE_BACKUP}"'
+  Pop $R0
+  StrCmp \
+    $R0 \
+    "0" \
+    ManagedInstallShapeRestored_${LABEL_SUFFIX} \
+    ManagedInstallShapeRestoreFailed_${LABEL_SUFFIX}
+
+  ManagedInstallShapeRestoreFailed_${LABEL_SUFFIX}:
+    MessageBox MB_OK|MB_ICONSTOP \
+      "无法恢复安装前的程序文件，安装已停止。备份仍保留在安装目录旁。"
+    SetErrorLevel 1
+    Quit
+
+  ManagedInstallShapeRestored_${LABEL_SUFFIX}:
+!macroend
+
+!ifndef BUILD_UNINSTALLER
+Function .onInstFailed
+  !insertmacro RestoreManagedInstallShape InstallFailed
+FunctionEnd
+
+Function RestoreManagedInstallShapeOnUserAbort
+  !insertmacro RestoreManagedInstallShape UserAbort
+FunctionEnd
+!define MUI_CUSTOMFUNCTION_ABORT RestoreManagedInstallShapeOnUserAbort
+!endif
+
+!macro customUnInstallCheck
+  IfErrors ManagedUninstallLaunchFailed ManagedUninstallExitChecked
+
+  ManagedUninstallLaunchFailed:
+    IfFileExists \
+      "${INSTALL_SHAPE_BACKUP}\.shape-conflicts.json" \
+      0 ManagedUninstallChecked
+    !insertmacro RestoreManagedInstallShape UninstallLaunchFailed
+    MessageBox MB_OK|MB_ICONSTOP \
+      "旧版卸载器无法启动，安装已停止，旧版本已恢复。"
+    SetErrorLevel 2
+    Quit
+
+  ManagedUninstallExitChecked:
+    StrCmp $R0 "0" ManagedUninstallChecked 0
+    !insertmacro RestoreManagedInstallShape UninstallFailed
+    MessageBox MB_OK|MB_ICONEXCLAMATION \
+      "旧版卸载器执行失败，安装已停止，旧版本已恢复。"
+    SetErrorLevel 2
+    Quit
+
+  ManagedUninstallChecked:
 !macroend
 
 ; 覆盖安装时先等待 GUI 正常停止后端，超时后再结束整棵进程树。
@@ -89,6 +152,11 @@
   ${If} $R4 == "1"
     ${If} $R5 == "1"
       ; 保留失败更新留下的旧清单，使同版本重试仍能完成差集清理。
+      InitPluginsDir
+      File /oname=$PLUGINSDIR\remove-managed-install-files.ps1 \
+        "${PROJECT_DIR}\build\remove-managed-install-files.ps1"
+      File /oname=$PLUGINSDIR\autowsgr-current-install-manifest.json \
+        "${PROJECT_DIR}\build\generated\install-manifest.json"
       IfFileExists "${PREVIOUS_INSTALL_MANIFEST}" InstallManifestStaged 0
       CreateDirectory "$INSTDIR\resources"
       ClearErrors
@@ -155,6 +223,21 @@
       Quit
 
     InstallManifestStaged:
+      ${If} $R5 == "1"
+        nsExec::ExecToLog \
+          '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${MANAGED_FILE_SCRIPT}" -InstallDirectory "$INSTDIR" -PreviousManifestPath "${PREVIOUS_INSTALL_MANIFEST}" -CurrentManifestPath "${CURRENT_INSTALL_MANIFEST}" -Mode PrepareShape -ShapeBackupDirectory "${INSTALL_SHAPE_BACKUP}"'
+        Pop $R0
+        StrCmp $R0 "0" InstallShapePrepared InstallShapePrepareFailed
+
+        InstallShapePrepareFailed:
+          MessageBox MB_OK|MB_ICONSTOP \
+            "无法安全处理程序文件与目录的互换，安装已停止，旧版本未被修改。"
+          SetErrorLevel 1
+          Quit
+
+        InstallShapePrepared:
+          DetailPrint "已处理程序文件与目录互换"
+      ${EndIf}
       DetailPrint "已准备程序文件所有权清单"
   ${EndIf}
 !macroend
@@ -192,12 +275,13 @@
     File /oname=$PLUGINSDIR\remove-managed-install-files.ps1 \
       "${PROJECT_DIR}\build\remove-managed-install-files.ps1"
     nsExec::ExecToLog \
-      '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\remove-managed-install-files.ps1" -InstallDirectory "$INSTDIR" -PreviousManifestPath "${PREVIOUS_INSTALL_MANIFEST}" -CurrentManifestPath "${INSTALL_MANIFEST}"'
+      '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\remove-managed-install-files.ps1" -InstallDirectory "$INSTDIR" -PreviousManifestPath "${PREVIOUS_INSTALL_MANIFEST}" -CurrentManifestPath "${INSTALL_MANIFEST}" -ShapeBackupDirectory "${INSTALL_SHAPE_BACKUP}"'
     Pop $R0
     StrCmp $R0 "0" ManagedFileCleanupDone ManagedFileCleanupFailed
 
     ManagedFileCleanupFailed:
       DetailPrint "下架程序文件清理失败，安装已停止"
+      !insertmacro RestoreManagedInstallShape ManagedFileCleanupFailed
       MessageBox MB_OK|MB_ICONSTOP \
         "无法安全清理下架程序文件。安装已停止，清单外文件未被处理。"
       SetErrorLevel 1
@@ -230,6 +314,7 @@
   Goto LegacyDataRestored
 
   LegacyDataRestoreFailed:
+    !insertmacro RestoreManagedInstallShape LegacyDataRestoreFailed
     MessageBox MB_OK|MB_ICONSTOP \
       "旧版日志或后端依赖恢复失败，安装已停止。临时数据仍保留在安装目录旁。"
     SetErrorLevel 1

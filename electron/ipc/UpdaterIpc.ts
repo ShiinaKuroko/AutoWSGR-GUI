@@ -13,6 +13,9 @@ import type { IpcRegistrar } from './IpcRegistrar';
 import type {
   GuiUpdateStateStore,
 } from '../services/GuiUpdateStateStore';
+import type {
+  BackendUpdateService,
+} from '../services/BackendUpdateService';
 import {
   classifyGuiUpdateCheck,
   resolveGuiUpdateSelectionPolicy,
@@ -28,8 +31,10 @@ export interface UpdaterContext {
   sendToRenderer(channel: string, ...args: unknown[]): boolean;
   getAppVersion(): string;
   allowTestUpdates(): boolean;
+  getBackendUpdateMode(): 'auto' | 'manual';
   logger: Logger;
   updateStates: GuiUpdateStateStore;
+  backendUpdates: BackendUpdateService;
   chooseDownload(
     version: string,
   ): Promise<'now' | 'later'>;
@@ -296,6 +301,32 @@ export function registerUpdaterIpc(
       return await checkPromise;
     } finally {
       checkPromise = null;
+    }
+  });
+
+  ipc.handle('check-backend-updates', () => {
+    return context.backendUpdates.check();
+  });
+
+  ipc.handle('auto-check-backend-updates', () => {
+    return context.backendUpdates.autoCheckIfEnabled(
+      context.getBackendUpdateMode(),
+    );
+  });
+
+  ipc.handle('prepare-backend-update', async (_event, commit: string) => {
+    try {
+      await context.backendUpdates.prepare(commit);
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : String(error);
+      context.logger.error(`后端独立更新准备失败: ${message}`);
+      context.sendToRenderer('backend-update-status', {
+        status: 'error',
+        message,
+      });
+      throw error;
     }
   });
 }

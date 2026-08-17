@@ -2,6 +2,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const manifestRelativePath = 'resources/.autowsgr-install-manifest.json';
+const generatedManifestPath = path.join(
+  __dirname,
+  'generated',
+  'install-manifest.json',
+);
+const installerGeneratedPaths = [
+  'resources/elevate.exe',
+];
 const persistentPaths = [
   '.env_ready',
   'log',
@@ -51,7 +59,12 @@ function comparePaths(left, right) {
 }
 
 function createInstallManifest(appOutDir, version) {
-  const files = collectPackagedFiles(appOutDir);
+  const files = [
+    ...new Set([
+      ...collectPackagedFiles(appOutDir),
+      ...installerGeneratedPaths,
+    ]),
+  ];
   files.sort(comparePaths);
   return {
     schemaVersion: 1,
@@ -69,6 +82,8 @@ function writeInstallManifest(appOutDir, version) {
   );
   fs.mkdirSync(path.dirname(packagedManifestPath), { recursive: true });
   fs.writeFileSync(packagedManifestPath, content, 'utf8');
+  fs.mkdirSync(path.dirname(generatedManifestPath), { recursive: true });
+  fs.writeFileSync(generatedManifestPath, content, 'utf8');
   return manifest;
 }
 

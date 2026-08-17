@@ -171,8 +171,8 @@
 
           <section class="config-list-section">
             <div class="config-section-heading">
-              <h3>更新与界面</h3>
-              <p>保留原有更新、颜色主题和主色调设置。</p>
+              <h3>界面设置</h3>
+              <p>管理窗口启动状态和界面显示。</p>
             </div>
             <div class="config-setting-list">
               <div class="config-setting-row">
@@ -191,7 +191,7 @@
               <div class="config-setting-row">
                 <div class="config-setting-copy">
                   <strong>记录退出时的窗口</strong>
-                  <span>启用后保存退出时的窗口大小和位置，下次启动优先恢复；显示器变化时自动回到默认大小。</span>
+                  <span>开启后下次打开 GUI 时将恢复到上一次退出时的状态。</span>
                 </div>
                 <div class="config-setting-control">
                   <label class="config-switch">
@@ -201,6 +201,33 @@
                   </label>
                 </div>
               </div>
+              <div class="config-setting-row">
+                <div class="config-setting-copy">
+                  <strong>窗口主题</strong>
+                  <span>选择暗色、柔和亮色或跟随系统，并设置按钮、选中状态和强调信息的颜色。</span>
+                </div>
+                <div class="config-setting-control">
+                  <div class="input-row config-accent-row config-theme-accent-row">
+                    <select id="cfg-theme-mode" class="input" aria-label="窗口主题">
+                      <option value="dark">暗色</option>
+                      <option value="light">亮色（柔和）</option>
+                      <option value="system">跟随系统</option>
+                    </select>
+                    <input type="color" id="cfg-accent-color" value="#0f7dff" class="color-picker">
+                    <span id="cfg-accent-label" class="accent-label">#0f7dff</span>
+                    <button class="btn btn-small" id="btn-reset-accent">重置</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="config-list-section">
+            <div class="config-section-heading">
+              <h3>更新设置</h3>
+              <p>管理 GUI、后端和舰船数据库更新。</p>
+            </div>
+            <div class="config-setting-list">
               <div class="config-setting-row">
                 <div class="config-setting-copy">
                   <strong>更新渠道</strong>
@@ -215,9 +242,41 @@
                   </label>
                 </div>
               </div>
+              <div id="cfg-backend-update-row" class="config-setting-row" hidden>
+                <div class="config-setting-copy">
+                  <strong>后端更新</strong>
+                  <span>自动模式会在启动时检查后端更新，手动模式仅在点击按钮时检查。</span>
+                </div>
+                <div class="config-setting-control">
+                  <div class="input-row config-update-controls">
+                    <select id="cfg-backend-update-mode" class="input">
+                      <option value="auto">自动更新</option>
+                      <option value="manual">手动更新</option>
+                    </select>
+                    <button class="btn btn-small" id="btn-check-backend-updates">立即检查</button>
+                    <div id="backend-update-progress" class="config-update-progress" hidden>
+                      <div class="config-update-progress-copy">
+                        <span id="backend-update-status">准备检查更新</span>
+                        <span id="backend-update-percent">0%</span>
+                      </div>
+                      <div
+                        id="backend-update-progress-track"
+                        class="config-update-progress-track"
+                        role="progressbar"
+                        aria-label="后端更新进度"
+                        aria-valuemin="0"
+                        aria-valuemax="100"
+                        aria-valuenow="0"
+                      >
+                        <span id="backend-update-progress-fill"></span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <div class="config-setting-row">
                 <div class="config-setting-copy">
-                  <strong>更新模式</strong>
+                  <strong>GUI 更新</strong>
                   <span>自动模式会在启动时检查更新，手动模式仅在点击按钮时检查。</span>
                 </div>
                 <div class="config-setting-control">
@@ -256,24 +315,6 @@
                   <div class="input-row ship-library-update-control">
                     <span id="ship-library-status" class="adb-status adb-status-unknown">尚未检查</span>
                     <button class="btn btn-small" id="btn-update-ship-library">更新舰船数据库</button>
-                  </div>
-                </div>
-              </div>
-              <div class="config-setting-row">
-                <div class="config-setting-copy">
-                  <strong>主色调</strong>
-                  <span>选择暗色、柔和亮色或跟随系统，并设置按钮、选中状态和强调信息的颜色。</span>
-                </div>
-                <div class="config-setting-control">
-                  <div class="input-row config-accent-row config-theme-accent-row">
-                    <select id="cfg-theme-mode" class="input" aria-label="界面主题">
-                      <option value="dark">暗色</option>
-                      <option value="light">亮色（柔和）</option>
-                      <option value="system">跟随系统</option>
-                    </select>
-                    <input type="color" id="cfg-accent-color" value="#0f7dff" class="color-picker">
-                    <span id="cfg-accent-label" class="accent-label">#0f7dff</span>
-                    <button class="btn btn-small" id="btn-reset-accent">重置</button>
                   </div>
                 </div>
               </div>

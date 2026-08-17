@@ -34,7 +34,7 @@ export {
   buildBackendRuntimeEnvironment,
 } from './cuda';
 
-export { checkEnvironment } from './envCheck';
+export { buildAutoUpdateDeps, checkEnvironment } from './envCheck';
 
 export {
   type DependencyInstallPlan,
@@ -50,4 +50,9 @@ export {
   resolveBackendDistribution,
 } from './backendRequirement';
 
-export { type AutoUpdateDeps, autoUpdateAutowsgr } from './updater';
+export {
+  type AutoUpdateDeps,
+  autoUpdateAutowsgr,
+  installBackendArchive,
+  verifyBackendRuntimeContract,
+} from './updater';
