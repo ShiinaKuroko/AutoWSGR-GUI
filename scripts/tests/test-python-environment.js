@@ -96,6 +96,7 @@ initPythonEnv({
   sendProgress: () => {},
   getConfiguredPythonPath: () => state.configuredPythonPath,
   getUpdateMode: () => 'manual',
+  getBackendUpdateMode: () => 'manual',
   allowTestUpdates: () => true,
   getBackendStartupMode: () => state.mode,
   getBackendRepoPath: () => state.repoPath,

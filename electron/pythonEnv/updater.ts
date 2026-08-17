@@ -256,6 +256,124 @@ function buildManagedDependencyRepairArgs(
   ];
 }
 
+/** 完整安装提交前验证新后端可导入且满足 GUI 运行契约。 */
+export async function verifyBackendRuntimeContract(
+  pythonCmd: string,
+  deps: AutoUpdateDeps,
+): Promise<boolean> {
+  const scriptPath = path.join(
+    deps.getTempDir(),
+    `autowsgr_full_update_probe_${Date.now()}.py`,
+  );
+  const targetDir = deps.localSitePackages();
+  fs.writeFileSync(scriptPath, [
+    'import json, site, sys',
+    `target = ${JSON.stringify(targetDir)}`,
+    'sys.path.insert(0, target)',
+    'site.addsitedir(target)',
+    'result = {"ready": False}',
+    ...buildBackendRuntimeContractProbeLines(),
+    'try:',
+    '    import autowsgr',
+    '    _verify_gui_runtime_contract()',
+    '    result["ready"] = True',
+    '    result["version"] = getattr(autowsgr, "__version__", "source")',
+    'except Exception as error:',
+    '    result["error"] = f"{type(error).__name__}: {error}"',
+    'print(json.dumps(result))',
+  ].join('\n'), 'utf-8');
+  try {
+    const { stdout } = await execAsync(
+      `"${pythonCmd}" "${scriptPath}"`,
+      { windowsHide: true, timeout: 30000, env: deps.pipEnv() },
+    );
+    const result: unknown = JSON.parse(stdout.trim());
+    return Boolean(
+      result
+      && typeof result === 'object'
+      && (result as { ready?: unknown }).ready === true
+    );
+  } catch {
+    return false;
+  } finally {
+    try { fs.unlinkSync(scriptPath); } catch { /* 忽略清理失败。 */ }
+  }
+}
+
+/**
+ * 从本地源码归档完整安装 managed 后端，供后端独立更新在
+ * 依赖变更或差异过大时退出流程复用现有 pip 安装链路。
+ */
+export async function installBackendArchive(
+  pythonCmd: string,
+  deps: AutoUpdateDeps,
+  archivePath: string,
+): Promise<boolean> {
+  const targetDir = deps.localSitePackages();
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+  deps.sendProgress('正在安装后端完整更新…');
+  if (!(await deps.ensurePip(pythonCmd))) {
+    deps.sendProgress('WARNING pip 不可用，后端完整安装失败');
+    return false;
+  }
+
+  const buildRequirementState = await ensureRequirements(
+    pythonCmd,
+    deps,
+    BACKEND_BUILD_REQUIREMENTS,
+  );
+  if (buildRequirementState !== 'ready') {
+    const code = await runPip(
+      pythonCmd,
+      buildRequirementFallbackArgs(targetDir, BACKEND_BUILD_REQUIREMENTS),
+      deps,
+    );
+    if (code !== 0) {
+      deps.sendProgress('WARNING 后端构建依赖安装失败');
+      return false;
+    }
+  }
+
+  const installCode = await runPip(
+    pythonCmd,
+    buildManagedAutowsgrUpdateArgs(targetDir, archivePath, true),
+    deps,
+  );
+  if (installCode !== 0) {
+    deps.sendProgress('WARNING 后端完整安装失败');
+    return false;
+  }
+
+  const runtimeState = await ensureRequirements(
+    pythonCmd,
+    deps,
+    [
+      ...SHIP_LIBRARY_REQUIREMENTS,
+      ...BACKEND_RUNTIME_REQUIREMENTS,
+    ],
+    true,
+  );
+  if (runtimeState !== 'ready') {
+    const code = await runPip(
+      pythonCmd,
+      buildManagedDependencyRepairArgs(targetDir, archivePath),
+      deps,
+    );
+    if (code !== 0) {
+      deps.sendProgress('WARNING 后端运行依赖核对失败');
+      return false;
+    }
+  }
+  if (!(await verifyBackendRuntimeContract(pythonCmd, deps))) {
+    deps.sendProgress('WARNING 后端完整安装后运行契约验证失败');
+    return false;
+  }
+  deps.sendProgress('后端完整更新安装完成 ✓');
+  return true;
+}
+
 /** 确保 managed 环境使用 GUI 明确支持的后端版本。 */
 export async function autoUpdateAutowsgr(
   pythonCmd: string,

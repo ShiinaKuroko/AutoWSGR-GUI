@@ -14,6 +14,7 @@ export interface WindowPreferences {
   defaultWidth: number;
   defaultHeight: number;
   rememberBounds: boolean;
+  lastActivePage: string;
 }
 
 export interface PreparedWindowPreferences {
@@ -50,11 +51,20 @@ const DEFAULT_WINDOW_WIDTH = 1280;
 const DEFAULT_WINDOW_HEIGHT = 720;
 const MIN_WINDOW_WIDTH = 854;
 const MIN_WINDOW_HEIGHT = 480;
+const MAIN_PAGE_IDS = ['main', 'plan', 'config'];
+
+/** 归一化最后活动页面，只接受主导航页面。 */
+function normalizeLastActivePage(value: unknown): string {
+  return typeof value === 'string' && MAIN_PAGE_IDS.includes(value)
+    ? value
+    : 'main';
+}
 
 /** 创建窗口并管理窗口偏好、引用和边界持久化。 */
 export class WindowService {
   private mainWindow: BrowserWindow | null = null;
   private lastWindowBounds: WindowBounds | null = null;
+  private lastActivePage: string | null = null;
 
   constructor(
     private readonly settings: GuiSettingsStore,
@@ -94,7 +104,7 @@ export class WindowService {
     }
   }
 
-  /** 读取并归一化默认窗口大小和边界记忆开关。 */
+  /** 读取并归一化默认窗口大小、边界记忆开关和最后活动页面。 */
   getPreferences(): WindowPreferences {
     const settings = this.settings.read();
     return {
@@ -109,6 +119,9 @@ export class WindowService {
         DEFAULT_WINDOW_HEIGHT,
       ),
       rememberBounds: settings.remember_window_bounds === true,
+      lastActivePage: normalizeLastActivePage(
+        settings.last_active_page,
+      ),
     };
   }
 
@@ -138,6 +151,9 @@ export class WindowService {
         current.defaultHeight,
       ),
       rememberBounds: preferences?.rememberBounds === true,
+      lastActivePage: normalizeLastActivePage(
+        preferences?.lastActivePage ?? current.lastActivePage,
+      ),
     };
     return {
       preferences: normalized,
@@ -149,6 +165,11 @@ export class WindowService {
     };
   }
 
+  /** 记录用户当前所在页面，退出时随窗口状态一起持久化。 */
+  rememberActivePage(pageId: string): void {
+    this.lastActivePage = normalizeLastActivePage(pageId);
+  }
+
   /** 缓存最后一次正常窗口边界，供窗口销毁后的退出阶段使用。 */
   captureWindowBounds(
     win: BrowserWindow | null = this.mainWindow,
@@ -157,10 +178,14 @@ export class WindowService {
     this.lastWindowBounds = win.getNormalBounds();
   }
 
-  /** 仅在用户启用窗口记忆时写入最后一次正常窗口边界。 */
+  /** 仅在用户启用窗口记忆时写入最后一次正常窗口边界和活动页面。 */
   persistWindowBounds(): void {
     if (this.getPreferences().rememberBounds && this.lastWindowBounds) {
-      this.settings.write({ window_bounds: this.lastWindowBounds });
+      this.settings.write({
+        window_bounds: this.lastWindowBounds,
+        last_active_page: this.lastActivePage
+          ?? this.getPreferences().lastActivePage,
+      });
     }
   }
 

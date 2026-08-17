@@ -34,23 +34,32 @@ function runCleanup(
   installDirectory,
   previousManifestPath,
   currentManifestPath,
+  options = {},
 ) {
+  const args = [
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-File',
+    cleanupScript,
+    '-InstallDirectory',
+    installDirectory,
+    '-PreviousManifestPath',
+    previousManifestPath,
+    '-CurrentManifestPath',
+    currentManifestPath,
+  ];
+  if (options.mode) args.push('-Mode', options.mode);
+  if (options.shapeBackupDirectory) {
+    args.push(
+      '-ShapeBackupDirectory',
+      options.shapeBackupDirectory,
+    );
+  }
   const result = spawnSync(
     'powershell.exe',
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-File',
-      cleanupScript,
-      '-InstallDirectory',
-      installDirectory,
-      '-PreviousManifestPath',
-      previousManifestPath,
-      '-CurrentManifestPath',
-      currentManifestPath,
-    ],
+    args,
     { encoding: 'utf8', windowsHide: true },
   );
   if (result.error) throw result.error;
@@ -94,6 +103,7 @@ function testManifestBuilder(temporaryRoot) {
       'adb/adb.exe',
       'python/python.exe',
       'resources/app.asar',
+      'resources/elevate.exe',
     ],
   });
 }
@@ -263,6 +273,103 @@ function testDuplicateManifestPathFailsBeforeDeletion(temporaryRoot) {
   assert.equal(fs.existsSync(removableFile), true);
 }
 
+function testFileToDirectoryShapeChange(temporaryRoot) {
+  const installDirectory = path.join(temporaryRoot, 'file-to-directory');
+  const previousManifestPath = path.join(temporaryRoot, 'file-to-dir-old.json');
+  const currentManifestPath = path.join(temporaryRoot, 'file-to-dir-new.json');
+  const backupDirectory = `${installDirectory}.autowsgr-shape-update`;
+  const oldFile = writeFile(installDirectory, 'app/node', 'old');
+  writeManifest(previousManifestPath, ['app/node'], '1.0.0');
+  writeManifest(currentManifestPath, ['app/node/new.dat'], '1.0.1');
+
+  runCleanup(installDirectory, previousManifestPath, currentManifestPath, {
+    mode: 'PrepareShape',
+    shapeBackupDirectory: backupDirectory,
+  });
+  assert.equal(fs.existsSync(oldFile), false);
+  assert.equal(fs.existsSync(path.join(backupDirectory, 'app/node')), true);
+
+  const newFile = writeFile(installDirectory, 'app/node/new.dat', 'new');
+  runCleanup(installDirectory, previousManifestPath, currentManifestPath, {
+    shapeBackupDirectory: backupDirectory,
+  });
+  assert.equal(fs.readFileSync(newFile, 'utf8'), 'new');
+  assert.equal(fs.existsSync(backupDirectory), false);
+}
+
+function testDirectoryToFileShapeChange(temporaryRoot) {
+  const installDirectory = path.join(temporaryRoot, 'directory-to-file');
+  const previousManifestPath = path.join(temporaryRoot, 'dir-to-file-old.json');
+  const currentManifestPath = path.join(temporaryRoot, 'dir-to-file-new.json');
+  const backupDirectory = `${installDirectory}.autowsgr-shape-update`;
+  writeFile(installDirectory, 'app/node/old.dat', 'old');
+  writeManifest(previousManifestPath, ['app/node/old.dat'], '1.0.0');
+  writeManifest(currentManifestPath, ['app/node'], '1.0.1');
+
+  runCleanup(installDirectory, previousManifestPath, currentManifestPath, {
+    mode: 'PrepareShape',
+    shapeBackupDirectory: backupDirectory,
+  });
+  assert.equal(fs.existsSync(path.join(installDirectory, 'app/node')), false);
+
+  const newFile = writeFile(installDirectory, 'app/node', 'new');
+  runCleanup(installDirectory, previousManifestPath, currentManifestPath, {
+    shapeBackupDirectory: backupDirectory,
+  });
+  assert.equal(fs.readFileSync(newFile, 'utf8'), 'new');
+  assert.equal(fs.existsSync(backupDirectory), false);
+}
+
+function testUnknownFileBlocksDirectoryToFileChange(temporaryRoot) {
+  const installDirectory = path.join(temporaryRoot, 'shape-with-user-file');
+  const previousManifestPath = path.join(temporaryRoot, 'shape-user-old.json');
+  const currentManifestPath = path.join(temporaryRoot, 'shape-user-new.json');
+  const backupDirectory = `${installDirectory}.autowsgr-shape-update`;
+  const oldFile = writeFile(installDirectory, 'app/node/old.dat', 'old');
+  const userFile = writeFile(installDirectory, 'app/node/user.dat', 'user');
+  writeManifest(previousManifestPath, ['app/node/old.dat'], '1.0.0');
+  writeManifest(currentManifestPath, ['app/node'], '1.0.1');
+
+  assert.throws(
+    () => runCleanup(
+      installDirectory,
+      previousManifestPath,
+      currentManifestPath,
+      {
+        mode: 'PrepareShape',
+        shapeBackupDirectory: backupDirectory,
+      },
+    ),
+    /unmanaged file/,
+  );
+  assert.equal(fs.existsSync(oldFile), true);
+  assert.equal(fs.existsSync(userFile), true);
+  assert.equal(fs.existsSync(backupDirectory), false);
+}
+
+function testShapeRestoreAfterFailedInstall(temporaryRoot) {
+  const installDirectory = path.join(temporaryRoot, 'shape-restore');
+  const previousManifestPath = path.join(temporaryRoot, 'shape-restore-old.json');
+  const currentManifestPath = path.join(temporaryRoot, 'shape-restore-new.json');
+  const backupDirectory = `${installDirectory}.autowsgr-shape-update`;
+  const oldFile = writeFile(installDirectory, 'app/node', 'old');
+  writeManifest(previousManifestPath, ['app/node'], '1.0.0');
+  writeManifest(currentManifestPath, ['app/node/new.dat'], '1.0.1');
+
+  runCleanup(installDirectory, previousManifestPath, currentManifestPath, {
+    mode: 'PrepareShape',
+    shapeBackupDirectory: backupDirectory,
+  });
+  writeFile(installDirectory, 'app/node/new.dat', 'partial');
+  runCleanup(installDirectory, previousManifestPath, currentManifestPath, {
+    mode: 'RestoreShape',
+    shapeBackupDirectory: backupDirectory,
+  });
+
+  assert.equal(fs.readFileSync(oldFile, 'utf8'), 'old');
+  assert.equal(fs.existsSync(backupDirectory), false);
+}
+
 function testInstallerContract() {
   const installer = fs.readFileSync(
     path.join(root, 'build', 'installer.nsh'),
@@ -301,6 +408,23 @@ function testInstallerContract() {
   )[1];
   assert.match(finalCleanup, /-PreviousManifestPath/);
   assert.match(finalCleanup, /-CurrentManifestPath/);
+  assert.match(installer, /-Mode PrepareShape/);
+  assert.match(installer, /-Mode RestoreShape/);
+  assert.match(installer, /generated\\install-manifest\.json/);
+  const shapePrepareFailure = installer.match(
+    /InstallShapePrepareFailed:[\s\S]*?InstallShapePrepared:/,
+  )[0];
+  assert.doesNotMatch(shapePrepareFailure, /Delete/);
+  assert.match(installer, /Function \.onInstFailed/);
+  assert.match(
+    installer,
+    /!define MUI_CUSTOMFUNCTION_ABORT RestoreManagedInstallShapeOnUserAbort/,
+  );
+  assert.doesNotMatch(installer, /Function \.onUserAbort/);
+  assert.match(
+    finalCleanup,
+    /ManagedFileCleanupFailed:[\s\S]*RestoreManagedInstallShape/,
+  );
   assert.doesNotMatch(installer, /NEXT_INSTALL_MANIFEST|-Mode Validate/);
 }
 
@@ -313,6 +437,10 @@ try {
   testMissingManagedFileIsIdempotent(temporaryRoot);
   testUnsafeManifestFailsBeforeDeletion(temporaryRoot);
   testDuplicateManifestPathFailsBeforeDeletion(temporaryRoot);
+  testFileToDirectoryShapeChange(temporaryRoot);
+  testDirectoryToFileShapeChange(temporaryRoot);
+  testUnknownFileBlocksDirectoryToFileChange(temporaryRoot);
+  testShapeRestoreAfterFailedInstall(temporaryRoot);
   testInstallerContract();
   console.log('incremental install compatibility test passed');
 } finally {

@@ -33,16 +33,36 @@ const updateChannelControl = html.match(
 if (!updateChannelControl) {
   throw new Error('Update channel control must be a checkbox');
 }
-const updateSectionIndex = html.indexOf('<h3>更新与界面</h3>');
+const interfaceSectionIndex = html.indexOf('<h3>界面设置</h3>');
+const defaultWindowSizeIndex = html.indexOf('<strong>默认窗口大小</strong>');
+const rememberWindowIndex = html.indexOf('<strong>记录退出时的窗口</strong>');
+const windowThemeIndex = html.indexOf('<strong>窗口主题</strong>');
+if (
+  interfaceSectionIndex < 0
+  || defaultWindowSizeIndex < interfaceSectionIndex
+  || rememberWindowIndex < defaultWindowSizeIndex
+  || windowThemeIndex < rememberWindowIndex
+) {
+  throw new Error('Interface settings must use the required setting order');
+}
+const updateSectionIndex = html.indexOf('<h3>更新设置</h3>');
 const updateChannelIndex = html.indexOf('<strong>更新渠道</strong>');
-const updateModeIndex = html.indexOf('<strong>更新模式</strong>');
+const backendUpdateModeIndex = html.indexOf(
+  '<strong>后端更新</strong>',
+);
+const guiUpdateModeIndex = html.indexOf('<strong>GUI 更新</strong>');
+const shipLibraryUpdateIndex = html.indexOf(
+  '<strong>更新舰船数据库</strong>',
+);
 if (
   updateSectionIndex < 0
   || updateChannelIndex < updateSectionIndex
-  || updateModeIndex < updateChannelIndex
+  || backendUpdateModeIndex < updateChannelIndex
+  || guiUpdateModeIndex < backendUpdateModeIndex
+  || shipLibraryUpdateIndex < guiUpdateModeIndex
 ) {
   throw new Error(
-    'Update channel control must be above update mode in the update section',
+    'Update settings must use the required setting order',
   );
 }
 if (

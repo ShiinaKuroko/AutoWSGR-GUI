@@ -133,6 +133,7 @@ function assertReleasePackage(distribution) {
     'python/python.exe',
     'resources/app.asar',
     'resources/backend-distribution.json',
+    'resources/elevate.exe',
   ]) {
     assert.equal(
       manifestPaths.includes(managedFile),

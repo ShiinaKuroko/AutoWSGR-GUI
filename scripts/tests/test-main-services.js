@@ -28,6 +28,7 @@ const {
 } = require('./main-services/test-ship-library');
 const { testUpdaterAndBackendShutdown } = require('./main-services/test-updater-and-shutdown');
 const { testSingleInstanceService } = require('./main-services/test-single-instance');
+const { testBackendUpdateService } = require('./main-services/test-backend-update');
 
 async function main() {
   testSingleInstanceService();
@@ -49,6 +50,7 @@ async function main() {
   testShipNameSynchronizer();
   await testShipLibraryUpdater();
   await testUpdaterAndBackendShutdown();
+  await testBackendUpdateService();
   console.log('main services tests passed');
 }
 

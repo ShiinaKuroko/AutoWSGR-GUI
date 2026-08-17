@@ -174,6 +174,7 @@ export class AppController {
     initAnimatedSelects();
     this.navigationCtrl.bindNavigation();
     this.navigationCtrl.bindPlanNavigation();
+    this.navigationCtrl.restoreLastActivePage();
     this.bindQueueActions();
     this.schedulerBinder.bindSchedulerCallbacks();
     this.schedulerBinder.bindCronCallbacks();

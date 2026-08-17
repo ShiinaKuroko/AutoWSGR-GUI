@@ -41,6 +41,7 @@ release/
 _setup_tmp/
 .tmp/
 .tmp_*
+/build/generated/
 node/
 python/
 redist/

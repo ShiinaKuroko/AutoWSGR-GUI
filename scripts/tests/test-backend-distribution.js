@@ -97,12 +97,12 @@ try {
   );
   assert.match(
     installer,
-    /Rename "\$INSTDIR\\python\\site-packages" "\$INSTDIR\.site-packages-update"/,
+    /!insertmacro PreserveLegacyDirectory\s+\\\s+"\$INSTDIR\\python\\site-packages"\s+\\\s+"\$\{LEGACY_SITE_PACKAGES_BACKUP\}"/,
     '覆盖安装前必须临时保留已有后端依赖',
   );
   assert.match(
     installer,
-    /Rename "\$INSTDIR\.site-packages-update" "\$INSTDIR\\python\\site-packages"/,
+    /!insertmacro RestoreLegacyDirectory\s+\\\s+"\$\{LEGACY_SITE_PACKAGES_BACKUP\}"\s+\\\s+"\$INSTDIR\\python\\site-packages"/,
     '写入新前端后必须恢复已有后端依赖',
   );
   assert.match(installer, /!macro customUnInstall/);
@@ -113,7 +113,7 @@ try {
   );
   assert.match(
     installer,
-    /RMDir \/r "\$INSTDIR\\python\\site-packages"/,
+    /!macro customRemoveFiles[\s\S]*\$\{ifNot\} \$\{isUpdated\}[\s\S]*RMDir \/r "\$INSTDIR"/,
     '主动卸载时必须删除后端依赖',
   );
   assert.match(

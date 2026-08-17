@@ -13,6 +13,7 @@ import type {
   DecisiveAutomationSource,
 } from '../src/shared/decisiveAutomation';
 import type {
+  BackendUpdateStatus,
   DecisivePlanSettings,
   ElectronBridge,
   GuiSettingsCommitRequest,
@@ -55,6 +56,7 @@ const electronBridge = {
       defaultWidth: number;
       defaultHeight: number;
       rememberBounds: boolean;
+      lastActivePage: string;
     };
   },
 
@@ -64,6 +66,10 @@ const electronBridge = {
     rememberBounds: boolean;
   }) => {
     return ipcRenderer.invoke('set-window-preferences', preferences);
+  },
+
+  rememberActivePage: (pageId: string) => {
+    return ipcRenderer.invoke('set-last-active-page', pageId);
   },
 
   getGuiAutomationSettings: () => {
@@ -137,6 +143,10 @@ const electronBridge = {
 
   getUpdateMode: () => {
     return ipcRenderer.sendSync('get-update-mode-sync') as 'auto' | 'manual';
+  },
+
+  getBackendUpdateMode: () => {
+    return ipcRenderer.sendSync('get-backend-update-mode-sync') as 'auto' | 'manual';
   },
 
   getAllowTestUpdates: () => {
@@ -405,6 +415,23 @@ const electronBridge = {
 
   onUpdateStatus: (callback: (status: GuiUpdateStatus) => void) => {
     ipcRenderer.on('update-status', (_event, status) => callback(status));
+  },
+
+  // 后端独立更新
+  checkBackendUpdates: () => {
+    return ipcRenderer.invoke('check-backend-updates');
+  },
+
+  autoCheckBackendUpdates: () => {
+    return ipcRenderer.invoke('auto-check-backend-updates');
+  },
+
+  prepareBackendUpdate: (commit: string) => {
+    return ipcRenderer.invoke('prepare-backend-update', commit);
+  },
+
+  onBackendUpdateStatus: (callback: (status: BackendUpdateStatus) => void) => {
+    ipcRenderer.on('backend-update-status', (_event, status) => callback(status));
   },
 
   onBackendLog: (callback: (line: string) => void) => {

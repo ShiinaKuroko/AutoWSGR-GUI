@@ -28,10 +28,12 @@ export interface WindowPreferences {
   defaultWidth: number;
   defaultHeight: number;
   rememberBounds: boolean;
+  lastActivePage: string;
 }
 
 export interface GuiSettingsCommitRequest {
   updateMode: 'auto' | 'manual';
+  backendUpdateMode: 'auto' | 'manual';
   allowTestUpdates: boolean;
   backendPort: number;
   backendStartupMode: 'managed' | 'external';
@@ -40,7 +42,7 @@ export interface GuiSettingsCommitRequest {
   cudaPath: string | null;
   saveBackendScreenshots: boolean;
   pythonPath: string | null;
-  windowPreferences: WindowPreferences;
+  windowPreferences: Omit<WindowPreferences, 'lastActivePage'>;
   automation: GuiAutomationSettings;
   usersettingsYaml: string;
 }
@@ -94,6 +96,20 @@ export type GuiUpdateStatus =
       status: 'installing' | 'error';
       message: string;
     };
+
+export type BackendUpdateCheckResult =
+  | { status: 'available'; commit: string }
+  | { status: 'up-to-date'; commit: string }
+  | { status: 'error'; message: string };
+
+export type BackendUpdateStatus =
+  | { status: 'checking' }
+  | { status: 'available'; commit: string }
+  | { status: 'up-to-date' }
+  | { status: 'downloading'; progress: number }
+  | { status: 'downloaded'; commit: string }
+  | { status: 'deferred'; commit: string }
+  | { status: 'error'; message: string };
 
 export type PlanPresetSource = 'system' | 'user';
 export type DailyPlanType = 'exercise' | 'campaign' | 'decisive';
@@ -377,6 +393,12 @@ export interface ElectronBridge {
   onUpdateStatus: (
     callback: (status: GuiUpdateStatus) => void,
   ) => void;
+  checkBackendUpdates: () => Promise<BackendUpdateCheckResult>;
+  autoCheckBackendUpdates: () => Promise<void>;
+  prepareBackendUpdate: (commit: string) => Promise<void>;
+  onBackendUpdateStatus: (
+    callback: (status: BackendUpdateStatus) => void,
+  ) => void;
   onBackendLog: (callback: (line: string) => void) => void;
   onSetupLog: (callback: (text: string) => void) => void;
   getAppVersion: () => string;
@@ -420,9 +442,11 @@ export interface ElectronBridge {
   setSaveBackendScreenshots: (enabled: boolean) => Promise<void>;
   getWindowPreferences: () => WindowPreferences;
   setWindowPreferences: (
-    preferences: WindowPreferences,
+    preferences: Omit<WindowPreferences, 'lastActivePage'>,
   ) => Promise<WindowPreferences>;
+  rememberActivePage: (pageId: string) => Promise<void>;
   getUpdateMode: () => 'auto' | 'manual';
+  getBackendUpdateMode: () => 'auto' | 'manual';
   getAllowTestUpdates?: () => boolean;
   setUpdateMode: (mode: 'auto' | 'manual') => Promise<void>;
   getShipLibraryStatus: () => Promise<ShipLibraryStatus>;

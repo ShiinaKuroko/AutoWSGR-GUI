@@ -3,7 +3,10 @@
  * ConfigView —— 设置页纯渲染组件。
  * 接收 ConfigViewObject 填充表单，用户修改后由 Controller 收集。
  */
-import type { GuiUpdateStatus } from '../../types/ipc.js';
+import type {
+  BackendUpdateStatus,
+  GuiUpdateStatus,
+} from '../../types/ipc.js';
 import type { NormalFightTaskConfig } from '../../types/model.js';
 import type { ConfigViewObject } from '../../types/view.js';
 import {
@@ -38,6 +41,7 @@ export interface ConfigViewActions {
   onValidateCuda(): void;
   onValidatePython(): void;
   onCheckUpdates(): void;
+  onCheckBackendUpdates(): void;
   onUpdateShipLibrary(): void;
   onConnectAdb(): void;
   onDisconnectAdb(): void;
@@ -57,6 +61,7 @@ export class ConfigView {
   private configTabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-config-tab]'));
   private configPanels = Array.from(document.querySelectorAll<HTMLElement>('[data-config-panel]'));
   private configTabDescription = document.getElementById('config-tab-description');
+  private backendUpdateChecking = false;
   private readonly automationView = new ConfigAutomationView();
   private readonly runtimeView = new ConfigRuntimeView();
 
@@ -65,6 +70,11 @@ export class ConfigView {
   private emuSerial = element<HTMLInputElement>('cfg-emu-serial');
   private gameApp = element<HTMLSelectElement>('cfg-game-app');
   private updateMode = element<HTMLSelectElement>('cfg-update-mode');
+  private backendUpdateMode = element<HTMLSelectElement>('cfg-backend-update-mode');
+  private backendUpdateRow = element<HTMLElement>('cfg-backend-update-row');
+  private backendUpdateButton = element<HTMLButtonElement>(
+    'btn-check-backend-updates',
+  );
   private allowTestUpdates = element<HTMLInputElement>('cfg-allow-test-updates');
   private autoExpedition = element<HTMLInputElement>('cfg-auto-expedition');
   private expeditionInterval = element<HTMLInputElement>('cfg-expedition-interval');
@@ -130,7 +140,14 @@ export class ConfigView {
       this.updateDebugAdvancedVisibility();
       this.updateBackendRepoVisibility();
     });
-    this.backendStartupMode.addEventListener('change', () => this.updateBackendRepoVisibility());
+    this.allowTestUpdates.addEventListener(
+      'change',
+      () => this.updateBackendUpdateVisibility(),
+    );
+    this.backendStartupMode.addEventListener('change', () => {
+      this.updateBackendRepoVisibility();
+      this.updateBackendUpdateVisibility();
+    });
     this.cudaPath.addEventListener('input', () => {
       const hasPath = this.cudaPath.value.trim().length > 0;
       this.setCudaStatus(
@@ -174,6 +191,7 @@ export class ConfigView {
     bindClick('btn-validate-cuda', actions.onValidateCuda);
     bindClick('btn-validate-python', actions.onValidatePython);
     bindClick('btn-check-updates', actions.onCheckUpdates);
+    bindClick('btn-check-backend-updates', actions.onCheckBackendUpdates);
     bindClick('btn-update-ship-library', actions.onUpdateShipLibrary);
     bindClick('btn-connect-adb', actions.onConnectAdb);
     bindClick('btn-disconnect-adb', actions.onDisconnectAdb);
@@ -196,6 +214,7 @@ export class ConfigView {
     this.emuSerial.value = vo.emulatorSerial;
     this.gameApp.value = vo.gameApp;
     this.updateMode.value = vo.updateMode;
+    this.backendUpdateMode.value = vo.backendUpdateMode;
     this.allowTestUpdates.checked = vo.allowTestUpdates;
     this.autoExpedition.checked = vo.autoExpedition;
     this.expeditionInterval.value = String(vo.expeditionInterval);
@@ -262,6 +281,7 @@ export class ConfigView {
 
     this.updateDebugAdvancedVisibility();
     this.updateBackendRepoVisibility();
+    this.updateBackendUpdateVisibility();
   }
 
   /** 收集并校验当前表单。 */
@@ -281,6 +301,9 @@ export class ConfigView {
       emulatorSerial: this.emuSerial.value.trim(),
       gameApp: this.gameApp.value,
       updateMode: this.updateMode.value === 'manual' ? 'manual' : 'auto',
+      backendUpdateMode: this.backendUpdateMode.value === 'manual'
+        ? 'manual'
+        : 'auto',
       allowTestUpdates: this.allowTestUpdates.checked,
       autoExpedition: this.autoExpedition.checked,
       expeditionInterval: this.clamp(this.expeditionInterval.value, 1, 120, 15),
@@ -383,6 +406,17 @@ export class ConfigView {
     this.backendRepoPath.required = show;
   }
 
+  private updateBackendUpdateVisibility(): void {
+    const alphaEnabled = this.allowTestUpdates.checked;
+    this.backendUpdateRow.hidden = !alphaEnabled;
+    this.backendUpdateMode.disabled = !alphaEnabled;
+    this.backendUpdateButton.disabled = (
+      !alphaEnabled
+      || this.backendStartupMode.checked
+      || this.backendUpdateChecking
+    );
+  }
+
   getLootPlans(): LootAutomationPlan[] {
     return this.automationView.getLootPlans();
   }
@@ -479,6 +513,16 @@ export class ConfigView {
 
   setGuiUpdateStatus(status: GuiUpdateStatus): void {
     this.runtimeView.setGuiUpdateStatus(status);
+  }
+
+  setBackendUpdateCheckLoading(loading: boolean): void {
+    this.backendUpdateChecking = loading;
+    this.runtimeView.setBackendUpdateCheckLoading(loading);
+    this.updateBackendUpdateVisibility();
+  }
+
+  setBackendUpdateStatus(status: BackendUpdateStatus): void {
+    this.runtimeView.setBackendUpdateStatus(status);
   }
 
   resetAccentColor(defaultColor: string): void {

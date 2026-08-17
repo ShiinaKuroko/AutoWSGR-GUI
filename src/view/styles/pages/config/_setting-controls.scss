@@ -222,13 +222,13 @@
   color: var(--text-muted);
   font-size: 10px;
 
-  #gui-update-status {
+  > span:first-child {
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
   }
 
-  #gui-update-percent {
+  > span:last-child {
     flex: 0 0 auto;
     font-variant-numeric: tabular-nums;
   }

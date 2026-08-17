@@ -129,7 +129,9 @@ function testWindowService() {
     defaultWidth: 854,
     defaultHeight: 720,
     rememberBounds: true,
+    lastActivePage: 'main',
   });
+  service.rememberActivePage('plan');
   service.createWindow();
   assert.equal(createdOptions.width, 1400);
   assert.equal(createdOptions.height, 800);
@@ -194,6 +196,14 @@ function testWindowService() {
   normalBounds = { x: 40, y: 50, width: 1500, height: 900 };
   windowHandlers.get('close')();
   assert.deepEqual(settings.read().window_bounds, normalBounds);
+  assert.equal(settings.read().last_active_page, 'plan');
+  service.rememberActivePage('invalid-page');
+  windowHandlers.get('close')();
+  assert.equal(
+    settings.read().last_active_page,
+    'main',
+    '非法页面名必须归一化为 main',
+  );
   windowHandlers.get('closed')();
   assert.equal(service.getMainWindow(), null);
   assert.equal(
@@ -209,6 +219,7 @@ function testWindowService() {
     defaultWidth: 1440,
     defaultHeight: 810,
     rememberBounds: false,
+    lastActivePage: 'main',
   });
   assert.equal(webContentsHandlers.has('did-fail-load'), true);
 }
@@ -312,8 +323,20 @@ function testGuiConfigurationService() {
   assert.equal(channelService.allowTestUpdates(), false);
   service.setUpdateMode('manual');
   assert.equal(service.updateMode(), 'manual');
+  assert.equal(
+    service.backendUpdateMode(),
+    'manual',
+    '旧配置缺少独立字段时应继承原更新模式',
+  );
   service.setUpdateMode('invalid');
   assert.equal(service.updateMode(), 'auto');
+
+  assert.equal(service.backendUpdateMode(), 'auto');
+  service.setBackendUpdateMode('manual');
+  assert.equal(service.backendUpdateMode(), 'manual');
+  service.setBackendUpdateMode('invalid');
+  assert.equal(service.backendUpdateMode(), 'auto');
+  assert.equal(store.read().backend_update_mode, 'auto');
 
   assert.equal(service.backendStartupMode(), 'managed');
   service.setBackendStartupMode('external');
@@ -618,6 +641,7 @@ function testGuiConfigurationService() {
     backend_port: 18438,
     python_path: '',
     update_mode: 'auto',
+    backend_update_mode: 'auto',
     backend_startup_mode: 'managed',
     backend_repo_path: '',
     ocr_gpu_mode: 'auto',
@@ -651,6 +675,7 @@ function testGuiConfigurationService() {
 
   const committedAutomation = service.commitSettings({
     updateMode: 'manual',
+    backendUpdateMode: 'manual',
     allowTestUpdates: true,
     backendPort: 19438,
     backendStartupMode: 'external',
@@ -688,6 +713,7 @@ function testGuiConfigurationService() {
     '设置提交必须忽略历史自定义值并固定每日战役为 8 次',
   );
   assert.equal(committedSettings.update_mode, 'manual');
+  assert.equal(committedSettings.backend_update_mode, 'manual');
   assert.equal(committedSettings.allow_test_updates, true);
   assert.equal(committedSettings.backend_port, 19438);
   assert.equal(
