@@ -22,6 +22,9 @@ const asar = require('@electron/asar');
 const yaml = require('js-yaml');
 
 const root = path.resolve(__dirname, '..', '..');
+const manifestBuilder = require(
+  path.join(root, 'build', 'generate-install-manifest.cjs'),
+);
 const releaseRoot = path.join(root, 'release');
 const sourceResources = path.join(root, 'resource');
 const packageJson = JSON.parse(
@@ -116,42 +119,56 @@ function assertReleasePackage(distribution) {
   const installManifest = JSON.parse(
     fs.readFileSync(installManifestPath, 'utf8'),
   );
-  assert.equal(installManifest.schemaVersion, 1);
+  assert.equal(installManifest.schemaVersion, 2);
   assert.equal(installManifest.version, releaseVersion);
+  const manifestPaths = installManifest.files.map(file => file.path);
   assert.deepEqual(
-    installManifest.files,
-    [...installManifest.files].sort(),
+    manifestPaths,
+    [...manifestPaths].sort(),
     `${label}程序文件清单必须稳定排序`,
   );
+  for (const file of installManifest.files) {
+    assert.match(
+      file.sha256,
+      /^[0-9a-f]{64}$/,
+      `${label}程序文件清单 SHA-256 无效: ${file.path}`,
+    );
+  }
   for (const managedFile of [
     'AutoWSGR-GUI.exe',
     'adb/adb.exe',
     'python/python.exe',
-    'resources/.autowsgr-install-manifest.json',
     'resources/app.asar',
     'resources/backend-distribution.json',
   ]) {
     assert.equal(
-      installManifest.files.includes(managedFile),
+      manifestPaths.includes(managedFile),
       true,
       `${label}程序文件清单缺失: ${managedFile}`,
     );
   }
-  for (const persistentPath of [
+  for (const persistentRoot of [
     '.env_ready',
-    'logs/runtime.log',
-    'python/site-packages/autowsgr.pyd',
+    'log',
+    'logs',
+    'python/site-packages',
     'resources/.autowsgr-next-install-manifest.json',
+    'resources/.autowsgr-previous-install-manifest.json',
   ]) {
     assert.equal(
       installManifest.files.some(file => (
-        file === persistentPath
-        || file.startsWith(`${persistentPath}/`)
+        file.path === persistentRoot
+        || file.path.startsWith(`${persistentRoot}/`)
       )),
       false,
-      `${label}程序文件清单不得登记持久路径: ${persistentPath}`,
+      `${label}程序文件清单不得登记持久路径: ${persistentRoot}`,
     );
   }
+  assert.deepEqual(
+    installManifest,
+    manifestBuilder.createInstallManifest(unpacked, releaseVersion),
+    `${label}程序文件清单必须覆盖全部产物且哈希一致`,
+  );
   const asarFiles = asar.listPackage(asarPath)
     .map(file => file.replaceAll('\\', '/').replace(/^\/+/, ''));
   for (const file of [

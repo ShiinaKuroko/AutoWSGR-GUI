@@ -6,17 +6,25 @@ param(
   [string]$CurrentManifestPath,
 
   [Parameter(Mandatory = $true)]
-  [string]$NextManifestPath
+  [string]$NextManifestPath,
+
+  [ValidateSet('Validate', 'Finalize')]
+  [string]$Mode = 'Finalize',
+
+  [string]$BackupDirectory = ''
 )
 
 $ErrorActionPreference = 'Stop'
+$movedFiles = [Collections.Generic.List[object]]::new()
+$cleanupCommitted = $false
+$normalizedBackup = $null
 
 function Read-InstallManifest {
   param([string]$ManifestPath)
 
   $manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 |
     ConvertFrom-Json
-  if ($manifest.schemaVersion -ne 1) {
+  if ($manifest.schemaVersion -ne 2) {
     throw "Unsupported install manifest schema: $($manifest.schemaVersion)"
   }
   if ($null -eq $manifest.files) {
@@ -41,9 +49,14 @@ function Resolve-ManagedFiles {
   )
   $resolved = @{}
 
-  foreach ($value in $RelativePaths) {
+  foreach ($entry in $RelativePaths) {
+    $value = $entry.path
+    $sha256 = $entry.sha256
     if ($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value)) {
       throw 'Install manifest contains an invalid file path'
+    }
+    if ($sha256 -isnot [string] -or $sha256 -notmatch '^[0-9a-fA-F]{64}$') {
+      throw "Install manifest contains an invalid SHA-256: $value"
     }
     if ([IO.Path]::IsPathRooted($value)) {
       throw "Install manifest contains an absolute path: $value"
@@ -62,7 +75,18 @@ function Resolve-ManagedFiles {
     )) {
       throw "Install manifest path escapes the install directory: $value"
     }
-    if (!$seen.Add($relativePath)) {
+    $canonicalRelativePath = $targetPath.Substring($rootPrefix.Length)
+    $canonicalRelativePath = $canonicalRelativePath.Replace(
+      [IO.Path]::DirectorySeparatorChar,
+      '/'
+    )
+    if (!$canonicalRelativePath.Equals(
+      $value.Replace('\', '/'),
+      [StringComparison]::Ordinal
+    )) {
+      throw "Install manifest path is not normalized: $value"
+    }
+    if (!$seen.Add($canonicalRelativePath)) {
       throw "Install manifest contains a duplicate path: $value"
     }
 
@@ -82,9 +106,37 @@ function Resolve-ManagedFiles {
         }
       }
     }
-    $resolved[$relativePath] = $targetPath
+    $resolved[$canonicalRelativePath] = [PSCustomObject]@{
+      RelativePath = $canonicalRelativePath
+      TargetPath = $targetPath
+      Sha256 = $sha256.ToLowerInvariant()
+    }
   }
   return $resolved
+}
+
+function Restore-MovedFiles {
+  $errors = [Collections.Generic.List[string]]::new()
+  for ($index = $movedFiles.Count - 1; $index -ge 0; $index -= 1) {
+    $moved = $movedFiles[$index]
+    try {
+      if (!(Test-Path -LiteralPath $moved.BackupPath -PathType Leaf)) {
+        continue
+      }
+      if (Test-Path -LiteralPath $moved.TargetPath) {
+        throw "Rollback target already exists: $($moved.TargetPath)"
+      }
+      $parent = [IO.Path]::GetDirectoryName($moved.TargetPath)
+      [void][IO.Directory]::CreateDirectory($parent)
+      Move-Item -LiteralPath $moved.BackupPath `
+        -Destination $moved.TargetPath
+    } catch {
+      $errors.Add($_.Exception.Message)
+    }
+  }
+  if ($errors.Count -gt 0) {
+    throw "Managed file rollback failed: $($errors -join '; ')"
+  }
 }
 
 try {
@@ -92,31 +144,82 @@ try {
   $nextFiles = Read-InstallManifest $NextManifestPath
   $current = Resolve-ManagedFiles $InstallDirectory $currentFiles
   $next = Resolve-ManagedFiles $InstallDirectory $nextFiles
-  $nextKeys = [Collections.Generic.HashSet[string]]::new(
-    [StringComparer]::OrdinalIgnoreCase
-  )
+  if ($Mode -eq 'Validate') {
+    Write-Output (
+      "Validated install manifests: current=$($current.Count), " +
+      "next=$($next.Count)"
+    )
+    exit 0
+  }
+
+  $added = 0
+  $updated = 0
+  $unchanged = 0
   foreach ($relativePath in $next.Keys) {
-    [void]$nextKeys.Add($relativePath)
+    $entry = $next[$relativePath]
+    if (!(Test-Path -LiteralPath $entry.TargetPath -PathType Leaf)) {
+      throw "Installed managed file is missing: $relativePath"
+    }
+    $actualHash = (Get-FileHash -LiteralPath $entry.TargetPath `
+      -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne $entry.Sha256) {
+      throw "Installed managed file hash mismatch: $relativePath"
+    }
+    if (!$current.ContainsKey($relativePath)) {
+      $added += 1
+    } elseif ($current[$relativePath].Sha256 -eq $entry.Sha256) {
+      $unchanged += 1
+    } else {
+      $updated += 1
+    }
+  }
+
+  $normalizedRoot = [IO.Path]::GetFullPath($InstallDirectory).TrimEnd(
+    [IO.Path]::DirectorySeparatorChar,
+    [IO.Path]::AltDirectorySeparatorChar
+  )
+  if ([string]::IsNullOrWhiteSpace($BackupDirectory)) {
+    $BackupDirectory = "$normalizedRoot.autowsgr-update-backup"
+  }
+  $normalizedBackup = [IO.Path]::GetFullPath($BackupDirectory).TrimEnd(
+    [IO.Path]::DirectorySeparatorChar,
+    [IO.Path]::AltDirectorySeparatorChar
+  )
+  $expectedBackup = "$normalizedRoot.autowsgr-update-backup"
+  if (!$normalizedBackup.Equals(
+    $expectedBackup,
+    [StringComparison]::OrdinalIgnoreCase
+  )) {
+    throw "Managed file backup path is invalid: $BackupDirectory"
+  }
+  if (Test-Path -LiteralPath $normalizedBackup) {
+    throw "Managed file backup path already exists: $normalizedBackup"
   }
 
   $directories = [Collections.Generic.HashSet[string]]::new(
     [StringComparer]::OrdinalIgnoreCase
   )
-  $normalizedRoot = [IO.Path]::GetFullPath($InstallDirectory).TrimEnd(
-    [IO.Path]::DirectorySeparatorChar,
-    [IO.Path]::AltDirectorySeparatorChar
-  )
   $removed = 0
   foreach ($relativePath in $current.Keys) {
-    if ($nextKeys.Contains($relativePath)) {
+    if ($next.ContainsKey($relativePath)) {
       continue
     }
-    $targetPath = $current[$relativePath]
+    $targetPath = $current[$relativePath].TargetPath
     if (Test-Path -LiteralPath $targetPath -PathType Container) {
       throw "Managed file path is a directory: $relativePath"
     }
     if (Test-Path -LiteralPath $targetPath -PathType Leaf) {
-      Remove-Item -LiteralPath $targetPath -Force
+      $backupPath = [IO.Path]::Combine(
+        $normalizedBackup,
+        $relativePath.Replace('/', [IO.Path]::DirectorySeparatorChar)
+      )
+      $backupParent = [IO.Path]::GetDirectoryName($backupPath)
+      [void][IO.Directory]::CreateDirectory($backupParent)
+      Move-Item -LiteralPath $targetPath -Destination $backupPath
+      $movedFiles.Add([PSCustomObject]@{
+        TargetPath = $targetPath
+        BackupPath = $backupPath
+      })
       $removed += 1
     }
 
@@ -130,6 +233,15 @@ try {
     }
   }
 
+  $cleanupCommitted = $true
+  if (Test-Path -LiteralPath $normalizedBackup) {
+    try {
+      Remove-Item -LiteralPath $normalizedBackup -Recurse -Force
+    } catch {
+      Write-Warning "Managed backup cleanup failed: $($_.Exception.Message)"
+    }
+  }
+
   $sortedDirectories = @($directories) |
     Sort-Object { $_.Length } -Descending
   foreach ($directory in $sortedDirectories) {
@@ -139,13 +251,34 @@ try {
     $firstChild = Get-ChildItem -LiteralPath $directory -Force |
       Select-Object -First 1
     if ($null -eq $firstChild) {
-      Remove-Item -LiteralPath $directory -Force
+      try {
+        Remove-Item -LiteralPath $directory -Force
+      } catch {
+        Write-Warning "Empty directory cleanup failed: $directory"
+      }
     }
   }
 
-  Write-Output "Removed $removed obsolete managed files"
+  Write-Output (
+    "Finalized managed files: added=$added, updated=$updated, " +
+    "unchanged=$unchanged, removed=$removed"
+  )
   exit 0
 } catch {
-  Write-Error $_
+  $failure = $_
+  if (!$cleanupCommitted -and $movedFiles.Count -gt 0) {
+    try {
+      Restore-MovedFiles
+      if ($null -ne $normalizedBackup -and (
+        Test-Path -LiteralPath $normalizedBackup
+      )) {
+        Remove-Item -LiteralPath $normalizedBackup -Recurse -Force
+      }
+    } catch {
+      Write-Error "$failure; $($_.Exception.Message)"
+      exit 1
+    }
+  }
+  Write-Error $failure
   exit 1
 }
