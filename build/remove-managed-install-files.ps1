@@ -157,6 +157,15 @@ try {
   $unchanged = 0
   foreach ($relativePath in $next.Keys) {
     $entry = $next[$relativePath]
+    if (!$current.ContainsKey($relativePath)) {
+      $added += 1
+    } elseif ($current[$relativePath].Sha256 -eq $entry.Sha256) {
+      $unchanged += 1
+      continue
+    } else {
+      $updated += 1
+    }
+
     if (!(Test-Path -LiteralPath $entry.TargetPath -PathType Leaf)) {
       throw "Installed managed file is missing: $relativePath"
     }
@@ -164,13 +173,6 @@ try {
       -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualHash -ne $entry.Sha256) {
       throw "Installed managed file hash mismatch: $relativePath"
-    }
-    if (!$current.ContainsKey($relativePath)) {
-      $added += 1
-    } elseif ($current[$relativePath].Sha256 -eq $entry.Sha256) {
-      $unchanged += 1
-    } else {
-      $updated += 1
     }
   }
 

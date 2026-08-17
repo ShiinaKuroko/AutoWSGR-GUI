@@ -177,8 +177,9 @@ extraResources 包含只读 `resource/`、setup、调试依赖和明确白名单
 `log`、`logs`、`python/site-packages` 和升级暂存清单。
 清单文件自身不参与自哈希，由安装器按保留路径直接更新。
 `build/remove-managed-install-files.ps1` 在旧卸载阶段只验证双清单；新包落盘后
-校验全部目标哈希，并通过同盘备份和失败恢复事务清理两个版本清单的差集。脚本拒绝
-绝对路径、非规范路径、目录逃逸、重复路径和重解析点。
+先比较两份清单，只读取并校验新增或哈希变化的文件；哈希相同的文件不执行磁盘校验。
+下架文件通过同盘备份和失败恢复事务清理。脚本拒绝绝对路径、非规范路径、目录逃逸、
+重复路径和重解析点。
 
 ```powershell
 npm run test:install-update

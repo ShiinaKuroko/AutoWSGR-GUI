@@ -158,7 +158,11 @@ function testManagedCleanup(temporaryRoot) {
   writeManifest(currentManifestPath, currentFiles, '2.1.0-alpha.3');
   writeManifest(nextManifestPath, nextFiles, '2.1.0-alpha.4');
 
-  writeFile(installDirectory, 'AutoWSGR-GUI.exe', 'same executable');
+  writeFile(
+    installDirectory,
+    'AutoWSGR-GUI.exe',
+    'unchanged path must not be rehashed',
+  );
   writeFile(installDirectory, 'resources/app.asar', 'new application');
   writeFile(installDirectory, 'resources/new-file.dat', 'new file');
 
@@ -211,6 +215,13 @@ function testManagedCleanup(temporaryRoot) {
       `升级清理不得删除保留文件: ${preservedFile}`,
     );
   }
+  assert.equal(
+    fs.readFileSync(
+      path.join(installDirectory, 'AutoWSGR-GUI.exe'),
+      'utf8',
+    ),
+    'unchanged path must not be rehashed',
+  );
   assert.equal(
     fs.readFileSync(
       path.join(installDirectory, 'resources', 'app.asar'),
