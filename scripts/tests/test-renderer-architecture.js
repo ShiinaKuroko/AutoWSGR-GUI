@@ -143,6 +143,17 @@ assert.match(
   /onBeforeUnload\s*=\s*\(\)\s*=>\s*\{[^}]*schedulerBinder\.dispose\(\)[^}]*fleetPlannerCtrl\.dispose\(\)[^}]*decisivePlanCtrl\.dispose\(\)/,
   'AppController unload handler must dispose both gallery owners',
 );
+const startupControllerReadyIndex = appControllerSource.indexOf(
+  'this.configCtrl.setStartupController(this.startupCtrl);',
+);
+const restoreLastPageIndex = appControllerSource.indexOf(
+  'this.navigationCtrl.restoreLastActivePage();',
+);
+assert.ok(
+  startupControllerReadyIndex >= 0
+  && restoreLastPageIndex > startupControllerReadyIndex,
+  'AppController must restore the last page after all controllers are ready',
+);
 
 const listenerSignals = [];
 function fakeElement(overrides = {}) {
