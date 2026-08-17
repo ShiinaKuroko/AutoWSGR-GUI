@@ -210,6 +210,23 @@ userData/.migration-state.json
 下载完成后用户选择立即重启或下次启动。pending 更新必须在任何迁移和窗口创建前
 处理。
 
+Windows 安装产物包含 `resources/.autowsgr-install-manifest.json`，以相对路径
+记录当前版本拥有的程序文件。兼容版升级前暂存旧清单，旧卸载器在升级模式下保留
+安装目录。electron-builder 完成新包解压后，安装器比较新旧清单，只删除旧清单拥有
+而新清单不再拥有的下架文件。清单外文件、`log`、`logs` 和
+`python/site-packages` 不进入清理范围。已下载安装包与 blockmap 位于
+electron-updater 用户缓存，也不属于安装目录清单。
+
+当前 NSIS 仍使用 electron-builder 的标准整包解压，因此新包中的全部程序文件都会
+写入安装目录；这里的增量边界是保留目录、覆盖新包文件并只清理下架的受管文件，
+不是二进制补丁或只写发生变化的文件。
+
+首次从未携带清单的旧版本升级时，旧卸载器仍会执行原有完整替换。新安装器会先将
+`log`、`logs` 和 `python/site-packages` 临时移到安装目录旁，安装完成后恢复；
+其他未知文件无法与旧程序文件可靠区分，不在首次迁移保证范围内。写入 schema v1
+清单后，后续升级才完整进入程序文件所有权清理。清单缺失、路径越界、重复路径、
+重解析点或清理失败时必须中止升级，不能回退为整目录删除。
+
 ## 停止与退出
 
 `BackendShutdownService` 的固定顺序：

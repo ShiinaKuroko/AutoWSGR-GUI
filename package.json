@@ -31,6 +31,7 @@
     "test:main-ipc": "npm run build && node scripts/tests/test-main-ipc.js",
     "test:python-environment": "npm run build && node scripts/tests/test-python-environment.js",
     "test:backend-distribution": "npm run build && node scripts/tests/test-backend-distribution.js",
+    "test:install-update": "node scripts/tests/test-install-update-compatibility.js",
     "test:release-package": "node scripts/tests/test-release-package.js",
     "start": "chcp 65001 >nul && npm run build && electron .",
     "dev": "chcp 65001 >nul && npm run clean && npm run build:html && npm run build:css && tsc && node scripts/bundle.js && electron .",
@@ -58,6 +59,7 @@
   "build": {
     "appId": "com.autowsgr.gui",
     "productName": "AutoWSGR-GUI",
+    "afterPack": "build/generate-install-manifest.cjs",
     "directories": {
       "output": "release"
     },
