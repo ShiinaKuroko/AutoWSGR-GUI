@@ -61,9 +61,11 @@ external 仓库无效时直接失败，不能回退 managed，也不能把 GUI s
 - 当前受管后端固定来源（仓库和提交）。
 - managed/external 模式和仓库。
 - 依赖安装目标。
+- Alpha 后端独立更新的绑定提交、已应用提交和待应用状态。
 
 快速路径仍会检查解释器、环境身份和后端契约。配置、安装目标、GUI 更新通道或
-后端固定来源变化后删除标记；失败时不写完成标记，使下次启动继续检查。
+后端固定来源变化后只使环境检测字段失效，保留同文件中的后端更新状态；失败时
+不写完成标记，使下次启动继续检查。
 external 模式始终使用用户指定仓库，不受 GUI 更新通道影响。
 
 ## CUDA 与 OCR
@@ -217,7 +219,8 @@ userData/.migration-state.json
 - GUI 更新模式保存在 `update_mode`；Alpha 后端更新模式保存在
   `backend_update_mode`。旧配置缺少后端字段时继承原更新模式。
 - 当前应用提交、GUI 绑定提交和待应用更新记录在
-  `python/site-packages/.autowsgr-update-state.json`。
+  `{appRoot}/.env_ready` 的 `backendUpdate` 字段；旧版
+  `python/site-packages/.autowsgr-update-state.json` 首次读取后迁移。
 - 下载和解压位于 `userData/.backend-update-staging`，不会直接修改运行中的后端。
 - 常规提交在退出并停止后端后按文件差异新增、覆盖和删除。
 - `pyproject.toml` 变化、提交历史不连续或差异超过阈值时改走完整安装。

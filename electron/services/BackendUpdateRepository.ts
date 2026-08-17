@@ -3,6 +3,7 @@ import * as path from 'path';
 import { AtomicFileStore } from './AtomicFileStore';
 
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/;
+const BACKEND_UPDATE_STATE_KEY = 'backendUpdate';
 
 export interface BackendDiffPlan {
   add: string[];
@@ -40,6 +41,7 @@ export interface BackendUpdateRollback {
 export interface BackendUpdateRepositoryDependencies {
   getStagingRoot(): string;
   getStatePath(): string;
+  getLegacyStatePath?(): string;
   getInstalledPackageDir(): string;
   atomicFiles: Pick<AtomicFileStore, 'write'>;
   log(message: string): void;
@@ -51,6 +53,10 @@ function isString(value: unknown): value is string {
 
 export function isCommitSha(value: string): boolean {
   return COMMIT_SHA_PATTERN.test(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
 /** 收集目录内全部文件的相对路径（正斜杠分隔）。 */
@@ -75,35 +81,6 @@ function listRelativeFiles(root: string, base = ''): string[] {
     }
   }
   return output;
-}
-
-/** 对比已安装包与新源码，生成新增、修改和删除的净差异清单。 */
-export function diffBackendPackage(
-  installedDir: string,
-  incomingDir: string,
-): BackendDiffPlan {
-  const installed = new Set(listRelativeFiles(installedDir));
-  const incoming = new Set(listRelativeFiles(incomingDir));
-  const plan: BackendDiffPlan = { add: [], modify: [], delete: [] };
-  for (const file of incoming) {
-    if (!installed.has(file)) {
-      plan.add.push(file);
-      continue;
-    }
-    const oldSize = fs.statSync(path.join(installedDir, file)).size;
-    const newSize = fs.statSync(path.join(incomingDir, file)).size;
-    if (
-      oldSize !== newSize
-      || !fs.readFileSync(path.join(installedDir, file))
-        .equals(fs.readFileSync(path.join(incomingDir, file)))
-    ) {
-      plan.modify.push(file);
-    }
-  }
-  for (const file of installed) {
-    if (!incoming.has(file)) plan.delete.push(file);
-  }
-  return plan;
 }
 
 export function diffPlanSize(diff: BackendDiffPlan): number {
@@ -180,41 +157,80 @@ export class BackendUpdateRepository {
   ) {}
 
   stateExists(): boolean {
-    return fs.existsSync(this.dependencies.getStatePath());
+    const document = this.readStateDocument();
+    if (
+      document
+      && this.isValidState(document[BACKEND_UPDATE_STATE_KEY])
+    ) {
+      return true;
+    }
+    const legacyPath = this.dependencies.getLegacyStatePath?.();
+    return !!legacyPath && fs.existsSync(legacyPath);
   }
 
   readState(initialState: () => BackendUpdateState): BackendUpdateState {
-    const target = this.dependencies.getStatePath();
-    if (fs.existsSync(target)) {
+    const document = this.readStateDocument();
+    if (document) {
+      const embedded = document[BACKEND_UPDATE_STATE_KEY];
+      if (this.isValidState(embedded)) return embedded;
+      if (
+        Object.prototype.hasOwnProperty.call(
+          document,
+          BACKEND_UPDATE_STATE_KEY,
+        )
+      ) {
+        delete document[BACKEND_UPDATE_STATE_KEY];
+        this.writeStateDocument(document);
+        this.dependencies.log('后端更新状态已损坏，按 GUI 绑定版本重置');
+      }
+    }
+
+    const legacyPath = this.dependencies.getLegacyStatePath?.();
+    if (legacyPath && fs.existsSync(legacyPath)) {
       try {
-        const value = JSON.parse(fs.readFileSync(target, 'utf-8'));
-        if (this.isValidState(value)) return value;
+        const value = JSON.parse(fs.readFileSync(legacyPath, 'utf-8'));
+        if (this.isValidState(value)) {
+          this.writeState(value);
+          fs.rmSync(legacyPath, { force: true });
+          this.dependencies.log('已迁移旧版后端更新状态到 .env_ready');
+          return value;
+        }
       } catch {
-        // 损坏的状态按首次基线处理。
+        // 损坏的旧状态按首次基线处理。
       }
       try {
-        fs.rmSync(target, { force: true });
+        fs.rmSync(legacyPath, { force: true });
       } catch {
-        // 无法删除时仍按首次基线处理，后续写入会再次尝试覆盖。
+        // 无法删除时仍按首次基线处理。
       }
-      this.dependencies.log('后端更新状态已损坏，按 GUI 绑定版本重置');
+      this.dependencies.log('旧版后端更新状态已损坏，按 GUI 绑定版本重置');
     }
     return initialState();
   }
 
   writeState(state: BackendUpdateState): void {
-    const target = this.dependencies.getStatePath();
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    this.dependencies.atomicFiles.write(
-      target,
-      `${JSON.stringify(state, null, 2)}\n`,
-    );
+    const document = this.readStateDocument() ?? {};
+    document[BACKEND_UPDATE_STATE_KEY] = state;
+    this.writeStateDocument(document);
   }
 
   clearManagedState(): void {
     this.cleanupStaging();
+    const document = this.readStateDocument();
+    if (
+      document
+      && Object.prototype.hasOwnProperty.call(
+        document,
+        BACKEND_UPDATE_STATE_KEY,
+      )
+    ) {
+      delete document[BACKEND_UPDATE_STATE_KEY];
+      this.writeStateDocument(document);
+    }
+    const legacyPath = this.dependencies.getLegacyStatePath?.();
+    if (!legacyPath) return;
     try {
-      fs.rmSync(this.dependencies.getStatePath(), { force: true });
+      fs.rmSync(legacyPath, { force: true });
     } catch (error) {
       this.dependencies.log(
         `后端更新状态清理失败: ${
@@ -258,13 +274,24 @@ export class BackendUpdateRepository {
     return incomingPackage;
   }
 
-  diffInstalledPackage(incomingPackage: string): BackendDiffPlan | null {
+  canApplyIncrementally(
+    incomingPackage: string,
+    diff: BackendDiffPlan,
+  ): boolean {
     const installedDir = this.dependencies.getInstalledPackageDir();
-    if (!fs.existsSync(installedDir)) return null;
-    const diff = diffBackendPackage(installedDir, incomingPackage);
-    return this.hasPathShapeConflict(installedDir, incomingPackage, diff)
-      ? null
-      : diff;
+    if (!fs.existsSync(installedDir)) return false;
+    try {
+      assertSafeDiffPlan(diff);
+      for (const file of [...diff.add, ...diff.modify]) {
+        const source = resolveManagedPath(incomingPackage, file);
+        if (!fs.existsSync(source) || !fs.lstatSync(source).isFile()) {
+          return false;
+        }
+      }
+      return !this.hasPathShapeConflict(installedDir, diff);
+    } catch {
+      return false;
+    }
   }
 
   discardUnavailablePending(
@@ -381,11 +408,16 @@ export class BackendUpdateRepository {
     };
   }
 
-  removeInstalledPackage(): void {
-    fs.rmSync(this.dependencies.getInstalledPackageDir(), {
-      recursive: true,
-      force: true,
-    });
+  resetInstalledEnvironment(): void {
+    const installedDir = this.dependencies.getInstalledPackageDir();
+    const sitePackages = path.dirname(installedDir);
+    const statePath = path.resolve(this.dependencies.getStatePath());
+    if (isPathInside(sitePackages, statePath)) {
+      this.removeContentsExcept(sitePackages, statePath);
+    } else {
+      fs.rmSync(sitePackages, { recursive: true, force: true });
+      fs.mkdirSync(sitePackages, { recursive: true });
+    }
   }
 
   finishApply(
@@ -541,22 +573,9 @@ export class BackendUpdateRepository {
 
   private hasPathShapeConflict(
     installedDir: string,
-    incomingDir: string,
     diff: BackendDiffPlan,
   ): boolean {
-    const installedFiles = listRelativeFiles(installedDir);
-    const incomingFiles = listRelativeFiles(incomingDir);
-    const installedByCase = new Map(
-      installedFiles.map(file => [file.toLowerCase(), file]),
-    );
-    if (incomingFiles.some(file => {
-      const installed = installedByCase.get(file.toLowerCase());
-      return installed !== undefined && installed !== file;
-    })) {
-      return true;
-    }
-
-    return [...diff.add, ...diff.modify].some(file => {
+    return [...diff.add, ...diff.modify, ...diff.delete].some(file => {
       const parts = file.split('/');
       for (let length = 1; length < parts.length; length += 1) {
         const ancestor = path.join(installedDir, ...parts.slice(0, length));
@@ -567,6 +586,26 @@ export class BackendUpdateRepository {
       const target = path.join(installedDir, ...parts);
       return fs.existsSync(target) && !fs.lstatSync(target).isFile();
     });
+  }
+
+  private readStateDocument(): Record<string, unknown> | null {
+    const target = this.dependencies.getStatePath();
+    if (!fs.existsSync(target)) return {};
+    try {
+      const value = JSON.parse(fs.readFileSync(target, 'utf-8'));
+      return isRecord(value) ? value : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private writeStateDocument(document: Record<string, unknown>): void {
+    const target = this.dependencies.getStatePath();
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    this.dependencies.atomicFiles.write(
+      target,
+      `${JSON.stringify(document, null, 2)}\n`,
+    );
   }
 
   private isValidState(value: unknown): value is BackendUpdateState {

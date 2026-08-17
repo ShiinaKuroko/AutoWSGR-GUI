@@ -15,7 +15,7 @@ const {
 } = context;
 
 const {
-  diffBackendPackage,
+  buildBackendDiffPlan,
   isSafeRelativePath,
 } = require('../../../dist/electron/services/BackendUpdateService.js');
 
@@ -37,7 +37,8 @@ function createService(options = {}) {
   );
   const stagingRoot = path.join(root, 'staging');
   const sitePackages = path.join(root, 'site-packages');
-  const statePath = path.join(
+  const statePath = path.join(root, '.env_ready');
+  const legacyStatePath = path.join(
     sitePackages,
     '.autowsgr-update-state.json',
   );
@@ -51,6 +52,7 @@ function createService(options = {}) {
   const service = new BackendUpdateService({
     getStagingRoot: () => stagingRoot,
     getStatePath: () => statePath,
+    getLegacyStatePath: () => legacyStatePath,
     getInstalledPackageDir: () => installedDir,
     getAppVersion: () => resolveOption(options.appVersion)
       ?? '2.0.18-alpha.0',
@@ -71,7 +73,12 @@ function createService(options = {}) {
       url.includes('/compare/')
         ? (
             resolveOption(options.comparison)
-            ?? { status: 'ahead', files: [] }
+            ?? {
+              status: 'ahead',
+              files: Object.keys(resolveOption(options.sourceTree) ?? {})
+                .filter(file => file.startsWith('autowsgr/'))
+                .map(filename => ({ filename, status: 'modified' })),
+            }
           )
         : { sha: resolveOption(options.latestCommit) ?? LATEST_COMMIT }
     )),
@@ -105,11 +112,26 @@ function createService(options = {}) {
     root,
     stagingRoot,
     statePath,
+    legacyStatePath,
     sitePackages,
     installedDir,
     statusEvents,
     logs,
-    readState: () => JSON.parse(fs.readFileSync(statePath, 'utf-8')),
+    readState: () => (
+      JSON.parse(fs.readFileSync(statePath, 'utf-8')).backendUpdate
+    ),
+    writeState: state => {
+      let marker = {};
+      try {
+        marker = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+      } catch {
+        // 测试首次写入。
+      }
+      fs.writeFileSync(statePath, JSON.stringify({
+        ...marker,
+        backendUpdate: state,
+      }));
+    },
   };
 }
 
@@ -122,31 +144,24 @@ function writeInstalledFiles(installedDir, files) {
   }
 }
 
-/** 差异清单的纯函数行为。 */
-function testDiffBackendPackage() {
-  const root = fs.mkdtempSync(
-    path.join(temporaryDirectory, 'backend-diff-'),
-  );
-  const installedDir = path.join(root, 'installed');
-  const incomingDir = path.join(root, 'incoming');
-  writeInstalledFiles(installedDir, {
-    'keep.py': 'same',
-    'modify.py': 'old',
-    'nested/remove.py': 'gone',
-    'todelete.py': 'bye',
-    '__pycache__/runtime.pyc': 'generated',
+/** Commit 差异只映射 autowsgr/**，不扫描或删除安装目录未知文件。 */
+function testBuildBackendDiffPlan() {
+  const diff = buildBackendDiffPlan([
+    { filename: 'autowsgr/added.py', status: 'added' },
+    { filename: 'autowsgr/modify.py', status: 'modified' },
+    { filename: 'autowsgr/todelete.py', status: 'removed' },
+    {
+      filename: 'autowsgr/new_name.py',
+      previousFilename: 'autowsgr/old_name.py',
+      status: 'renamed',
+    },
+    { filename: 'pyproject.toml', status: 'modified' },
+  ]);
+  assert.deepEqual(diff, {
+    add: ['added.py', 'new_name.py'],
+    modify: ['modify.py'],
+    delete: ['todelete.py', 'old_name.py'],
   });
-  writeInstalledFiles(incomingDir, {
-    'keep.py': 'same',
-    'modify.py': 'new',
-    'nested/add.py': 'fresh',
-    'added.py': 'new file',
-  });
-
-  const diff = diffBackendPackage(installedDir, incomingDir);
-  assert.deepEqual(diff.add.sort(), ['added.py', 'nested/add.py']);
-  assert.deepEqual(diff.modify, ['modify.py']);
-  assert.deepEqual(diff.delete.sort(), ['nested/remove.py', 'todelete.py']);
 }
 
 /** 路径安全校验拒绝目录穿越和绝对路径。 */
@@ -174,15 +189,43 @@ async function testCheckAndBaseline() {
 
   // 首次检查以 GUI 绑定 commit 为基线。
   const first = createService();
+  fs.writeFileSync(first.statePath, JSON.stringify({
+    pythonCmd: 'python',
+    backendRequirement: 'bound requirement',
+  }));
   const firstResult = await first.service.check();
   assert.equal(firstResult.status, 'available');
   assert.equal(firstResult.commit, LATEST_COMMIT);
   assert.equal(first.readState().appliedCommit, BASE_COMMIT);
   assert.equal(first.readState().boundCommit, BASE_COMMIT);
   assert.equal(
-    path.dirname(first.statePath),
-    path.dirname(first.installedDir),
-    '后端更新状态必须跟随后端安装目录',
+    first.statePath,
+    path.join(first.root, '.env_ready'),
+    '后端更新状态必须统一存储在 .env_ready',
+  );
+  const unifiedMarker = JSON.parse(
+    fs.readFileSync(first.statePath, 'utf-8'),
+  );
+  assert.equal(unifiedMarker.pythonCmd, 'python');
+  assert.equal(unifiedMarker.backendRequirement, 'bound requirement');
+  assert.equal(unifiedMarker.backendUpdate.appliedCommit, BASE_COMMIT);
+
+  // 兼容迁移旧版独立状态文件，并保留环境字段。
+  const legacy = createService();
+  fs.mkdirSync(path.dirname(legacy.legacyStatePath), { recursive: true });
+  fs.writeFileSync(legacy.statePath, JSON.stringify({ pythonCmd: 'python' }));
+  fs.writeFileSync(legacy.legacyStatePath, JSON.stringify({
+    guiVersion: '2.0.18-alpha.0',
+    repository: ALPHA_DISTRIBUTION.repository,
+    boundCommit: BASE_COMMIT,
+    appliedCommit: LATEST_COMMIT,
+    pending: null,
+  }));
+  assert.equal(legacy.service.readState().appliedCommit, LATEST_COMMIT);
+  assert.equal(fs.existsSync(legacy.legacyStatePath), false);
+  assert.equal(
+    JSON.parse(fs.readFileSync(legacy.statePath, 'utf-8')).pythonCmd,
+    'python',
   );
 
   // 已应用到最新 commit 时返回 up-to-date。
@@ -246,6 +289,14 @@ async function testBaselineChangesOnlyAfterManagedInstall() {
 /** 暂存增量差异并写入 pending 状态。 */
 async function testPrepareIncremental() {
   const harness = createService({
+    comparison: {
+      status: 'ahead',
+      files: [
+        { filename: 'autowsgr/added.py', status: 'added' },
+        { filename: 'autowsgr/modify.py', status: 'modified' },
+        { filename: 'autowsgr/todelete.py', status: 'removed' },
+      ],
+    },
     sourceTree: {
       'autowsgr/keep.py': 'same',
       'autowsgr/modify.py': 'new',
@@ -257,6 +308,7 @@ async function testPrepareIncremental() {
     'keep.py': 'same',
     'modify.py': 'old',
     'todelete.py': 'bye',
+    'runtime-user-file.txt': 'keep me',
   });
 
   await harness.service.prepare(LATEST_COMMIT);
@@ -266,6 +318,11 @@ async function testPrepareIncremental() {
   assert.deepEqual(state.pending.diff.add, ['added.py']);
   assert.deepEqual(state.pending.diff.modify, ['modify.py']);
   assert.deepEqual(state.pending.diff.delete, ['todelete.py']);
+  assert.equal(
+    state.pending.diff.delete.includes('runtime-user-file.txt'),
+    false,
+    'Commit 差异不得把安装目录未知文件列为删除项',
+  );
 
   const lastStatus = harness.statusEvents[harness.statusEvents.length - 1];
   assert.equal(lastStatus.status, 'downloaded');
@@ -344,7 +401,7 @@ async function testPrepareFullOnPyprojectChange() {
   const harness = createService({
     comparison: {
       status: 'ahead',
-      files: [{ filename: 'pyproject.toml' }],
+      files: [{ filename: 'pyproject.toml', status: 'modified' }],
     },
     sourceTree: {
       'autowsgr/main.py': 'v2',
@@ -366,6 +423,7 @@ async function testPrepareFullOnPyprojectRename() {
       files: [{
         filename: 'pyproject.previous.toml',
         previous_filename: 'pyproject.toml',
+        status: 'renamed',
       }],
     },
     sourceTree: {
@@ -383,7 +441,7 @@ async function testPrepareFullOnHistoryChange() {
   const harness = createService({
     comparison: {
       status: 'diverged',
-      files: [{ filename: 'autowsgr/main.py' }],
+      files: [{ filename: 'autowsgr/main.py', status: 'modified' }],
     },
     sourceTree: {
       'autowsgr/main.py': 'forked',
@@ -420,6 +478,10 @@ async function testPrepareFullWhenComparisonIsMissing() {
 /** 文件与目录形态互换时必须降级为完整安装。 */
 async function testPrepareFullOnPathShapeChange() {
   const harness = createService({
+    comparison: {
+      status: 'ahead',
+      files: [{ filename: 'autowsgr/node/new.py', status: 'added' }],
+    },
     sourceTree: {
       'autowsgr/node/new.py': 'new',
     },
@@ -432,6 +494,14 @@ async function testPrepareFullOnPathShapeChange() {
 /** 应用增量差异后更新基线并清理暂存。 */
 async function testApplyIncremental() {
   const harness = createService({
+    comparison: {
+      status: 'ahead',
+      files: [
+        { filename: 'autowsgr/modify.py', status: 'modified' },
+        { filename: 'autowsgr/nested/added.py', status: 'added' },
+        { filename: 'autowsgr/todelete.py', status: 'removed' },
+      ],
+    },
     sourceTree: {
       'autowsgr/keep.py': 'same',
       'autowsgr/modify.py': 'new',
@@ -472,6 +542,13 @@ async function testApplyIncremental() {
 /** 增量替换中途失败时恢复已覆盖文件并保留 pending。 */
 async function testIncrementalRollback() {
   const harness = createService({
+    comparison: {
+      status: 'ahead',
+      files: [
+        { filename: 'autowsgr/a.py', status: 'modified' },
+        { filename: 'autowsgr/blocked/new.py', status: 'added' },
+      ],
+    },
     sourceTree: {
       'autowsgr/a.py': 'new',
       'autowsgr/blocked/new.py': 'fresh',
@@ -544,10 +621,10 @@ async function testLinkedPathIsRejected() {
     path.join(harness.stagingRoot, 'rollback-incremental'),
     { recursive: true },
   );
-  fs.writeFileSync(harness.statePath, JSON.stringify({
+  harness.writeState({
     ...state,
     applying: true,
-  }));
+  });
   assert.throws(
     () => harness.service.recoverInterruptedApply(),
     /符号链接/,
@@ -561,6 +638,14 @@ async function testLinkedPathIsRejected() {
 /** 进程中断留下 applying 状态时，启动恢复旧的增量文件。 */
 async function testRecoverInterruptedIncremental() {
   const harness = createService({
+    comparison: {
+      status: 'ahead',
+      files: [
+        { filename: 'autowsgr/modify.py', status: 'modified' },
+        { filename: 'autowsgr/added.py', status: 'added' },
+        { filename: 'autowsgr/deleted.py', status: 'removed' },
+      ],
+    },
     sourceTree: {
       'autowsgr/modify.py': 'new',
       'autowsgr/added.py': 'new',
@@ -582,10 +667,10 @@ async function testRecoverInterruptedIncremental() {
     'added.py': 'new',
   });
   fs.rmSync(path.join(harness.installedDir, 'deleted.py'));
-  fs.writeFileSync(harness.statePath, JSON.stringify({
+  harness.writeState({
     ...state,
     applying: true,
-  }));
+  });
 
   assert.equal(harness.service.recoverInterruptedApply(), true);
   assert.equal(
@@ -610,7 +695,7 @@ async function testUnsafeRecoveryStateIsRejected() {
     path.join(harness.stagingRoot, 'rollback-incremental'),
     { recursive: true },
   );
-  fs.writeFileSync(harness.statePath, JSON.stringify({
+  harness.writeState({
     ...harness.readState(),
     pending: {
       type: 'incremental',
@@ -623,7 +708,7 @@ async function testUnsafeRecoveryStateIsRejected() {
       },
     },
     applying: true,
-  }));
+  });
 
   assert.equal(harness.service.recoverInterruptedApply(), false);
   assert.equal(fs.readFileSync(victim, 'utf-8'), 'keep');
@@ -634,7 +719,7 @@ async function testRecoverInterruptedFull() {
   const harness = createService({
     comparison: {
       status: 'ahead',
-      files: [{ filename: 'pyproject.toml' }],
+      files: [{ filename: 'pyproject.toml', status: 'modified' }],
     },
     sourceTree: { 'autowsgr/main.py': 'new' },
   });
@@ -643,19 +728,15 @@ async function testRecoverInterruptedFull() {
   const state = harness.readState();
   const backupRoot = path.join(harness.stagingRoot, 'rollback-full');
   fs.cpSync(harness.sitePackages, backupRoot, { recursive: true });
-  fs.rmSync(
-    path.join(backupRoot, path.basename(harness.statePath)),
-    { force: true },
-  );
   fs.writeFileSync(path.join(harness.installedDir, 'main.py'), 'broken');
   writeInstalledFiles(
     path.join(harness.sitePackages, 'new_dependency'),
     { '__init__.py': 'partial' },
   );
-  fs.writeFileSync(harness.statePath, JSON.stringify({
+  harness.writeState({
     ...state,
     applying: true,
-  }));
+  });
 
   assert.equal(harness.service.recoverInterruptedApply(), true);
   assert.equal(
@@ -834,7 +915,7 @@ async function testApplyFull() {
   const harness = createService({
     comparison: {
       status: 'ahead',
-      files: [{ filename: 'pyproject.toml' }],
+      files: [{ filename: 'pyproject.toml', status: 'modified' }],
     },
     sourceTree: {
       'autowsgr/main.py': 'v2',
@@ -913,6 +994,16 @@ async function testApplyFull() {
   assert.equal(
     fs.readFileSync(path.join(harness.installedDir, 'main.py'), 'utf-8'),
     'v2',
+  );
+  assert.equal(
+    fs.existsSync(path.join(harness.sitePackages, 'autowsgr-1.0.dist-info')),
+    false,
+    '完整安装成功后不得残留旧后端元数据',
+  );
+  assert.equal(
+    fs.existsSync(path.join(harness.sitePackages, 'shared_dependency')),
+    false,
+    '完整安装成功后不得残留旧依赖',
   );
   const state = harness.readState();
   assert.equal(state.appliedCommit, LATEST_COMMIT);
@@ -1021,7 +1112,7 @@ async function testLifecycleOrchestration() {
   const full = createService({
     comparison: {
       status: 'ahead',
-      files: [{ filename: 'pyproject.toml' }],
+      files: [{ filename: 'pyproject.toml', status: 'modified' }],
     },
     sourceTree: { 'autowsgr/main.py': 'new' },
     runtime: {
@@ -1070,7 +1161,7 @@ async function testPreparedRestartChoice() {
 }
 
 async function testBackendUpdateService() {
-  testDiffBackendPackage();
+  testBuildBackendDiffPlan();
   testIsSafeRelativePath();
   await testCheckAndBaseline();
   await testBaselineChangesOnlyAfterManagedInstall();

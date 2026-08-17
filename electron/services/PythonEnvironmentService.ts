@@ -24,6 +24,9 @@ export interface PythonEnvironmentDependencies {
     pythonPath: string,
   ): Promise<{ success: boolean; output: string }>;
   installPortablePython(): Promise<{ success: boolean }>;
+  beforeInstall?(): Promise<void>;
+  onDependenciesInstalled?(): void;
+  afterInstall?(): void;
 }
 
 /** 统一 Python 校验、环境检查和安装入口。 */
@@ -108,11 +111,25 @@ export class PythonEnvironmentService {
     if (!pythonPath) {
       return { success: false, output: '找不到 Python' };
     }
-    return this.dependencies.installDependencies(pythonPath);
+    await this.dependencies.beforeInstall?.();
+    try {
+      const result = await this.dependencies.installDependencies(pythonPath);
+      if (result.success) {
+        this.dependencies.onDependenciesInstalled?.();
+      }
+      return result;
+    } finally {
+      this.dependencies.afterInstall?.();
+    }
   }
 
   /** 安装或初始化现有便携 Python。 */
-  installPortablePython(): Promise<{ success: boolean }> {
-    return this.dependencies.installPortablePython();
+  async installPortablePython(): Promise<{ success: boolean }> {
+    await this.dependencies.beforeInstall?.();
+    try {
+      return await this.dependencies.installPortablePython();
+    } finally {
+      this.dependencies.afterInstall?.();
+    }
   }
 }

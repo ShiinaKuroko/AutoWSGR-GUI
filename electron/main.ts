@@ -252,15 +252,6 @@ const guiConfigurationService = new GuiConfigurationService(
     environmentPort: () => process.env.AUTOWSGR_PORT,
   },
 );
-const pythonEnvironmentService = new PythonEnvironmentService(
-  PythonEnvironmentService.createDependencies({
-    isAllowedVersion: isAllowedPythonVersion,
-    findPython,
-    checkEnvironment,
-    installDependencies,
-    installPortablePython,
-  }),
-);
 const BACKEND_PORT = guiConfigurationService.backendPort();
 const windowService = new WindowService(guiSettingsStore, {
   backendPort: BACKEND_PORT,
@@ -307,7 +298,8 @@ const backendUpdateService = new BackendUpdateService({
     appPaths.userDataRoot(),
     '.backend-update-staging',
   ),
-  getStatePath: () => path.join(
+  getStatePath: () => path.join(appPaths.appRoot(), '.env_ready'),
+  getLegacyStatePath: () => path.join(
     localSitePackages(),
     '.autowsgr-update-state.json',
   ),
@@ -360,6 +352,26 @@ const backendUpdateService = new BackendUpdateService({
     ),
   },
 });
+const pythonEnvironmentService = new PythonEnvironmentService(
+  PythonEnvironmentService.createDependencies({
+    isAllowedVersion: isAllowedPythonVersion,
+    findPython,
+    checkEnvironment,
+    installDependencies,
+    installPortablePython,
+    beforeInstall: () => (
+      backendUpdateService.beginManagedBackendInstall()
+    ),
+    onDependenciesInstalled: () => {
+      if (guiConfigurationService.backendStartupMode() === 'managed') {
+        backendUpdateService.clearStateAfterManagedInstall();
+      }
+    },
+    afterInstall: () => {
+      backendUpdateService.endManagedBackendInstall();
+    },
+  }),
+);
 singleInstanceService.setMainWindowProvider(
   () => windowService.getMainWindow(),
 );

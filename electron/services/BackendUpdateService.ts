@@ -3,7 +3,7 @@
  *
  * 基线规则：每个 GUI 版本以打包清单绑定的 alpha 后端 commit 为基线，
  * GUI 版本变化时重置基线；同一 GUI 版本内基于已应用 commit 做增量更新。
- * 暂存目录在 userData，版本状态跟随 managed 后端安装目录。
+ * 暂存目录在 userData，版本状态与环境信息统一存储在 .env_ready。
  */
 import {
   BackendUpdateRepository,
@@ -26,7 +26,6 @@ import type {
 export const FULL_REINSTALL_FILE_THRESHOLD = 400;
 
 export {
-  diffBackendPackage,
   isSafeRelativePath,
 } from './BackendUpdateRepository';
 export type {
@@ -37,13 +36,75 @@ export type {
 
 interface BackendCommitComparison {
   status: 'ahead' | 'behind' | 'diverged' | 'identical';
-  files: string[] | null;
+  files: BackendChangedFile[] | null;
+}
+
+type BackendChangedFileStatus =
+  | 'added'
+  | 'modified'
+  | 'removed'
+  | 'renamed'
+  | 'copied'
+  | 'changed';
+
+interface BackendChangedFile {
+  filename: string;
+  status: BackendChangedFileStatus;
+  previousFilename?: string;
 }
 
 type BackendUpdateGateError = Extract<
   BackendUpdateCheckResult,
   { status: 'error' }
 >;
+
+function backendRelativePath(filename: string): string | null {
+  const prefix = 'autowsgr/';
+  return filename.startsWith(prefix) && filename.length > prefix.length
+    ? filename.slice(prefix.length)
+    : null;
+}
+
+/** 将 GitHub Compare 文件状态转换为仅覆盖 autowsgr/** 的净差异。 */
+export function buildBackendDiffPlan(
+  files: BackendChangedFile[],
+): import('./BackendUpdateRepository').BackendDiffPlan | null {
+  const plan = { add: [] as string[], modify: [] as string[], delete: [] as string[] };
+  const affected = new Set<string>();
+  const append = (target: string[], filename: string | undefined): boolean => {
+    if (!filename) return true;
+    const relative = backendRelativePath(filename);
+    if (!relative) return true;
+    const key = relative.toLowerCase();
+    if (affected.has(key)) return false;
+    affected.add(key);
+    target.push(relative);
+    return true;
+  };
+
+  for (const file of files) {
+    let valid = true;
+    switch (file.status) {
+      case 'added':
+      case 'copied':
+        valid = append(plan.add, file.filename);
+        break;
+      case 'modified':
+      case 'changed':
+        valid = append(plan.modify, file.filename);
+        break;
+      case 'removed':
+        valid = append(plan.delete, file.filename);
+        break;
+      case 'renamed':
+        valid = append(plan.delete, file.previousFilename)
+          && append(plan.add, file.filename);
+        break;
+    }
+    if (!valid) return null;
+  }
+  return plan;
+}
 
 export interface BackendUpdateRuntimeDependencies {
   findPython(): Promise<string | null>;
@@ -196,7 +257,7 @@ export class BackendUpdateService {
     const snapshot = this.repository.snapshotInstalledBackend(state);
     let success: boolean;
     try {
-      this.repository.removeInstalledPackage();
+      this.repository.resetInstalledEnvironment();
       success = await installer(pending.source);
     } catch (error) {
       this.repository.restoreOrThrow(snapshot, error);
@@ -365,6 +426,20 @@ export class BackendUpdateService {
       state.appliedCommit,
       commit,
     );
+    const historyChanged = comparison.status !== 'ahead'
+      && comparison.status !== 'identical';
+    const pyprojectChanged = comparison.files === null
+      || comparison.files.some(file => (
+        file.filename === 'pyproject.toml'
+        || file.previousFilename === 'pyproject.toml'
+      ));
+    const diff = comparison.files === null
+      ? null
+      : buildBackendDiffPlan(comparison.files);
+    let needsFull = pyprojectChanged
+      || historyChanged
+      || diff === null
+      || diffPlanSize(diff) > FULL_REINSTALL_FILE_THRESHOLD;
     const { zipPath, extractDir } = this.repository.createCandidate(commit);
 
     this.dependencies.sendStatus({ status: 'downloading', progress: 0 });
@@ -379,22 +454,19 @@ export class BackendUpdateService {
       },
     );
 
-    await this.remoteRepository.extractArchive(
-      zipPath,
-      extractDir,
-    );
-    const sourceRoot = this.remoteRepository.locateSourceRoot(extractDir);
-    const incomingPackage = this.repository.resolveIncomingPackage(sourceRoot);
-
-    const diff = this.repository.diffInstalledPackage(incomingPackage);
-    const pyprojectChanged = comparison.files === null
-      || comparison.files.includes('pyproject.toml');
-    const historyChanged = comparison.status !== 'ahead'
-      && comparison.status !== 'identical';
-    const needsFull = pyprojectChanged
-      || historyChanged
-      || diff === null
-      || diffPlanSize(diff) > FULL_REINSTALL_FILE_THRESHOLD;
+    let incomingPackage: string | null = null;
+    if (!needsFull && diff) {
+      await this.remoteRepository.extractArchive(
+        zipPath,
+        extractDir,
+      );
+      const sourceRoot = this.remoteRepository.locateSourceRoot(extractDir);
+      incomingPackage = this.repository.resolveIncomingPackage(sourceRoot);
+      needsFull = !this.repository.canApplyIncrementally(
+        incomingPackage,
+        diff,
+      );
+    }
 
     this.assertCanFinishPrepare();
     if (needsFull) {
@@ -412,6 +484,9 @@ export class BackendUpdateService {
           : '后端更新依赖或差异过大，将在重启 GUI 时完整安装',
       );
     } else {
+      if (!diff || !incomingPackage) {
+        throw new Error('后端增量更新缺少 Commit 差异或源码目录');
+      }
       this.repository.writeState({
         ...state,
         pending: {
@@ -498,22 +573,43 @@ export class BackendUpdateService {
     ) {
       throw new Error('GitHub Compare API 返回了无效的提交关系');
     }
+    const validStatuses = new Set<BackendChangedFileStatus>([
+      'added',
+      'modified',
+      'removed',
+      'renamed',
+      'copied',
+      'changed',
+    ]);
     const files = Array.isArray(data.files)
       && data.files.length < 300
-      && data.files.every(file => (
-        file
-        && typeof file === 'object'
-        && typeof (file as { filename?: unknown }).filename === 'string'
-      ))
-      ? [...new Set(data.files.flatMap(file => {
+      && data.files.every(file => {
+        if (!file || typeof file !== 'object') return false;
+        const changed = file as {
+          filename?: unknown;
+          status?: unknown;
+          previous_filename?: unknown;
+        };
+        return typeof changed.filename === 'string'
+          && typeof changed.status === 'string'
+          && validStatuses.has(changed.status as BackendChangedFileStatus)
+          && (
+            changed.status !== 'renamed'
+            || typeof changed.previous_filename === 'string'
+          );
+      })
+      ? data.files.map(file => {
           const changed = file as {
             filename: string;
-            previous_filename?: unknown;
+            status: BackendChangedFileStatus;
+            previous_filename?: string;
           };
-          return typeof changed.previous_filename === 'string'
-            ? [changed.filename, changed.previous_filename]
-            : [changed.filename];
-        }))]
+          return {
+            filename: changed.filename,
+            status: changed.status,
+            previousFilename: changed.previous_filename,
+          };
+        })
       : null;
     return { status: data.status, files };
   }

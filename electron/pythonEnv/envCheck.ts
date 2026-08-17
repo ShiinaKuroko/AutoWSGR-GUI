@@ -29,8 +29,10 @@ import {
   buildManagedAutowsgrRequirement,
   resolveBackendDistribution,
 } from './backendRequirement';
+import { AtomicFileStore } from '../services/AtomicFileStore';
 
 const execAsync = promisify(exec);
+const envMarkerFiles = new AtomicFileStore();
 
 // VC++ Redistributable
 
@@ -68,6 +70,42 @@ async function ensureVCRedist(): Promise<void> {
 
 /** 返回环境就绪标记路径。 */
 export const ENV_READY_MARKER = () => path.join(getCtx().appRoot(), '.env_ready');
+
+const ENVIRONMENT_MARKER_KEYS = [
+  'pythonCmd',
+  'pythonVersion',
+  'autowsgrVersion',
+  'environmentIdentity',
+  'backendRequirement',
+] as const;
+
+/** 使环境检测缓存失效，同时保留同文件中的后端更新状态。 */
+export function invalidateEnvMarker(): void {
+  const target = ENV_READY_MARKER();
+  try {
+    const value = JSON.parse(fs.readFileSync(target, 'utf-8'));
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      fs.rmSync(target, { force: true });
+      return;
+    }
+    const document = value as Record<string, unknown>;
+    for (const key of ENVIRONMENT_MARKER_KEYS) delete document[key];
+    if (Object.keys(document).length === 0) {
+      fs.rmSync(target, { force: true });
+      return;
+    }
+    envMarkerFiles.write(
+      target,
+      `${JSON.stringify(document, null, 2)}\n`,
+    );
+  } catch {
+    try {
+      fs.rmSync(target, { force: true });
+    } catch {
+      // 标记失效失败不阻断环境修复。
+    }
+  }
+}
 
 interface EnvironmentMarker {
   pythonCmd: string;
@@ -122,9 +160,21 @@ function writeEnvMarker(
   autowsgrVersion: string,
 ): void {
   try {
-    fs.writeFileSync(
+    let existing: Record<string, unknown> = {};
+    try {
+      const value = JSON.parse(
+        fs.readFileSync(ENV_READY_MARKER(), 'utf-8'),
+      );
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        existing = value as Record<string, unknown>;
+      }
+    } catch {
+      // 首次写入或旧标记损坏时从空对象重建。
+    }
+    envMarkerFiles.write(
       ENV_READY_MARKER(),
       JSON.stringify({
+        ...existing,
         pythonCmd: environment.pythonCmd,
         pythonVersion,
         autowsgrVersion,
@@ -132,8 +182,7 @@ function writeEnvMarker(
         backendRequirement: environment.startupMode === 'managed'
           ? managedBackendRequirement()
           : null,
-      }),
-      'utf-8',
+      }, null, 2),
     );
   } catch { /* 标记写入失败不阻断启动。 */ }
 }
@@ -382,7 +431,7 @@ export async function checkEnvironment(): Promise<EnvCheckResult> {
     }
 
     ctx.sendProgress(`检测到依赖异常 (${markerBrokenDeps.join(', ')})，重新执行完整检查…`);
-    try { fs.unlinkSync(ENV_READY_MARKER()); } catch { /* 忽略清理失败。 */ }
+    invalidateEnvMarker();
   }
 
   // 标记无效时执行完整检查。
