@@ -171,6 +171,20 @@ src/view/styles/styles.css
 extraResources 包含只读 `resource/`、setup、调试依赖和明确白名单的舰船资料库
 工具；便携 Python、VC++ redist 和 ADB 作为 extraFiles 放到安装目录。
 
+`build/generate-install-manifest.cjs` 在 `afterPack` 阶段扫描完整
+`win-unpacked`，生成 `resources/.autowsgr-install-manifest.json`。清单只表示
+安装器拥有的程序文件，不登记 `.env_ready`、`logs`、`python/site-packages`
+和升级暂存清单。`build/remove-managed-install-files.ps1` 只处理两个版本清单的
+差集，并拒绝绝对路径、目录逃逸和重解析点。
+
+```powershell
+npm run test:install-update
+npm run pack
+```
+
+`pack` 用于验证清单覆盖实际安装资源；NSIS 正式产物仍须按发布门禁执行
+`npm run dist` 和 `npm run test:release-package`。
+
 ## SCSS 结构
 
 ```text

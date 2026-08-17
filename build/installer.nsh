@@ -1,6 +1,9 @@
 ; AutoWSGR-GUI NSIS 自定义安装脚本
 ; 安装 VC++ Redistributable，并让新版 GUI 首次启动时更新指定后端。
 
+!define INSTALL_MANIFEST "$INSTDIR\resources\.autowsgr-install-manifest.json"
+!define NEXT_INSTALL_MANIFEST "$INSTDIR\resources\.autowsgr-next-install-manifest.json"
+
 ; 只结束安装目录内置 adb.exe，避免影响系统或其他工具的 ADB。
 !macro StopBundledAdb LABEL_SUFFIX
   IfFileExists "$INSTDIR\adb\adb.exe" 0 BundledAdbStopped_${LABEL_SUFFIX}
@@ -51,8 +54,37 @@
   ${EndIf}
 
   AppClosed:
-  ; 升级前临时移出后端依赖，避免旧卸载器逐个处理数万个文件。
+  StrCpy $R4 "0"
   ${If} ${isUpdated}
+    StrCpy $R4 "1"
+  ${ElseIf} ${FileExists} "$INSTDIR\${UNINSTALL_FILENAME}"
+    StrCpy $R4 "1"
+  ${EndIf}
+
+  ; 新安装器先留下目标文件清单，兼容版旧卸载器据此只删除已下架程序文件。
+  ${If} $R4 == "1"
+    InitPluginsDir
+    File /oname=$PLUGINSDIR\autowsgr-next-install-manifest.json \
+      "${PROJECT_DIR}\build\generated\install-manifest.json"
+    CreateDirectory "$INSTDIR\resources"
+    ClearErrors
+    CopyFiles /SILENT \
+      "$PLUGINSDIR\autowsgr-next-install-manifest.json" \
+      "${NEXT_INSTALL_MANIFEST}"
+    IfErrors InstallManifestStageFailed InstallManifestStaged
+
+    InstallManifestStageFailed:
+      MessageBox MB_OK|MB_ICONSTOP \
+        "无法准备新版程序文件清单，安装已停止，旧版本未被修改。"
+      SetErrorLevel 1
+      Quit
+
+    InstallManifestStaged:
+      DetailPrint "已准备新版程序文件清单"
+  ${EndIf}
+
+  ; 升级前临时移出后端依赖，避免旧卸载器逐个处理数万个文件。
+  ${If} $R4 == "1"
     IfFileExists "$INSTDIR.site-packages-update\*.*" BackendEnvPreserved 0
     IfFileExists "$INSTDIR\python\site-packages\*.*" 0 BackendEnvPreserved
     ClearErrors
@@ -78,8 +110,38 @@
   ${endIf}
 !macroend
 
+; 兼容版之后的升级只删除旧清单有、新清单没有的程序文件。
+; 用户自行放入安装目录但未登记在清单中的文件不会被处理。
+!macro customRemoveFiles
+  ${If} ${isUpdated}
+    IfFileExists "${INSTALL_MANIFEST}" 0 ManagedFileCleanupFailed
+    IfFileExists "${NEXT_INSTALL_MANIFEST}" 0 ManagedFileCleanupFailed
+    InitPluginsDir
+    File /oname=$PLUGINSDIR\remove-managed-install-files.ps1 \
+      "${PROJECT_DIR}\build\remove-managed-install-files.ps1"
+    nsExec::ExecToLog \
+      '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\remove-managed-install-files.ps1" -InstallDirectory "$INSTDIR" -CurrentManifestPath "${INSTALL_MANIFEST}" -NextManifestPath "${NEXT_INSTALL_MANIFEST}"'
+    Pop $R0
+    StrCmp $R0 "0" ManagedFileCleanupDone ManagedFileCleanupFailed
+
+    ManagedFileCleanupFailed:
+      DetailPrint "程序文件增量清理失败，安装已停止"
+      MessageBox MB_OK|MB_ICONSTOP \
+        "无法安全清理旧版程序文件。安装已停止，安装目录中的其他文件未被清理。"
+      SetErrorLevel 1
+      Quit
+
+    ManagedFileCleanupDone:
+      Delete "$INSTDIR\${UNINSTALL_FILENAME}"
+      DetailPrint "已按安装清单清理旧版程序文件"
+  ${Else}
+    RMDir /r "$INSTDIR"
+  ${EndIf}
+!macroend
+
 !macro customInstall
   ${If} ${isUpdated}
+  ${OrIf} ${FileExists} "${NEXT_INSTALL_MANIFEST}"
     ${If} ${FileExists} "$newDesktopLink"
       !insertmacro addDesktopLink "false"
     ${EndIf}
@@ -102,6 +164,7 @@
       DetailPrint "已恢复后端依赖"
 
   BackendEnvRestored:
+  Delete "${NEXT_INSTALL_MANIFEST}"
   IfFileExists "$SYSDIR\vcruntime140.dll" VCRedistInstalled 0
     DetailPrint "正在安装 Microsoft Visual C++ Redistributable..."
     nsExec::ExecToLog '"$INSTDIR\redist\vc_redist.x64.exe" /install /quiet /norestart'

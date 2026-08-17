@@ -36,6 +36,7 @@ test_pkg/
 
 # 打包输出
 release/
+/build/generated/
 
 # 安装临时文件
 _setup_tmp/

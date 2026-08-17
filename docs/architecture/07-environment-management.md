@@ -210,6 +210,16 @@ userData/.migration-state.json
 下载完成后用户选择立即重启或下次启动。pending 更新必须在任何迁移和窗口创建前
 处理。
 
+Windows 安装产物包含 `resources/.autowsgr-install-manifest.json`，记录当前版本
+拥有的程序文件。安装器在调用兼容版旧卸载器前暂存新清单；旧卸载器只删除旧清单
+存在而新清单不存在的文件，随后由新安装器写入新增和更新文件。未登记文件、`logs`
+和 `python/site-packages` 不进入删除范围，目录也只在没有其他文件时移除。已下载
+安装包与 blockmap 位于 electron-updater 用户缓存，不属于安装目录清单。
+
+首次从未携带清单的旧版本升级到兼容版时，仍由旧版卸载器执行原有完整替换。兼容版
+写入清单后，后续升级才进入按程序文件所有权清理的路径。清单缺失、路径越界或清理
+失败时必须中止升级，不能回退为整目录删除。
+
 ## 停止与退出
 
 `BackendShutdownService` 的固定顺序：

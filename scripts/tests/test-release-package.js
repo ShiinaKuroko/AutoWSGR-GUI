@@ -11,6 +11,7 @@
  * 7. 应用版本与更新频道元数据一致。
  * 8. NSIS 安装包和频道清单已生成。
  * 9. ASAR 只包含 Renderer bundle，不重复携带独立 Renderer 模块。
+ * 10. 安装包包含只登记程序文件的升级清单。
  *
  * 该脚本只读取产物，不修改 release 或用户数据。
  */
@@ -107,6 +108,50 @@ function assertReleasePackage(distribution) {
   );
   const asarPath = path.join(resources, 'app.asar');
   assertFile(asarPath, `${label} GUI app.asar`);
+  const installManifestPath = path.join(
+    resources,
+    '.autowsgr-install-manifest.json',
+  );
+  assertFile(installManifestPath, `${label}程序文件清单`);
+  const installManifest = JSON.parse(
+    fs.readFileSync(installManifestPath, 'utf8'),
+  );
+  assert.equal(installManifest.schemaVersion, 1);
+  assert.equal(installManifest.version, releaseVersion);
+  assert.deepEqual(
+    installManifest.files,
+    [...installManifest.files].sort(),
+    `${label}程序文件清单必须稳定排序`,
+  );
+  for (const managedFile of [
+    'AutoWSGR-GUI.exe',
+    'adb/adb.exe',
+    'python/python.exe',
+    'resources/.autowsgr-install-manifest.json',
+    'resources/app.asar',
+    'resources/backend-distribution.json',
+  ]) {
+    assert.equal(
+      installManifest.files.includes(managedFile),
+      true,
+      `${label}程序文件清单缺失: ${managedFile}`,
+    );
+  }
+  for (const persistentPath of [
+    '.env_ready',
+    'logs/runtime.log',
+    'python/site-packages/autowsgr.pyd',
+    'resources/.autowsgr-next-install-manifest.json',
+  ]) {
+    assert.equal(
+      installManifest.files.some(file => (
+        file === persistentPath
+        || file.startsWith(`${persistentPath}/`)
+      )),
+      false,
+      `${label}程序文件清单不得登记持久路径: ${persistentPath}`,
+    );
+  }
   const asarFiles = asar.listPackage(asarPath)
     .map(file => file.replaceAll('\\', '/').replace(/^\/+/, ''));
   for (const file of [
