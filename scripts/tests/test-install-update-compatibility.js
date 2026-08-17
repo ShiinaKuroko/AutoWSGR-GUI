@@ -415,15 +415,40 @@ function testInstallerContract() {
     /InstallShapePrepareFailed:[\s\S]*?InstallShapePrepared:/,
   )[0];
   assert.doesNotMatch(shapePrepareFailure, /Delete/);
-  assert.match(installer, /Function \.onInstFailed/);
+  assert.match(
+    installer,
+    /Function \.onInstFailed[\s\S]*RestoreLegacyDataOrStop InstallFailed[\s\S]*FunctionEnd/,
+    '安装失败时必须恢复已搬走的持久目录',
+  );
   assert.match(
     installer,
     /!define MUI_CUSTOMFUNCTION_ABORT RestoreManagedInstallShapeOnUserAbort/,
   );
+  assert.match(
+    installer,
+    /Function RestoreManagedInstallShapeOnUserAbort[\s\S]*RestoreLegacyDataOrStop UserAbort[\s\S]*FunctionEnd/,
+    '用户取消安装时必须恢复已搬走的持久目录',
+  );
   assert.doesNotMatch(installer, /Function \.onUserAbort/);
   assert.match(
+    installer,
+    /ManagedUninstallLaunchFailed:[\s\S]*RestoreLegacyDataOrStop UninstallLaunchFailed/,
+    '旧卸载器无法启动时必须恢复已搬走的持久目录',
+  );
+  assert.match(
+    installer,
+    /ManagedUninstallExitChecked:[\s\S]*RestoreLegacyDataOrStop UninstallFailed/,
+    '旧卸载器执行失败时必须恢复已搬走的持久目录',
+  );
+  assert.match(
+    shapePrepareFailure,
+    /RestoreLegacyDataOrStop ShapePrepareFailed/,
+    '文件形态准备失败时必须恢复已搬走的持久目录',
+  );
+  assert.match(
     finalCleanup,
-    /ManagedFileCleanupFailed:[\s\S]*RestoreManagedInstallShape/,
+    /ManagedFileCleanupFailed:[\s\S]*RestoreLegacyDataOrStop ManagedFileCleanupFailed[\s\S]*RestoreManagedInstallShape/,
+    '落盘后清理失败时必须同时恢复持久目录和文件形态',
   );
   assert.doesNotMatch(installer, /NEXT_INSTALL_MANIFEST|-Mode Validate/);
 }

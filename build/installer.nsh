@@ -37,6 +37,36 @@
   LegacyDirectoryRestored_${LABEL_SUFFIX}:
 !macroend
 
+!macro RestoreLegacyDataOrStop LABEL_SUFFIX
+  !insertmacro RestoreLegacyDirectory \
+    "${LEGACY_SITE_PACKAGES_BACKUP}" \
+    "$INSTDIR\python\site-packages" \
+    "$INSTDIR\python" \
+    FailedSitePackages_${LABEL_SUFFIX} \
+    LegacyDataRestoreFailed_${LABEL_SUFFIX}
+  !insertmacro RestoreLegacyDirectory \
+    "${LEGACY_LOG_BACKUP}" \
+    "$INSTDIR\log" \
+    "$INSTDIR" \
+    FailedLog_${LABEL_SUFFIX} \
+    LegacyDataRestoreFailed_${LABEL_SUFFIX}
+  !insertmacro RestoreLegacyDirectory \
+    "${LEGACY_LOGS_BACKUP}" \
+    "$INSTDIR\logs" \
+    "$INSTDIR" \
+    FailedLogs_${LABEL_SUFFIX} \
+    LegacyDataRestoreFailed_${LABEL_SUFFIX}
+  Goto LegacyDataRestored_${LABEL_SUFFIX}
+
+  LegacyDataRestoreFailed_${LABEL_SUFFIX}:
+    MessageBox MB_OK|MB_ICONSTOP \
+      "旧版日志或后端依赖恢复失败，安装已停止。临时数据仍保留在安装目录旁。"
+    SetErrorLevel 1
+    Quit
+
+  LegacyDataRestored_${LABEL_SUFFIX}:
+!macroend
+
 !macro RestoreManagedInstallShape LABEL_SUFFIX
   IfFileExists \
     "${INSTALL_SHAPE_BACKUP}\.shape-conflicts.json" \
@@ -64,10 +94,12 @@
 
 !ifndef BUILD_UNINSTALLER
 Function .onInstFailed
+  !insertmacro RestoreLegacyDataOrStop InstallFailed
   !insertmacro RestoreManagedInstallShape InstallFailed
 FunctionEnd
 
 Function RestoreManagedInstallShapeOnUserAbort
+  !insertmacro RestoreLegacyDataOrStop UserAbort
   !insertmacro RestoreManagedInstallShape UserAbort
 FunctionEnd
 !define MUI_CUSTOMFUNCTION_ABORT RestoreManagedInstallShapeOnUserAbort
@@ -77,9 +109,7 @@ FunctionEnd
   IfErrors ManagedUninstallLaunchFailed ManagedUninstallExitChecked
 
   ManagedUninstallLaunchFailed:
-    IfFileExists \
-      "${INSTALL_SHAPE_BACKUP}\.shape-conflicts.json" \
-      0 ManagedUninstallChecked
+    !insertmacro RestoreLegacyDataOrStop UninstallLaunchFailed
     !insertmacro RestoreManagedInstallShape UninstallLaunchFailed
     MessageBox MB_OK|MB_ICONSTOP \
       "旧版卸载器无法启动，安装已停止，旧版本已恢复。"
@@ -88,6 +118,7 @@ FunctionEnd
 
   ManagedUninstallExitChecked:
     StrCmp $R0 "0" ManagedUninstallChecked 0
+    !insertmacro RestoreLegacyDataOrStop UninstallFailed
     !insertmacro RestoreManagedInstallShape UninstallFailed
     MessageBox MB_OK|MB_ICONEXCLAMATION \
       "旧版卸载器执行失败，安装已停止，旧版本已恢复。"
@@ -230,6 +261,7 @@ FunctionEnd
         StrCmp $R0 "0" InstallShapePrepared InstallShapePrepareFailed
 
         InstallShapePrepareFailed:
+          !insertmacro RestoreLegacyDataOrStop ShapePrepareFailed
           MessageBox MB_OK|MB_ICONSTOP \
             "无法安全处理程序文件与目录的互换，安装已停止，旧版本未被修改。"
           SetErrorLevel 1
@@ -281,6 +313,7 @@ FunctionEnd
 
     ManagedFileCleanupFailed:
       DetailPrint "下架程序文件清理失败，安装已停止"
+      !insertmacro RestoreLegacyDataOrStop ManagedFileCleanupFailed
       !insertmacro RestoreManagedInstallShape ManagedFileCleanupFailed
       MessageBox MB_OK|MB_ICONSTOP \
         "无法安全清理下架程序文件。安装已停止，清单外文件未被处理。"
