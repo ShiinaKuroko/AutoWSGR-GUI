@@ -174,7 +174,6 @@ export class AppController {
     initAnimatedSelects();
     this.navigationCtrl.bindNavigation();
     this.navigationCtrl.bindPlanNavigation();
-    this.navigationCtrl.restoreLastActivePage();
     this.bindQueueActions();
     this.schedulerBinder.bindSchedulerCallbacks();
     this.schedulerBinder.bindCronCallbacks();
@@ -376,6 +375,7 @@ export class AppController {
 
     // 回填 startupCtrl 引用
     this.configCtrl.setStartupController(this.startupCtrl);
+    this.navigationCtrl.restoreLastActivePage();
 
     this.startupCtrl.run().catch((e) => {
       console.error('初始化失败:', e);
