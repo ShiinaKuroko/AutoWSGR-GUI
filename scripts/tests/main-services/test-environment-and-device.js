@@ -106,11 +106,13 @@ async function testPythonEnvironmentService() {
     allowed: true,
     pythonPath: null,
     versionError: null,
+    installError: null,
   };
   const calls = {
     check: 0,
     install: [],
     portable: 0,
+    lifecycle: [],
   };
   const service = new PythonEnvironmentService({
     fileExists: () => state.exists,
@@ -126,11 +128,21 @@ async function testPythonEnvironmentService() {
     },
     installDependencies: async pythonPath => {
       calls.install.push(pythonPath);
+      if (state.installError) throw state.installError;
       return { success: true, output: 'installed' };
     },
     installPortablePython: async () => {
       calls.portable += 1;
       return { success: true };
+    },
+    beforeInstall: async () => {
+      calls.lifecycle.push('begin');
+    },
+    onDependenciesInstalled: () => {
+      calls.lifecycle.push('dependencies-installed');
+    },
+    afterInstall: () => {
+      calls.lifecycle.push('end');
     },
   });
 
@@ -173,17 +185,39 @@ async function testPythonEnvironmentService() {
     success: false,
     output: '找不到 Python',
   });
+  assert.deepEqual(calls.lifecycle, []);
   state.pythonPath = 'C:\\Python313\\python.exe';
   assert.deepEqual(await service.installDependencies(), {
     success: true,
     output: 'installed',
   });
   assert.deepEqual(calls.install, ['C:\\Python313\\python.exe']);
+  assert.deepEqual(
+    calls.lifecycle,
+    ['begin', 'dependencies-installed', 'end'],
+  );
+
+  state.installError = new Error('install failed');
+  await assert.rejects(
+    () => service.installDependencies(),
+    /install failed/,
+  );
+  assert.deepEqual(
+    calls.lifecycle.slice(-2),
+    ['begin', 'end'],
+    '依赖安装失败时也必须释放安装占用',
+  );
+  state.installError = null;
 
   assert.deepEqual(await service.installPortablePython(), {
     success: true,
   });
   assert.equal(calls.portable, 1);
+  assert.deepEqual(
+    calls.lifecycle.slice(-2),
+    ['begin', 'end'],
+    '便携 Python 安装必须使用同一安装占用',
+  );
 }
 
 /** 验证 ADB 命令参数、设备解析和状态确认保持不变。 */

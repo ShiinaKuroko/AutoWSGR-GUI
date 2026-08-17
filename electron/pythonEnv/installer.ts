@@ -8,7 +8,7 @@ import { promisify } from 'util';
 import { getCtx, setCachedPythonCmd } from './context';
 import { findPython } from './finder';
 import { ensurePthFile, pipEnv, ensurePip, ensureSslCertForPython } from './utils';
-import { ENV_READY_MARKER } from './envCheck';
+import { invalidateEnvMarker } from './envCheck';
 import {
   buildPythonProcessEnv,
   installTargetArgs,
@@ -233,8 +233,8 @@ export async function installDependencies(pythonCmd: string): Promise<{ success:
     backendRequirement,
   );
 
-  // 安装后清除环境标记，触发下次完整检查。
-  try { fs.unlinkSync(ENV_READY_MARKER()); } catch { /* 忽略清理失败。 */ }
+  // 安装后使环境检测缓存失效，但保留后端更新状态。
+  invalidateEnvMarker();
 
   const certFile = await ensureSslCertForPython(pythonCmd);
   if (certFile) ctx.sendProgress(`TLS 证书已就绪: ${certFile}`);

@@ -41,6 +41,9 @@ const {
   resolveBackendDistribution,
 } = require('../../dist/electron/pythonEnv/backendRequirement.js');
 const {
+  invalidateEnvMarker,
+} = require('../../dist/electron/pythonEnv/envCheck.js');
+const {
   buildBackendRuntimeInstallArgs,
   buildManagedAutowsgrUpdateArgs,
   buildRequirementProbeScript,
@@ -105,6 +108,26 @@ initPythonEnv({
 
 try {
   delete process.env.AUTOWSGR_BACKEND_REPO;
+
+  const markerPath = path.join(appRoot, '.env_ready');
+  const backendUpdate = {
+    appliedCommit: 'a'.repeat(40),
+    pending: null,
+  };
+  fs.writeFileSync(markerPath, JSON.stringify({
+    pythonCmd: localPython,
+    pythonVersion: 'Python 3.12.8',
+    autowsgrVersion: '1.0.0',
+    environmentIdentity: 'managed',
+    backendRequirement: 'bound',
+    backendUpdate,
+  }));
+  invalidateEnvMarker();
+  assert.deepEqual(
+    JSON.parse(fs.readFileSync(markerPath, 'utf-8')),
+    { backendUpdate },
+    '环境缓存失效时必须保留后端更新状态',
+  );
 
   const managed = resolvePythonEnvironment(localPython);
   assert.equal(managed.startupMode, 'managed');
