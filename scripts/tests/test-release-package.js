@@ -119,21 +119,14 @@ function assertReleasePackage(distribution) {
   const installManifest = JSON.parse(
     fs.readFileSync(installManifestPath, 'utf8'),
   );
-  assert.equal(installManifest.schemaVersion, 2);
+  assert.equal(installManifest.schemaVersion, 1);
   assert.equal(installManifest.version, releaseVersion);
-  const manifestPaths = installManifest.files.map(file => file.path);
+  const manifestPaths = installManifest.files;
   assert.deepEqual(
     manifestPaths,
     [...manifestPaths].sort(),
     `${label}程序文件清单必须稳定排序`,
   );
-  for (const file of installManifest.files) {
-    assert.match(
-      file.sha256,
-      /^[0-9a-f]{64}$/,
-      `${label}程序文件清单 SHA-256 无效: ${file.path}`,
-    );
-  }
   for (const managedFile of [
     'AutoWSGR-GUI.exe',
     'adb/adb.exe',
@@ -152,13 +145,12 @@ function assertReleasePackage(distribution) {
     'log',
     'logs',
     'python/site-packages',
-    'resources/.autowsgr-next-install-manifest.json',
     'resources/.autowsgr-previous-install-manifest.json',
   ]) {
     assert.equal(
-      installManifest.files.some(file => (
-        file.path === persistentRoot
-        || file.path.startsWith(`${persistentRoot}/`)
+      manifestPaths.some(file => (
+        file === persistentRoot
+        || file.startsWith(`${persistentRoot}/`)
       )),
       false,
       `${label}程序文件清单不得登记持久路径: ${persistentRoot}`,
@@ -167,7 +159,7 @@ function assertReleasePackage(distribution) {
   assert.deepEqual(
     installManifest,
     manifestBuilder.createInstallManifest(unpacked, releaseVersion),
-    `${label}程序文件清单必须覆盖全部产物且哈希一致`,
+    `${label}程序文件清单必须覆盖全部产物`,
   );
   const asarFiles = asar.listPackage(asarPath)
     .map(file => file.replaceAll('\\', '/').replace(/^\/+/, ''));

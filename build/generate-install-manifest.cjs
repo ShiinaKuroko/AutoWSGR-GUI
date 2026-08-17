@@ -1,19 +1,12 @@
-const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
 const manifestRelativePath = 'resources/.autowsgr-install-manifest.json';
-const generatedManifestPath = path.join(
-  __dirname,
-  'generated',
-  'install-manifest.json',
-);
 const persistentPaths = [
   '.env_ready',
   'log',
   'logs',
   'python/site-packages',
-  'resources/.autowsgr-next-install-manifest.json',
   'resources/.autowsgr-previous-install-manifest.json',
 ];
 
@@ -27,13 +20,6 @@ function isPersistentPath(relativePath) {
     normalized === candidate
     || normalized.startsWith(`${candidate}/`)
   ));
-}
-
-function hashFile(filePath) {
-  return crypto
-    .createHash('sha256')
-    .update(fs.readFileSync(filePath))
-    .digest('hex');
 }
 
 function collectPackagedFiles(appOutDir, directory = appOutDir) {
@@ -52,18 +38,15 @@ function collectPackagedFiles(appOutDir, directory = appOutDir) {
       relativePath !== manifestRelativePath
       && !isPersistentPath(relativePath)
     ) {
-      files.push({
-        path: relativePath,
-        sha256: hashFile(target),
-      });
+      files.push(relativePath);
     }
   }
   return files;
 }
 
 function comparePaths(left, right) {
-  if (left.path < right.path) return -1;
-  if (left.path > right.path) return 1;
+  if (left < right) return -1;
+  if (left > right) return 1;
   return 0;
 }
 
@@ -71,7 +54,7 @@ function createInstallManifest(appOutDir, version) {
   const files = collectPackagedFiles(appOutDir);
   files.sort(comparePaths);
   return {
-    schemaVersion: 2,
+    schemaVersion: 1,
     version,
     files,
   };
@@ -86,8 +69,6 @@ function writeInstallManifest(appOutDir, version) {
   );
   fs.mkdirSync(path.dirname(packagedManifestPath), { recursive: true });
   fs.writeFileSync(packagedManifestPath, content, 'utf8');
-  fs.mkdirSync(path.dirname(generatedManifestPath), { recursive: true });
-  fs.writeFileSync(generatedManifestPath, content, 'utf8');
   return manifest;
 }
 

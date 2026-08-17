@@ -172,14 +172,12 @@ extraResources 包含只读 `resource/`、setup、调试依赖和明确白名单
 工具；便携 Python、VC++ redist 和 ADB 作为 extraFiles 放到安装目录。
 
 `build/generate-install-manifest.cjs` 在 `afterPack` 阶段扫描完整
-`win-unpacked`，生成 `resources/.autowsgr-install-manifest.json`。schema v2
-清单为每个安装器拥有的程序文件记录相对路径和 SHA-256，不登记 `.env_ready`、
-`log`、`logs`、`python/site-packages` 和升级暂存清单。
-清单文件自身不参与自哈希，由安装器按保留路径直接更新。
-`build/remove-managed-install-files.ps1` 在旧卸载阶段只验证双清单；新包落盘后
-先比较两份清单，只读取并校验新增或哈希变化的文件；哈希相同的文件不执行磁盘校验。
-下架文件通过同盘备份和失败恢复事务清理。脚本拒绝绝对路径、非规范路径、目录逃逸、
-重复路径和重解析点。
+`win-unpacked`，生成 `resources/.autowsgr-install-manifest.json`。schema v1
+清单只记录安装器拥有的程序文件相对路径，不登记 `.env_ready`、`log`、`logs`、
+`python/site-packages` 和旧清单暂存文件。兼容版升级时旧卸载器保留安装目录，
+新包落盘后 `build/remove-managed-install-files.ps1` 只删除旧清单相对新清单
+减少的路径。脚本拒绝绝对路径、非规范路径、目录逃逸、重复路径和重解析点；已经
+不存在的下架文件视为清理完成，使同版本重试保持幂等。
 
 ```powershell
 npm run test:install-update
@@ -187,7 +185,7 @@ npm run pack
 ```
 
 `pack` 用于验证清单覆盖实际安装资源；`test:release-package` 会重新扫描完整
-`win-unpacked` 并逐项比较路径和哈希。NSIS 正式产物仍须按发布门禁执行
+`win-unpacked` 并逐项比较路径。NSIS 正式产物仍须按发布门禁执行
 `npm run dist`、`npm run test:release-package` 和实际跨版本安装。
 
 ## SCSS 结构
