@@ -168,11 +168,11 @@
 - 路径以仓库为基准：GUI 为当前仓库根目录，后端默认是同级 `../AutoWSGR`；不得固化某台机器的绝对路径。
 - 当前仓库是个人 Fork。`main` 只用于同步 `yltx/AutoWSGR-GUI:alpha`，不直接开发功能；同步上游 `alpha` 后再更新个人 Fork 的 `origin/main`。
 - `ShiinaSakuya` 是日常主力开发分支，代表个人 Fork 的最新开发代码。所有新功能和 Bug Fix 必须基于该分支开发、验证并 push；正式自动化测试和必要生成入口必须随对应代码一并进入该分支。
-- `ShiinaKuroko` 是 GUI 发布、打包和向主库提交 PR 的唯一分支。Sakuya 中验证完成的业务代码可直接同步到 Kuroko；两条分支必须使用内容完全一致的共同 `AGENTS.md`，`tools/**` 可保留 Sakuya 专用内容。
+- `ShiinaKuroko` 是 GUI 发布、打包和向主库提交 PR 的内容来源分支，实际 PR 必须使用经维护者批准的临时 PR 分支。Sakuya 中验证完成的业务代码可直接同步到 Kuroko；两条分支必须使用内容完全一致的共同 `AGENTS.md`，`tools/**` 可保留 Sakuya 专用内容。
 - Sakuya 与 Kuroko 之间直接同步，不创建两者之间的 PR。同步完成后，除 `tools/**` 外，两条分支的业务代码和 `AGENTS.md` 必须一致。
-- Kuroko 向主库提交 PR 前必须检查 diff；个人 Fork 的 `AGENTS.md` 和 Sakuya 专用 `tools/**` 默认不进入主库 PR，除非该 PR 明确负责更新主库对应规则或工具。
+- Kuroko 向主库提交 PR 前必须检查 diff；临时 PR 分支禁止带入个人 Fork 的 `AGENTS.md`，Sakuya 专用 `tools/**` 也不得进入主库 PR。
 - 未经维护者事先明确允许，不得创建任何本地或远程分支、备份分支、worktree 或发布克隆；不得以隔离脏工作树、备份、测试、打包或发布为理由自行创建。
-- 只有维护者明确要求并批准 PR 时，才允许创建对应 PR 分支；格式为 `feat/<功能>-PR` 或 `fix/<功能>-PR`，Git 分支名不得使用反斜杠。创建下一条 PR 前必须检查上一条临时 PR 的状态，确认代码已经合入目标分支后，删除对应的本地和远端 PR 分支；未合入或状态不明确时不得删除。
+- 只有维护者明确要求并批准 PR 时，才允许从主库目标分支的当前远端指针创建对应 PR 分支；格式为 `feat/<功能>-PR` 或 `fix/<功能>-PR`，Git 分支名不得使用反斜杠。PR 分支只 cherry-pick 本次待审业务提交；push 前必须对比主库目标分支，确认 diff 不包含 `AGENTS.md`。创建下一条 PR 前必须检查上一条临时 PR 的状态，确认代码已经合入目标分支后，删除对应的本地和远端 PR 分支；未合入或状态不明确时不得删除。
 - GitHub 网络操作前读取系统当前代理设置；只允许命令级临时代理，不得硬编码端口或修改全局 Git 配置。
 - 每次 push `ShiinaSakuya` 或 `ShiinaKuroko` 前必须先 `git fetch origin`。本地落后或出现分叉时，先审查并整合远端提交，不得用强推覆盖远端代码。
 - 只有维护者明确要求并批准时，才以对应目标分支的当前远端指针创建不可移动备份 `backup/YYYYMMDD-<short-sha>`；不得擅自创建、移动、复用或删除 backup 分支。
