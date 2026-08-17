@@ -623,6 +623,20 @@ async function runRendererTest(root, tempDirectory) {
     'flex',
     '队列管理浮窗没有打开',
   );
+  const taskListDialog = document.querySelector(
+    '.task-list-loader-dialog',
+  );
+  const taskListActions = taskListDialog?.querySelector('.modal-actions');
+  rendererAssert.equal(
+    getComputedStyle(taskListDialog).overflowY,
+    'hidden',
+    '队列管理外层浮窗不应整体滚动',
+  );
+  rendererAssert.ok(
+    taskListActions.getBoundingClientRect().bottom
+      <= taskListDialog.getBoundingClientRect().bottom + 1,
+    '队列管理底部操作区必须始终位于浮窗内',
+  );
   rendererAssert.equal(
     document.getElementById('task-list-loader-count')?.textContent,
     '共 2 个计划组',
