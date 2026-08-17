@@ -168,9 +168,9 @@
 - 路径以仓库为基准：GUI 为当前仓库根目录，后端默认是同级 `../AutoWSGR`；不得固化某台机器的绝对路径。
 - 当前仓库是个人 Fork。`main` 只用于同步 `yltx/AutoWSGR-GUI:alpha`，不直接开发功能；同步上游 `alpha` 后再更新个人 Fork 的 `origin/main`。
 - `ShiinaSakuya` 是日常主力开发分支，代表个人 Fork 的最新开发代码。所有新功能和 Bug Fix 必须基于该分支开发、验证并 push；正式自动化测试和必要生成入口必须随对应代码一并进入该分支。
-- `ShiinaKuroko` 是 GUI 发布、打包和向主库提交 PR 的唯一分支。Sakuya 中验证完成的业务代码可直接同步到 Kuroko，但不得带入 Sakuya 专用的 `AGENTS.md` 和 `tools/**` 内容。
-- Sakuya 与 Kuroko 之间直接同步，不创建两者之间的 PR。同步完成后，除 Sakuya 专用的 `AGENTS.md` 和 `tools/**` 外，两条分支的业务代码必须一致。
-- Kuroko 向主库提交 PR 前必须检查 diff；PR 不得包含 Sakuya 专用的 `AGENTS.md` 或 `tools/**` 改动。主库基线已存在同名文件时，Kuroko 保持主库兼容版本，不以 Sakuya 私有版本覆盖。
+- `ShiinaKuroko` 是 GUI 发布、打包和向主库提交 PR 的唯一分支。Sakuya 中验证完成的业务代码可直接同步到 Kuroko；两条分支必须使用内容完全一致的共同 `AGENTS.md`，`tools/**` 可保留 Sakuya 专用内容。
+- Sakuya 与 Kuroko 之间直接同步，不创建两者之间的 PR。同步完成后，除 `tools/**` 外，两条分支的业务代码和 `AGENTS.md` 必须一致。
+- Kuroko 向主库提交 PR 前必须检查 diff；个人 Fork 的 `AGENTS.md` 和 Sakuya 专用 `tools/**` 默认不进入主库 PR，除非该 PR 明确负责更新主库对应规则或工具。
 - 未经维护者事先明确允许，不得创建任何本地或远程分支、备份分支、worktree 或发布克隆；不得以隔离脏工作树、备份、测试、打包或发布为理由自行创建。
 - 只有维护者明确要求并批准 PR 时，才允许创建对应 PR 分支；格式为 `feat/<功能>-PR` 或 `fix/<功能>-PR`，Git 分支名不得使用反斜杠。创建下一条 PR 前必须检查上一条临时 PR 的状态，确认代码已经合入目标分支后，删除对应的本地和远端 PR 分支；未合入或状态不明确时不得删除。
 - GitHub 网络操作前读取系统当前代理设置；只允许命令级临时代理，不得硬编码端口或修改全局 Git 配置。
