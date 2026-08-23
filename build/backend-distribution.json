@@ -3,14 +3,14 @@
     "id": "stable",
     "repository": "OpenWSGR/AutoWSGR",
     "ref": "main",
-    "commit": "a5effbfc606794ec30fa8bfd2f8edd2cc15d3852",
+    "commit": "15331ccfd8838c4a834752e1bf1b68e9811fe49c",
     "forceUpdateOnInstall": true
   },
   "alpha": {
     "id": "alpha",
     "repository": "ShiinaKuroko/AutoWSGR",
     "ref": "ShiinaKuroko",
-    "commit": "77f34b7b30d18f7b86cf736bdd5cf17ae35d5f78",
+    "commit": "7ec26af0a1d7741bb08aa675c7850ed987c6bff3",
     "forceUpdateOnInstall": true
   }
 }
