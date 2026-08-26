@@ -1215,7 +1215,7 @@
               <div class="config-setting-row">
                 <div class="config-setting-copy">
                   <strong>日志等级</strong>
-                  <span>统一控制普通日志和模块调试信息；模块独立等级后续在此展开。</span>
+                  <span>同时控制 GUI 和后端日志的详细程度；模块独立等级后续在此展开。</span>
                 </div>
                 <div class="config-setting-control">
                   <select id="cfg-log-level" class="input">
@@ -1229,7 +1229,7 @@
               </div>
               <div class="config-setting-row">
                 <div class="config-setting-copy">
-                  <strong>日志目录</strong>
+                  <strong>后端日志目录</strong>
                   <span>后端保存日志文件和调试截图的根目录。</span>
                 </div>
                 <div class="config-setting-control">
@@ -1241,8 +1241,20 @@
               </div>
               <div class="config-setting-row">
                 <div class="config-setting-copy">
+                  <strong>GUI 日志目录</strong>
+                  <span>GUI 日志文件保存目录，默认在配置目录（%APPDATA%\wsgrgui）下的 logs 文件夹，可改为其他位置（如网络存储）。</span>
+                </div>
+                <div class="config-setting-control">
+                  <div class="input-row config-compact-path-row">
+                    <input type="text" id="cfg-gui-log-root" class="input" placeholder="logs">
+                    <button class="btn btn-small" id="btn-browse-gui-log-root" type="button">选择</button>
+                  </div>
+                </div>
+              </div>
+              <div class="config-setting-row">
+                <div class="config-setting-copy">
                   <strong>调试模式</strong>
-                  <span>显示 GUI 调试日志，并开放本地后端和异常截图等开发者功能。</span>
+                  <span>开启后同时显示 GUI 调试日志、开放开发者功能，并启用后端调试输出。</span>
                 </div>
                 <div class="config-setting-control">
                   <label class="config-switch">
