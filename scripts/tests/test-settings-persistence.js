@@ -1917,6 +1917,12 @@ async function runRendererTest(root, tempDirectory) {
   rendererAssert.deepStrictEqual(savedYaml.log, {
     level: sample.logLevel,
     root: sample.logRoot,
+    show_emulator_debug: sample.debugMode,
+    show_ui_debug: sample.debugMode,
+    show_vision_debug: sample.debugMode,
+    show_ops_debug: sample.debugMode,
+    show_combat_state_debug: sample.debugMode,
+    show_combat_recognition_debug: sample.debugMode,
     channels: {
       'stale.channel': 'DEBUG',
       backend_metadata: {
@@ -2163,6 +2169,7 @@ async function runRendererTest(root, tempDirectory) {
     'cfg-loot-stop-count',
     'cfg-log-level',
     'cfg-log-root',
+    'cfg-gui-log-root',
     'cfg-debug-mode',
     'cfg-python-path',
     'cfg-backend-port',

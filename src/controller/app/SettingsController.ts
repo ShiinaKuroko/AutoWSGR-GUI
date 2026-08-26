@@ -83,6 +83,10 @@ export class SettingsController {
         '选择后端日志目录',
         path => configView.setLogRoot(path),
       ),
+      onBrowseGuiLogRoot: () => void this.browseDirectory(
+        '选择 GUI 日志目录',
+        path => configView.setGuiLogRoot(path),
+      ),
       onBrowsePlanRoot: () => void this.browseDirectory(
         '选择后端作战方案根目录',
         path => configView.setPlanRoot(path),
