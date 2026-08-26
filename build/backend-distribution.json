@@ -3,7 +3,7 @@
     "id": "stable",
     "repository": "OpenWSGR/AutoWSGR",
     "ref": "main",
-    "commit": "15331ccfd8838c4a834752e1bf1b68e9811fe49c",
+    "commit": "000e97fdfb8358fac32eb85d71bdec68c7329263",
     "forceUpdateOnInstall": true
   },
   "alpha": {
