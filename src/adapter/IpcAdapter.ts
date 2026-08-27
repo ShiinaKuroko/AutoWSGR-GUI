@@ -133,6 +133,7 @@ export type ConfigurationGateway = Pick<
   | 'commitGuiSettings'
   | 'detectEmulator'
   | 'getBackendPort'
+  | 'getGuiLogRoot'
   | 'getBackendRepoPath'
   | 'getBackendStartupMode'
   | 'getBackendUpdateMode'

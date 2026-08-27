@@ -356,7 +356,10 @@ export class ConfigController {
       lootStopCount: gui.lootStopCount,
       logLevel: cfg.log.level,
       logRoot: cfg.log.root,
-      guiLogRoot: browserStorageStore.get('guiLogRoot') || 'logs',
+      guiLogRoot: (
+        this.gateway?.getGuiLogRoot?.()
+        ?? browserStorageStore.get('guiLogRoot')
+      ) || 'logs',
       themeMode: getThemeMode(),
       accentColor: getAccentColor(),
       debugMode: browserStorageStore.get('debugMode') === 'true',
@@ -459,6 +462,7 @@ export class ConfigController {
         cudaPath: collected.cudaPath || null,
         saveBackendScreenshots: collected.saveBackendScreenshots,
         pythonPath: collected.pythonPath || null,
+        guiLogRoot: collected.guiLogRoot,
         windowPreferences: {
           defaultWidth: collected.defaultWindowWidth,
           defaultHeight: collected.defaultWindowHeight,
