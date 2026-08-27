@@ -232,3 +232,11 @@
 - 本文件维护长期工程门禁和主库 1.4.4 协作契约，`docs/architecture/**` 维护当前 GUI 结构与 ADR；发现两者与实现不一致时按第 2 节处理。
 - 工具入口只指向本文件，不复制整套规则。阶段性迁移清单、历史事故和已结束的单次分工放入对应任务文档，不写入长期 Agent 约束。
 - 修改本文件前必须先审查当前代码和门禁；新增、删除或降低规则前，先向用户列明具体动作、原因和影响并取得确认。
+
+## 11. Project Worktree Coordination
+
+When this repository is inside a parent project containing a coordination `AGENTS.md`, read the parent policy before writing. The parent meta repository owns the `planning-with-files` task files; this repository owns only GUI code, tests, build, packaging, and release artifacts.
+
+- The current project policy explicitly authorizes local task branches and worktrees for parallel work. This does not authorize remote branch, push, tag, or release operations.
+- Work only in the child worktree assigned to the matching `codex/<task-id>` branch. Do not switch the shared `ShiinaKuroko` or `main` checkout to another task branch.
+- Keep GUI commits and verification in this repository, and record the resulting SHA in the parent meta task's `progress.md`.
