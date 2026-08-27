@@ -342,6 +342,9 @@ const electronBridge = {
   appendFile: (filePath: string, content: string) => {
     return ipcRenderer.invoke('append-file', filePath, content);
   },
+  appendGuiLog: (content: string) => {
+    return ipcRenderer.invoke('append-gui-log', content);
+  },
 
   detectEmulator: () => {
     return ipcRenderer.invoke('detect-emulator');

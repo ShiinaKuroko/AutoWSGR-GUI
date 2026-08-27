@@ -103,7 +103,7 @@ export function getAppRuntimeGateway(): AppRuntimeGateway | undefined {
 
 export type StartupGateway = Pick<
   ElectronBridge,
-  | 'appendFile'
+  | 'appendGuiLog'
   | 'autoCheckBackendUpdates'
   | 'checkEnvironment'
   | 'checkGuiUpdates'

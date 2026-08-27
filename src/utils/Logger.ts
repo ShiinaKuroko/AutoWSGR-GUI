@@ -32,12 +32,10 @@ export const LOG_LEVEL_ALIASES: Record<string, LogLevel> = {
 };
 
 interface LoggerOptions {
-  /** electronBridge.appendFile — 向文件追加写入 */
-  appendFile: (path: string, content: string) => Promise<void>;
+  /** Writes content to the configured GUI log file. */
+  appendGuiLog: (content: string) => Promise<void>;
   /** UI 日志回调 (level, channel, message) */
   uiCallback: (level: string, channel: string, message: string) => void;
-  /** 日志文件存放目录（绝对路径） */
-  logDir: string;
   /** 日志文件写入等级阈值，低于该等级的日志不写入文件。默认 'debug'（全量写入）。 */
   level?: LogLevel;
 }
@@ -52,15 +50,11 @@ function formatTimestamp(): string {
     `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}`;
 }
 
-function dateTag(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-
 class LoggerImpl {
   private opts: LoggerOptions | null = null;
   private buffer: string[] = [];
   private fileLevel: LogLevel = 'debug';
+  private flushInFlight = false;
 
   /** 初始化 Logger（应在 AppController.initAsync 中调用一次） */
   init(opts: LoggerOptions): void {
@@ -104,13 +98,21 @@ class LoggerImpl {
 
   /** 手动刷新缓冲区到文件 */
   flush(): void {
-    if (!this.opts || this.buffer.length === 0) return;
-    const content = this.buffer.join('');
+    if (!this.opts || this.buffer.length === 0 || this.flushInFlight) return;
+    const pending = this.buffer;
     this.buffer = [];
-    const filePath = `${this.opts.logDir}/gui_${dateTag()}.debug.log`;
-    this.opts.appendFile(filePath, content).catch(() => {
-      // 写入失败不影响运行
-    });
+    this.flushInFlight = true;
+    void this.opts.appendGuiLog(pending.join(''))
+      .then(() => {
+        this.flushInFlight = false;
+        if (this.buffer.length >= 50) this.flush();
+      })
+      .catch(error => {
+        // ponytail: retries retain logs in memory without a cap; add a durable capped spool if offline retention must survive restarts.
+        this.buffer = [...pending, ...this.buffer];
+        this.flushInFlight = false;
+        console.error('[Logger] GUI log write failed:', error);
+      });
   }
 
   private log(level: LogLevel, channel: string, message: string, showInUi = true): void {
