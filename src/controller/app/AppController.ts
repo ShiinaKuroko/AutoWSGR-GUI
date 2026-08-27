@@ -387,9 +387,10 @@ export class AppController {
   // 用户操作绑定
   // ════════════════════════════════════════
 
-  /** 解析 GUI 日志目录：优先使用设置页配置，默认配置目录下的 logs 文件夹。 */
+  /** 解析 GUI 日志目录：优先使用设置页配置（主进程持久化），默认配置目录下的 logs 文件夹。 */
   private resolveGuiLogDir(): string {
-    const root = (browserStorageStore.get('guiLogRoot') ?? '').trim();
+    const stored = (window.electronBridge?.getGuiLogRoot?.() ?? '').trim();
+    const root = stored || (browserStorageStore.get('guiLogRoot') ?? '').trim();
     if (!root || root === 'logs') return `${this.configDir}/logs`;
     // 绝对路径（Windows 盘符 / UNC / 根斜杠）直接使用，相对路径拼接到配置目录
     const isAbsolute = /^[a-zA-Z]:[\\/]/.test(root)
