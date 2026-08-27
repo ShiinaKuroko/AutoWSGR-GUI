@@ -162,20 +162,42 @@
               </div>
             </div>
             <div id="cfg-debug-advanced" class="config-advanced-box" style="display:none">
-              <label class="config-switch">
-                <input type="checkbox" id="cfg-save-backend-screenshots">
-                <span class="config-switch-track" aria-hidden="true"></span>
-                <span>保存识别异常截图到本地</span>
-              </label>
-              <label class="config-switch">
-                <input type="checkbox" id="cfg-use-external-backend">
-                <span class="config-switch-track" aria-hidden="true"></span>
-                <span>使用本地后端源码</span>
-              </label>
-              <div id="cfg-backend-repo-wrap" style="display:none">
-                <div class="input-row">
-                  <input type="text" id="cfg-backend-repo-path" class="input" placeholder="本地 AutoWSGR 仓库路径">
-                  <button class="btn btn-small" id="btn-browse-backend-repo">浏览</button>
+              <div class="config-setting-row">
+                <div class="config-setting-copy">
+                  <strong>保存识别异常截图</strong>
+                  <span>识别失败时保留现场截图，便于排查。</span>
+                </div>
+                <div class="config-setting-control">
+                  <label class="config-switch">
+                    <input type="checkbox" id="cfg-save-backend-screenshots">
+                    <span class="config-switch-track" aria-hidden="true"></span>
+                    <span>启用</span>
+                  </label>
+                </div>
+              </div>
+              <div class="config-setting-row">
+                <div class="config-setting-copy">
+                  <strong>使用本地后端源码</strong>
+                  <span>启动后端时加载本地仓库代码。</span>
+                </div>
+                <div class="config-setting-control">
+                  <label class="config-switch">
+                    <input type="checkbox" id="cfg-use-external-backend">
+                    <span class="config-switch-track" aria-hidden="true"></span>
+                    <span>启用</span>
+                  </label>
+                </div>
+              </div>
+              <div class="config-setting-row" id="cfg-backend-repo-wrap" style="display:none">
+                <div class="config-setting-copy">
+                  <strong>本地仓库路径</strong>
+                  <span>选择 AutoWSGR 源码目录。</span>
+                </div>
+                <div class="config-setting-control">
+                  <div class="input-row">
+                    <input type="text" id="cfg-backend-repo-path" class="input" placeholder="本地 AutoWSGR 仓库路径">
+                    <button class="btn btn-small" id="btn-browse-backend-repo">浏览</button>
+                  </div>
                 </div>
               </div>
             </div>

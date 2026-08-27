@@ -94,7 +94,7 @@ export function getNavigationGateway(): NavigationGateway | undefined {
 
 export type AppRuntimeGateway = Pick<
   ElectronBridge,
-  'getAppVersion' | 'getBackendPort'
+  'getAppVersion' | 'getBackendPort' | 'getGuiLogRoot'
 >;
 
 export function getAppRuntimeGateway(): AppRuntimeGateway | undefined {
