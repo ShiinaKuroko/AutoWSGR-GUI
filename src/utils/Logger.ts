@@ -21,6 +21,14 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
   warn: 2,
   error: 3,
 };
+const FORWARDED_LOG_DEDUP_WINDOW_MS = 1_200;
+
+interface RecentLog {
+  level: LogLevel;
+  channel: string;
+  message: string;
+  timestamp: number;
+}
 
 /** 后端日志等级字符串到 GUI 文件等级的映射（CRITICAL 归入 error）。 */
 export const LOG_LEVEL_ALIASES: Record<string, LogLevel> = {
@@ -55,6 +63,7 @@ class LoggerImpl {
   private buffer: string[] = [];
   private fileLevel: LogLevel = 'debug';
   private flushInFlight = false;
+  private recentLog: RecentLog | null = null;
 
   /** 初始化 Logger（应在 AppController.initAsync 中调用一次） */
   init(opts: LoggerOptions): void {
@@ -116,6 +125,7 @@ class LoggerImpl {
   }
 
   private log(level: LogLevel, channel: string, message: string, showInUi = true): void {
+    if (this.isForwardedDuplicate(level, channel, message)) return;
     const ts = formatTimestamp();
 
     // 1. 文件（受日志等级阈值控制，低于阈值的等级不写入文件）
@@ -136,6 +146,25 @@ class LoggerImpl {
 
     // 3. UI
     if (showInUi) this.opts?.uiCallback(level, channel, message);
+  }
+
+  private isForwardedDuplicate(
+    level: LogLevel,
+    channel: string,
+    message: string,
+  ): boolean {
+    const now = Date.now();
+    const previous = this.recentLog;
+    this.recentLog = { level, channel, message, timestamp: now };
+    if (!previous) return false;
+
+    const crossedGuiBoundary = (
+      (previous.channel.toUpperCase() === 'GUI') !== (channel.toUpperCase() === 'GUI')
+    );
+    return crossedGuiBoundary
+      && previous.level === level
+      && previous.message === message
+      && now - previous.timestamp < FORWARDED_LOG_DEDUP_WINDOW_MS;
   }
 }
 
