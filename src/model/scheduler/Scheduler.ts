@@ -1125,14 +1125,8 @@ export class Scheduler {
   private setupApiCallbacks(): void {
     this.api.setCallbacks({
       onLog: (msg) => {
-        const loot = parseUiCount(msg.message, '战利品数量');
-        const ship = parseUiCount(msg.message, '舰船数量');
-        this.stopChecker.updateTracked(loot, ship);
-
-        if ((loot != null || ship != null) && this.currentTask?.stopCondition) {
-          this.checkAndStopRunningTask(this.currentTask.stopCondition);
-        }
-
+        // Stop-condition counters are owned by processBackendLog (stdout).
+        // The WebSocket carries the same backend lines and must not count them again.
         this.callbacks.onLog?.(msg);
       },
 

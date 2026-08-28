@@ -1,6 +1,6 @@
 {
   "name": "wsgrgui",
-  "version": "2.1.1-alpha.6",
+  "version": "2.1.1-alpha.7",
   "description": "AutoWSGR YAML 管理与自动化桌面界面",
   "main": "dist/electron/main.js",
   "scripts": {
@@ -20,6 +20,7 @@
     "test:plan-management-delete": "node scripts/tests/test-plan-management-delete-scope.mjs",
     "test:scheduler-domain": "npm run build && node scripts/tests/test-scheduler-domain.mjs",
     "test:daily-sortie-stats": "node scripts/tests/test-daily-sortie-stats.mjs",
+    "test:gui-log-route": "node scripts/tests/test-gui-log-route.mjs",
     "test:ship-library-updater": "node scripts/tests/test-ship-library-updater.js",
     "test:ocr-log-analyzer": "node scripts/tests/test-ocr-log-analyzer.js",
     "test:map-intel": "node scripts/tests/test-map-intel.js",
