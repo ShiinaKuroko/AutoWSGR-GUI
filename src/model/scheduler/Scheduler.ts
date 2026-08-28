@@ -655,10 +655,15 @@ export class Scheduler {
   // ── 内部: 任务完成 & 后触发 ──
 
   /** 任务完成后的后触发处理 */
-  private async handleTaskFinished(success: boolean, result?: TaskResult | null, error?: string | null): Promise<void> {
+  private async handleTaskFinished(
+    taskId: string,
+    success: boolean,
+    result?: TaskResult | null,
+    error?: string | null,
+  ): Promise<void> {
     if (!this.systemActive) return;
     const finished = this.currentTask;
-    if (!finished) return;
+    if (!finished || finished.backendTaskId !== taskId) return;
 
     const stopReason = this.stopRequest?.taskId === finished.id
       ? this.stopRequest.reason
@@ -1145,7 +1150,7 @@ export class Scheduler {
       },
 
       onTaskCompleted: (msg) => {
-        this.handleTaskFinished(msg.success, msg.result, msg.error);
+        this.handleTaskFinished(msg.task_id, msg.success, msg.result, msg.error);
       },
 
       onWsStatusChange: (connected) => {
