@@ -310,13 +310,12 @@ export class AppController {
       },
       initLogger: (b) => {
         Logger.init({
-          appendFile: b.appendFile.bind(b),
+          appendGuiLog: b.appendGuiLog.bind(b),
           uiCallback: (level, channel, message) => {
             const now = new Date();
             const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
             this.mainView.appendLog({ time, level, channel, message });
           },
-          logDir: this.resolveGuiLogDir(),
         });
       },
       loadConfigAndSync: async () => {
@@ -386,20 +385,6 @@ export class AppController {
   // ════════════════════════════════════════
   // 用户操作绑定
   // ════════════════════════════════════════
-
-  /** 解析 GUI 日志目录：优先使用设置页配置（主进程持久化），默认配置目录下的 logs 文件夹。 */
-  private resolveGuiLogDir(): string {
-    const stored = (this.runtimeGateway?.getGuiLogRoot?.() ?? '').trim();
-    const root = stored || (browserStorageStore.get('guiLogRoot') ?? '').trim();
-    if (!root || root === 'logs') return `${this.configDir}/logs`;
-    // 绝对路径（Windows 盘符 / UNC / 根斜杠）直接使用，相对路径拼接到配置目录
-    const isAbsolute = /^[a-zA-Z]:[\\/]/.test(root)
-      || root.startsWith('\\\\')
-      || root.startsWith('/');
-    return isAbsolute
-      ? root.replace(/[\\/]+$/, '')
-      : `${this.configDir}/${root}`;
-  }
 
   private bindQueueActions(): void {
     this.mainView.onStopTask = () => {

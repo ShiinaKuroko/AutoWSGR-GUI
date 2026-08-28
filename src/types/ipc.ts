@@ -362,6 +362,7 @@ export interface ElectronBridge {
   ) => Promise<string | null>;
   readFile: (path: string) => Promise<string>;
   appendFile: (path: string, content: string) => Promise<void>;
+  appendGuiLog: (content: string) => Promise<void>;
   detectEmulator: () => Promise<{
     type: string;
     path: string;
