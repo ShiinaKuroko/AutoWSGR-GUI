@@ -1733,6 +1733,40 @@ async function stopNormalFightLifecycleHarness(harness) {
   harness.binder.dispose();
 }
 
+let earlyCompletionApi;
+earlyCompletionApi = createSchedulerApi({
+  taskStart: async () => {
+    earlyCompletionApi.callbacks.onTaskCompleted({
+      type: 'task_completed',
+      task_id: 'early-backend-task',
+      success: true,
+      result: null,
+      error: null,
+    });
+    return {
+      success: true,
+      data: { task_id: 'early-backend-task', status: 'running' },
+    };
+  },
+});
+const earlyCompletionScheduler = new schedulerModule.Scheduler(earlyCompletionApi);
+earlyCompletionScheduler.setAutoExpedition(false);
+assert.equal(await earlyCompletionScheduler.start(), true);
+earlyCompletionScheduler.addTask(
+  'HTTP 响应前完成测试',
+  'normal_fight',
+  { type: 'normal_fight' },
+);
+earlyCompletionScheduler.startConsuming();
+await wait(0);
+assert.equal(
+  earlyCompletionScheduler.currentRunningTask,
+  null,
+  'HTTP 响应前到达的匹配完成事件必须在绑定后重放',
+);
+assert.equal(earlyCompletionScheduler.status, 'idle');
+await earlyCompletionScheduler.stop();
+
 const completedLifecycle =
   await createNormalFightLifecycleHarness();
 completedLifecycle.cron.tick();

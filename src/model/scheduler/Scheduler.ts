@@ -17,6 +17,7 @@ import type {
   TaskRequest,
   TaskResult,
   RoundResult,
+  WsTaskCompleted,
 } from '../../types/api.js';
 import type {
   StopCondition,
@@ -68,6 +69,8 @@ export class Scheduler {
   // ── 队列 ──
   private _taskQueue: TaskQueue;
   private currentTask: SchedulerTask | null = null;
+  private startingTaskId: string | null = null;
+  private pendingTaskCompletions = new Map<string, WsTaskCompleted>();
 
   // ── 状态 ──
   private _status: SchedulerStatus = 'not_connected';
@@ -586,6 +589,8 @@ export class Scheduler {
 
   /** 向后端发起 taskStart，失败时按重试策略处理 */
   private async executeTaskStart(task: SchedulerTask): Promise<void> {
+    this.startingTaskId = task.id;
+    this.pendingTaskCompletions.clear();
     try {
       if (task.request.type === 'expedition') {
         throw new Error('远征检查不能通过 taskStart 执行');
@@ -594,6 +599,9 @@ export class Scheduler {
       if (!this.systemActive || this.currentTask?.id !== task.id) return;
       if (resp.success && resp.data) {
         task.backendTaskId = resp.data.task_id;
+        const pendingCompletion = this.pendingTaskCompletions.get(task.backendTaskId);
+        this.pendingTaskCompletions.clear();
+        if (pendingCompletion) this.handleTaskCompletedMessage(pendingCompletion);
       } else {
         const reason = resp.error ?? '任务启动失败';
         this.currentTask = null;
@@ -630,6 +638,11 @@ export class Scheduler {
         'failed',
       );
       this.consumeNext();
+    } finally {
+      if (this.startingTaskId === task.id) {
+        this.startingTaskId = null;
+        this.pendingTaskCompletions.clear();
+      }
     }
   }
 
@@ -653,6 +666,17 @@ export class Scheduler {
   }
 
   // ── 内部: 任务完成 & 后触发 ──
+
+  private handleTaskCompletedMessage(msg: WsTaskCompleted): void {
+    const current = this.currentTask;
+    if (current?.backendTaskId === msg.task_id) {
+      void this.handleTaskFinished(msg.task_id, msg.success, msg.result, msg.error);
+      return;
+    }
+    if (current && this.startingTaskId === current.id) {
+      this.pendingTaskCompletions.set(msg.task_id, msg);
+    }
+  }
 
   /** 任务完成后的后触发处理 */
   private async handleTaskFinished(
@@ -1150,7 +1174,7 @@ export class Scheduler {
       },
 
       onTaskCompleted: (msg) => {
-        this.handleTaskFinished(msg.task_id, msg.success, msg.result, msg.error);
+        this.handleTaskCompletedMessage(msg);
       },
 
       onWsStatusChange: (connected) => {
