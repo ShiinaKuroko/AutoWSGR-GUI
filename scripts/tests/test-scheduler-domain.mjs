@@ -2487,6 +2487,19 @@ const conditionParentId = conditionScheduler.addTask(
 );
 conditionScheduler.startConsuming();
 await wait(0);
+conditionApi.callbacks.onLog({
+  type: 'log',
+  timestamp: new Date().toISOString(),
+  level: 'INFO',
+  channel: 'ui',
+  message: '[UI] 战利品数量: 5/5',
+});
+await wait(0);
+assert.equal(
+  conditionStopCalls,
+  0,
+  'WebSocket 的重复计数不得触发停止条件',
+);
 conditionScheduler.processBackendLog('[UI] 战利品数量: 5/5');
 await wait(0);
 assert.equal(conditionStopCalls, 1);
