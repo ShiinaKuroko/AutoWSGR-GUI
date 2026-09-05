@@ -51,6 +51,13 @@ export function getBackendProcess(): ChildProcess | null {
   return backendProcess;
 }
 
+/** 判断后端 stderr 中 Python traceback 的起始边界。 */
+export function isBackendTracebackBoundary(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed === 'Traceback (most recent call last):'
+    || trimmed === 'During handling of the above exception, another exception occurred:';
+}
+
 function readGuiSettings(): Record<string, unknown> {
   try {
     const settingsPath = path.join(
@@ -408,6 +415,10 @@ export async function startBackend(): Promise<void> {
       const isNewEntry = LOGURU_LINE_RE.test(trimmed);
       if (isNewEntry) {
         skipMultiline = /\bDEBUG\b/i.test(trimmed);
+      }
+      if (isBackendTracebackBoundary(trimmed)) {
+        skipMultiline = true;
+        continue;
       }
       if (skipMultiline) continue;
       if (
