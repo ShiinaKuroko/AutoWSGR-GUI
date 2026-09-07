@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { PlanModel } = require('../../dist/src/model/PlanModel.js');
+const { ApiClient } = require('../../dist/src/model/ApiClient.js');
 const { TaskQueue } = require('../../dist/src/model/scheduler/TaskQueue.js');
 const {
   buildPlanQueueRequest,
@@ -190,6 +191,73 @@ function buildFleetContractCase(name, sourceYaml) {
 
 function buildPlanRequest(plan, fileName) {
   return buildPlanQueueRequest({}, plan, fileName).req;
+}
+
+async function testTaskStartNormalizesEnemyRuleConditions() {
+  const request = {
+    type: 'normal_fight',
+    times: 1,
+    plan: {
+      fleet_rules: ['legacy'],
+      node_defaults: {
+        long_missile_support: true,
+        enemy_rules: [['ap >= 1', 'retreat'], ['cv = 2', 3]],
+        enemy_formation_rules: [['ss == 1', 'detour']],
+      },
+      node_args: {
+        A: {
+          enemy_rules: [['ap < 5', 2]],
+          enemy_formation_rules: [['cv == 1', 5]],
+        },
+      },
+    },
+  };
+  const requests = [];
+  let attempts = 0;
+  const api = new ApiClient('http://test', {
+    request: async (_method, _path, body) => {
+      requests.push(body);
+      if (attempts++ === 0) {
+        return {
+          success: false,
+          detail: [{
+            type: 'extra_forbidden',
+            loc: ['body', 'plan', 'fleet_rules'],
+          }],
+        };
+      }
+      return {
+        success: true,
+        data: { task_id: 'task', status: 'running' },
+      };
+    },
+  });
+
+  const result = await api.taskStart(request);
+  assert.equal(result.success, true);
+  assert.equal(requests.length, 2);
+  for (const sent of requests) {
+    assert.deepEqual(sent.plan.node_defaults.enemy_rules, [
+      ['AP >= 1', 'retreat'],
+      ['CV = 2', 3],
+    ]);
+    assert.deepEqual(sent.plan.node_defaults.enemy_formation_rules, [
+      ['SS == 1', 'detour'],
+    ]);
+    assert.deepEqual(sent.plan.node_args.A.enemy_rules, [['AP < 5', 2]]);
+    assert.deepEqual(sent.plan.node_args.A.enemy_formation_rules, [['CV == 1', 5]]);
+  }
+  assert.equal(requests[0] === request, false);
+  assert.equal(requests[1] === requests[0], false);
+  assert.equal(requests[1].plan.fleet_rules, undefined);
+  assert.equal(requests[1].plan.node_defaults.long_missile_support, undefined);
+  assert.deepEqual(request.plan.node_defaults.enemy_rules, [
+    ['ap >= 1', 'retreat'],
+    ['cv = 2', 3],
+  ]);
+  assert.deepEqual(request.plan.node_args.A.enemy_formation_rules, [['cv == 1', 5]]);
+  assert.equal(request.plan.fleet_rules[0], 'legacy');
+  assert.equal(request.plan.node_defaults.long_missile_support, true);
 }
 
 function runBackendFleetContract(cases) {
@@ -843,4 +911,9 @@ for (const name of ['legacy-lowercase-sl', 'system-weekly-9-2']) {
     true,
   );
 }
-console.log('GUI/AutoWSGR API contract tests passed');
+testTaskStartNormalizesEnemyRuleConditions()
+  .then(() => console.log('GUI/AutoWSGR API contract tests passed'))
+  .catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+  });

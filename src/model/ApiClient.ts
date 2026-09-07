@@ -138,6 +138,24 @@ export class ApiClient {
     return cloned;
   }
 
+  private static normalizeTaskStartRequest(req: TaskRequest): TaskRequest {
+    const cloned = jsonCodec.parse<TaskRequest>(jsonCodec.stringify(req));
+    if (!('plan' in cloned) || !cloned.plan) return cloned;
+
+    const nodes = [
+      cloned.plan.node_defaults,
+      ...Object.values(cloned.plan.node_args ?? {}),
+    ];
+    for (const node of nodes) {
+      if (!node) continue;
+      for (const rules of [node.enemy_rules, node.enemy_formation_rules]) {
+        if (!Array.isArray(rules)) continue;
+        for (const rule of rules) rule[0] = rule[0].toUpperCase();
+      }
+    }
+    return cloned;
+  }
+
   private static normalizeTaskStartResponse(payload: unknown): ApiResponse<TaskStartResult> {
     const p = payload as ApiResponse<TaskStartResult> & { detail?: unknown };
     if (typeof p?.success === 'boolean') return p;
@@ -148,7 +166,8 @@ export class ApiClient {
   }
 
   async taskStart(req: TaskRequest): Promise<ApiResponse<TaskStartResult>> {
-    const first = await this.request('POST', '/api/task/start', req);
+    const normalizedReq = ApiClient.normalizeTaskStartRequest(req);
+    const first = await this.request('POST', '/api/task/start', normalizedReq);
     const firstNormalized = ApiClient.normalizeTaskStartResponse(first);
     if (firstNormalized.success) return firstNormalized;
 
@@ -156,7 +175,7 @@ export class ApiClient {
       return firstNormalized;
     }
 
-    const legacyReq = ApiClient.makeLegacyTaskRequest(req);
+    const legacyReq = ApiClient.makeLegacyTaskRequest(normalizedReq);
     Logger.warn('检测到后端 schema 不支持新字段，本次请求回退为兼容负载重试一次', 'api');
     const retried = await this.request('POST', '/api/task/start', legacyReq);
     return ApiClient.normalizeTaskStartResponse(retried);
