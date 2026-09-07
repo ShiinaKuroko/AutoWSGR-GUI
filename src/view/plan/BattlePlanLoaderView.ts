@@ -401,7 +401,7 @@ export class BattlePlanLoaderView {
           this.createPreviewField(
             '维修方案',
             hasDetails
-              ? `${this.battlePlanRepairLabel(plan.repairMode)}-${this.repairMethodLabel()}`
+              ? `${this.battlePlanRepairLabel(plan.repairMode)}-${plan.repairMethod === 'bath' ? '泡澡维修' : '快速维修'}`
               : '重启后显示',
           ),
           this.createPreviewField(
@@ -720,13 +720,6 @@ export class BattlePlanLoaderView {
     return Array.isArray(repairMode)
       ? `按舰位：${repairMode.map(label).join(' / ')}`
       : label(repairMode);
-  }
-
-  private repairMethodLabel(): string {
-    const method = document.getElementById(
-      'plan-edit-repair-method',
-    ) as HTMLSelectElement | null;
-    return method?.value === 'bath' ? '泡澡维修' : '快速维修';
   }
 
   private battlePlanResultLabel(result: ManagedBattlePlan['result']): string {

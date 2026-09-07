@@ -116,6 +116,7 @@ export function buildPlanPreviewVO(
     event: plan.data.event,
     eventMaps,
     repairModeValue: Array.isArray(plan.repairMode) ? plan.repairMode[0] ?? 1 : plan.repairMode,
+    repairMethod: plan.repairMethod,
     fightConditionValue: plan.fightCondition,
     fleetId: plan.data.fleet_id ?? 1,
     selectedNodes: nodes,

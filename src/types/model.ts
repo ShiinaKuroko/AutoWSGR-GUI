@@ -162,6 +162,8 @@ export interface EventMapCatalog {
   events: EventMapCatalogEntry[];
 }
 
+export type RepairMethod = 'quick' | 'bath';
+
 export interface PlanData {
   chapter: number | string;
   map: number | string;
@@ -172,6 +174,7 @@ export interface PlanData {
   result?: BattleResultGrade;
   fight_condition?: number;
   repair_mode?: number | number[];
+  repair_method?: RepairMethod;
   fleet_id?: number;
   node_defaults?: NodeArgs;
   node_args?: Record<string, NodeArgs>;
@@ -209,6 +212,7 @@ export interface TaskPreset {
     | 'exercise'
     | 'decisive';
   plan_id?: string;
+  repair_method?: RepairMethod;
   times?: number;
   gap?: number;
   fleet_id?: number;

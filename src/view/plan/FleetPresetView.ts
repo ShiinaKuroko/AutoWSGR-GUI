@@ -6,7 +6,6 @@ import type {
   TeamPlanSlotViewObject,
   TeamPlanViewObject,
 } from '../../types/view.js';
-import type { BathRepairConfig } from '../../types/model.js';
 import { findShipLibraryShip } from '../../shared/shipLibrary.js';
 import {
   appendTeamPlanCardContent,
@@ -297,20 +296,6 @@ export class FleetPresetView {
     }
     restoreScrollPosition(this.fleetPresetListEl, scrollPosition);
   }
-
-  /** 当前没有生产入口引用，保留给泡澡维修配置后续接入。 */
-  getBathRepairConfig(): BathRepairConfig | undefined {
-    const method = document.getElementById(
-      'plan-edit-repair-method',
-    ) as HTMLSelectElement | null;
-    if (method?.value !== 'bath') return undefined;
-
-    return {
-      enabled: true,
-      defaultThreshold: { type: 'percent', value: 50 },
-    };
-  }
-
 
   private renderBindings(): void {
     this.fleetBindingListEl.replaceChildren();

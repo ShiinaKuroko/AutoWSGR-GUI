@@ -15,6 +15,7 @@ import type {
   ShipRule,
   EnemyRule,
   BattleResultGrade,
+  RepairMethod,
 } from '../types/model.js';
 
 const BATTLE_RESULT_GRADES = new Set<BattleResultGrade>(['D', 'C', 'B', 'A', 'S', 'SS']);
@@ -80,6 +81,7 @@ export class PlanModel {
           ? (parsed.repair_mode as number[]).map(Number)
           : Number(parsed.repair_mode))
         : undefined,
+      repair_method: parsed.repair_method === 'bath' ? 'bath' : 'quick',
       fleet_id: parsed.fleet_id != null ? Number(parsed.fleet_id) : undefined,
       node_defaults: PlanModel.normalizeNodeArgs(parsed.node_defaults as NodeArgs | undefined),
       node_args: PlanModel.normalizeNodeArgsMap(parsed.node_args as Record<string, NodeArgs> | undefined),
@@ -124,6 +126,11 @@ export class PlanModel {
   /** 修理模式，默认 1。若为数组则返回原始数组 */
   get repairMode(): number | number[] {
     return this.data.repair_mode ?? 1;
+  }
+
+  /** 维修方式，旧计划默认使用快速维修。 */
+  get repairMethod(): RepairMethod {
+    return this.data.repair_method ?? 'quick';
   }
 
   /** 战况条件，默认 1 */
@@ -189,6 +196,7 @@ export class PlanModel {
       selected_nodes: selectedNodes,
       fight_condition: 1,
       repair_mode: 1,
+      repair_method: 'quick',
       fleet_id: 1,
       node_defaults: { formation: 2, night: false, proceed: true },
       node_args: {},
@@ -216,6 +224,7 @@ export class PlanModel {
     this.setOptionalField(obj, 'result', this.data.result);
     this.setOptionalField(obj, 'fight_condition', this.data.fight_condition);
     this.setOptionalField(obj, 'repair_mode', this.data.repair_mode);
+    this.setOptionalField(obj, 'repair_method', this.data.repair_method ?? 'quick');
 
     if (this.data.node_defaults) {
       obj.node_defaults = this.mergeNodeArgs(

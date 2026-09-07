@@ -13,6 +13,7 @@ import type {
   ShipLibraryShip,
 } from '../../types/ipc.js';
 import { toBackendDecisiveShipNames } from '../../shared/shipNameNormalizer.js';
+import { buildBathRepairConfig } from '../taskGroup/queueLoader';
 
 export interface PresetState {
   currentPreset: TaskPreset | null;
@@ -138,8 +139,22 @@ export function executePresetFlow(
 
   const effectiveTimes = preset.task_type === 'exercise' ? 1 : times;
   const stopCondition = preset.stop_condition;
+  const bathRepairConfig = (
+    preset.task_type === 'normal_fight' || preset.task_type === 'event_fight'
+  )
+    ? buildBathRepairConfig(preset.repair_method, undefined)
+    : undefined;
 
-  host.scheduler.addTask(name, preset.task_type, req, TaskPriority.USER_TASK, effectiveTimes, stopCondition);
+  host.scheduler.addTask(
+    name,
+    preset.task_type,
+    req,
+    TaskPriority.USER_TASK,
+    effectiveTimes,
+    stopCondition,
+    bathRepairConfig,
+    bathRepairConfig ? formVals.fightFleetId ?? preset.fleet_id ?? 1 : undefined,
+  );
 
   closePresetDetailFlow(planView, state);
   host.switchPage('main');

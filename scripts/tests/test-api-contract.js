@@ -546,6 +546,81 @@ const legacySlPlan = PlanModel.fromYaml(
 const weekly92Request = buildPlanRequest(weekly92Plan, weekly92File);
 const legacySlRequest = buildPlanRequest(legacySlPlan, `legacy-${weekly92File}`);
 
+const legacyRepairPlan = PlanModel.fromYaml([
+  'chapter: 1',
+  'map: 1',
+  'selected_nodes: [A]',
+  'repair_mode: 2',
+  '',
+].join('\n'), 'legacy-repair.yaml');
+assert.equal(legacyRepairPlan.repairMethod, 'quick');
+assert.match(legacyRepairPlan.toYaml(), /repair_method: quick/);
+
+const moderateBathPlan = PlanModel.fromYaml([
+  'chapter: 1',
+  'map: 1',
+  'selected_nodes: [A]',
+  'repair_mode: 1',
+  'repair_method: bath',
+  '',
+].join('\n'), 'moderate-bath.yaml');
+assert.equal(moderateBathPlan.repairMethod, 'bath');
+assert.match(moderateBathPlan.toYaml(), /repair_method: bath/);
+const moderateBathQueue = buildPlanQueueRequest(
+  {},
+  moderateBathPlan,
+  'moderate-bath.yaml',
+);
+assert.deepEqual(moderateBathQueue.bathRepairConfig, {
+  enabled: true,
+  defaultThreshold: { type: 'percent', value: 50 },
+});
+assert.equal(moderateBathQueue.bathFleetId, 1);
+
+const severeBathPlan = PlanModel.fromYaml([
+  'chapter: 1',
+  'map: 1',
+  'selected_nodes: [A]',
+  'repair_mode: 2',
+  'repair_method: bath',
+  '',
+].join('\n'), 'severe-bath.yaml');
+const severeBathQueue = buildPlanQueueRequest(
+  {},
+  severeBathPlan,
+  'severe-bath.yaml',
+);
+assert.deepEqual(severeBathQueue.bathRepairConfig, {
+  enabled: true,
+  defaultThreshold: { type: 'percent', value: 25 },
+});
+
+const quickQueue = buildPlanQueueRequest(
+  {},
+  legacyRepairPlan,
+  'legacy-repair.yaml',
+);
+assert.equal(quickQueue.bathRepairConfig, undefined);
+
+const repairTaskQueue = new TaskQueue();
+repairTaskQueue.addTask(
+  '泡澡维修参数传递',
+  'normal_fight',
+  moderateBathQueue.req,
+  undefined,
+  1,
+  undefined,
+  moderateBathQueue.bathRepairConfig,
+  moderateBathQueue.bathFleetId,
+  moderateBathQueue.fleetPresets,
+  moderateBathQueue.currentPresetIndex,
+);
+assert.deepEqual(repairTaskQueue.items[0].bathRepairConfig, {
+  enabled: true,
+  defaultThreshold: { type: 'percent', value: 50 },
+});
+assert.equal(repairTaskQueue.items[0].fleetId, 1);
+
 const endpointRoundTripPlan = PlanModel.fromYaml(
   nodeFormationPlan.toYaml(),
   'node-formation-round-trip.yaml',

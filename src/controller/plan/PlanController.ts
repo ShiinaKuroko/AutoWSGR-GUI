@@ -8,6 +8,7 @@ import type {
   EventMapCatalogEntry,
   FleetPreset,
   NormalFightTaskConfig,
+  RepairMethod,
   TaskPreset,
 } from '../../types/model.js';
 import {
@@ -264,6 +265,7 @@ export class PlanController {
     this.planView.onPlanFieldChange = (field, value) => {
       if (!this.currentPlan) return;
       if (field === 'repair_mode') this.currentPlan.data.repair_mode = value as number;
+      else if (field === 'repair_method') this.currentPlan.data.repair_method = value as RepairMethod;
       else if (field === 'fight_condition') this.currentPlan.data.fight_condition = value as number;
       else if (field === 'fleet_id') this.currentPlan.data.fleet_id = value as number;
       else if (field === 'times') this.currentPlan.data.times = value as number;

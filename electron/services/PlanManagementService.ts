@@ -16,6 +16,7 @@ import {
   TaskPresetCodec,
   type TaskPresetType,
 } from '../../src/shared/taskPreset';
+import type { RepairMethod } from '../../src/types/model';
 
 export type ManagedBattleResult = 'D' | 'C' | 'B' | 'A' | 'S' | 'SS';
 
@@ -38,6 +39,7 @@ export interface ManagedBattlePlanSummary {
   gap: number;
   fleetId: number;
   repairMode: number | number[];
+  repairMethod: RepairMethod;
   result: ManagedBattleResult | null;
   lootCountGe: number;
   shipCountGe: number;
@@ -140,6 +142,7 @@ export class PlanManagementService {
                 ? fleetId
                 : 1,
               repairMode: 1,
+              repairMethod: preset.repair_method === 'bath' ? 'bath' : 'quick',
               result: null,
               lootCountGe: -1,
               shipCountGe: -1,
@@ -266,6 +269,7 @@ export class PlanManagementService {
               : Number.isFinite(repairModeValue)
                 ? repairModeValue
                 : 1,
+            repairMethod: root.repair_method === 'bath' ? 'bath' : 'quick',
             result,
             lootCountGe: Number.isFinite(lootCountGe) && lootCountGe > 0
               ? lootCountGe

@@ -3,6 +3,7 @@
 import type {
   BattleResultGrade,
   GuiAutomationSettings,
+  RepairMethod,
   TaskPreset,
 } from './model.js';
 import type {
@@ -190,6 +191,7 @@ export interface ManagedBattlePlan {
   gap: number;
   fleetId: number;
   repairMode: number | number[];
+  repairMethod: RepairMethod;
   result: BattleResultGrade | null;
   lootCountGe: number;
   shipCountGe: number;

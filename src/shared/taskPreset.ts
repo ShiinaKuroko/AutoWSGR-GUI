@@ -93,6 +93,13 @@ export class TaskPresetCodec {
   }
 
   private normalizeCommonFields(result: TaskPresetDocument): void {
+    if (
+      result.repair_method !== undefined
+      && result.repair_method !== 'quick'
+      && result.repair_method !== 'bath'
+    ) {
+      throw new Error('repair_method 必须是 quick 或 bath');
+    }
     if (result.times !== undefined) {
       result.times = this.positiveInteger(result.times, 'times');
     }

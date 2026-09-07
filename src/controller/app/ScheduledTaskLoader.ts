@@ -28,13 +28,14 @@ import type {
   NormalFightReq,
 } from '../../types/api.js';
 import type {
+  BathRepairConfig,
   BattleResultGrade,
+  FleetPreset,
   NormalFightTaskConfig,
   StopCondition,
 } from '../../types/model.js';
 import { Logger } from '../../utils/Logger';
 import {
-  applyPlanNodeOverrides,
   buildPlanQueueRequest,
 } from '../taskGroup/queueLoader';
 import {
@@ -141,6 +142,9 @@ export class ScheduledTaskLoader {
       config: NormalFightTaskConfig;
       stopCondition?: StopCondition;
       fleetId?: number;
+      bathRepairConfig?: BathRepairConfig;
+      fleetPresets?: FleetPreset[];
+      currentPresetIndex?: number;
       endpointNodes?: string[];
       endpointResult?: BattleResultGrade;
     }> = [];
@@ -157,6 +161,10 @@ export class ScheduledTaskLoader {
         const {
           req: request,
           selectedFleetId,
+          bathRepairConfig,
+          bathFleetId,
+          fleetPresets,
+          currentPresetIndex,
         } = buildPlanQueueRequest(
           {
             path: resolved.path,
@@ -176,7 +184,10 @@ export class ScheduledTaskLoader {
           request,
           config: structuredClone(task),
           stopCondition: plan.data.stop_condition,
-          fleetId: selectedFleetId,
+          fleetId: bathRepairConfig ? bathFleetId : selectedFleetId,
+          bathRepairConfig,
+          fleetPresets,
+          currentPresetIndex,
           endpointNodes: plan.data.endpoint_nodes,
           endpointResult: plan.data.result,
         });
@@ -207,10 +218,10 @@ export class ScheduledTaskLoader {
           TaskPriority.DAILY,
           1,
           task.stopCondition,
-          undefined,
+          task.bathRepairConfig,
           task.fleetId,
-          undefined,
-          undefined,
+          task.fleetPresets,
+          task.currentPresetIndex,
           undefined,
           undefined,
           task.endpointNodes,
@@ -252,24 +263,23 @@ export class ScheduledTaskLoader {
 
     const planPath = loaded.runtimePath ?? loaded.path;
     const plan = PlanModel.fromYaml(loaded.content, planPath);
-    const request: NormalFightReq | EventFightReq = plan.isEvent
-      ? {
-          type: 'event_fight',
-          plan_id: planPath,
-          times: 1,
-          gap: plan.data.gap ?? 0,
-          fleet_id: plan.data.fleet_id ?? 1,
-        }
-      : {
-          type: 'normal_fight',
-          plan_id: planPath,
-          times: 1,
-          gap: plan.data.gap ?? 0,
-        };
-    applyPlanNodeOverrides(request, plan);
-    if (plan.data.fleet_id != null) {
-      request.plan!.fleet_id = plan.data.fleet_id;
-    }
+    const {
+      req: request,
+      bathRepairConfig,
+      bathFleetId,
+      fleetPresets,
+      currentPresetIndex,
+    } = buildPlanQueueRequest(
+      {
+        path: planPath,
+        kind: 'plan',
+        times: 99,
+        label: plan.mapName,
+        fleet_id: plan.data.fleet_id,
+      },
+      plan,
+      planPath,
+    );
 
     const taskId = this.host.scheduler.addTask(
       `自动刷胖次·${plan.mapName}`,
@@ -278,6 +288,10 @@ export class ScheduledTaskLoader {
       TaskPriority.DAILY,
       99,
       { loot_count_ge: stopCount },
+      bathRepairConfig,
+      bathFleetId,
+      fleetPresets,
+      currentPresetIndex,
     );
     Logger.info(
       `自动战利品已加入队列 (${

@@ -12,9 +12,9 @@ import type {
   PresetFormValues,
 } from '../../types/view.js';
 import type {
-  BathRepairConfig,
   EventChapter,
   EventMapCatalogEntry,
+  RepairMethod,
 } from '../../types/model.js';
 import { MapView } from './MapView';
 import {
@@ -43,6 +43,7 @@ export class PlanPreviewView {
   private mapSelect: HTMLSelectElement;
   private presetNameInput: HTMLInputElement;
   private repairSelect: HTMLSelectElement;
+  private repairMethodSelect: HTMLSelectElement;
   private fightCondSelect: HTMLSelectElement;
   private fleetSelect: HTMLSelectElement;
   private timesInput: HTMLInputElement;
@@ -70,7 +71,7 @@ export class PlanPreviewView {
   onNodeClick?: (nodeId: string) => void;
   onMapChange?: (chapter: string, map: number | string) => void;
   onPresetNameChange?: (name: string) => void;
-  onPlanFieldChange?: (field: 'repair_mode' | 'fight_condition' | 'fleet_id' | 'times' | 'gap' | 'loot_count_ge' | 'ship_count_ge' | 'collect_result_info', value: number | boolean | undefined) => void;
+  onPlanFieldChange?: (field: 'repair_mode' | 'repair_method' | 'fight_condition' | 'fleet_id' | 'times' | 'gap' | 'loot_count_ge' | 'ship_count_ge' | 'collect_result_info', value: number | boolean | RepairMethod | undefined) => void;
 
   set onAddFleetPreset(
     fn: ((planId: string) => void) | undefined,
@@ -98,6 +99,7 @@ export class PlanPreviewView {
     this.mapSelect = document.getElementById('plan-edit-map') as HTMLSelectElement;
     this.presetNameInput = document.getElementById('plan-preset-name') as HTMLInputElement;
     this.repairSelect = document.getElementById('plan-edit-repair') as HTMLSelectElement;
+    this.repairMethodSelect = document.getElementById('plan-edit-repair-method') as HTMLSelectElement;
     this.fightCondSelect = document.getElementById('plan-edit-fight-cond') as HTMLSelectElement;
     this.fleetSelect = document.getElementById('plan-edit-fleet') as HTMLSelectElement;
     this.timesInput = document.getElementById('plan-edit-times') as HTMLInputElement;
@@ -168,6 +170,9 @@ export class PlanPreviewView {
     this.repairSelect.addEventListener('change', () => {
       this.onPlanFieldChange?.('repair_mode', Number(this.repairSelect.value));
     });
+    this.repairMethodSelect.addEventListener('change', () => {
+      this.onPlanFieldChange?.('repair_method', this.repairMethodSelect.value as RepairMethod);
+    });
     this.fightCondSelect.addEventListener('change', () => {
       this.onPlanFieldChange?.('fight_condition', Number(this.fightCondSelect.value));
     });
@@ -215,6 +220,7 @@ export class PlanPreviewView {
 
     this.renderMapSelection(vo);
     this.repairSelect.value = String(vo.repairModeValue);
+    this.repairMethodSelect.value = vo.repairMethod;
     this.fightCondSelect.value = String(vo.fightConditionValue);
     this.fleetSelect.value = String(vo.fleetId);
 
@@ -481,11 +487,6 @@ export class PlanPreviewView {
     viewObject: PlanFleetPresetSelectorViewObject,
   ): void {
     this.fleetPresetView.render(viewObject);
-  }
-
-  /** 当前没有生产入口引用，保留给泡澡维修配置后续接入。 */
-  getBathRepairConfig(): BathRepairConfig | undefined {
-    return this.fleetPresetView.getBathRepairConfig();
   }
 
   /* ── 预设详情面板 ── */

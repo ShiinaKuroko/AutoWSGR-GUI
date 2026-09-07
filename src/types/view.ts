@@ -8,6 +8,7 @@ import type {
 import type {
   EventMapCatalogEntry,
   NormalFightTaskConfig,
+  RepairMethod,
 } from './model.js';
 import type { DailySortieStatsSnapshot } from './statistics.js';
 import type {
@@ -273,6 +274,7 @@ export interface PlanPreviewViewObject {
   event?: string;
   eventMaps: EventMapCatalogEntry[];
   repairModeValue: number;
+  repairMethod: RepairMethod;
   fightConditionValue: number;
   fleetId: number;
   selectedNodes: NodeViewObject[];

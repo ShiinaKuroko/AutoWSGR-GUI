@@ -297,6 +297,7 @@ export class BattlePlanLoaderController {
         gap: 0,
         fleetId: 1,
         repairMode: 1,
+        repairMethod: 'quick',
         result: null,
         lootCountGe: -1,
         shipCountGe: -1,

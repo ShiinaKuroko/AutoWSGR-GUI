@@ -12,7 +12,12 @@ import type {
   ManagedBattlePlanSelection,
   ShipLibraryShip,
 } from '../../types/ipc.js';
-import type { TaskPreset } from '../../types/model.js';
+import type {
+  BathRepairConfig,
+  FleetPreset,
+  RepairMethod,
+  TaskPreset,
+} from '../../types/model.js';
 import { resolveFleetPreset } from '../../model/fleet/ShipMatcher';
 import { resolveFleetPresetRules } from '../../model/fleet/FleetRuleMapper';
 import {
@@ -47,6 +52,27 @@ export function applyPlanNodeOverrides(
   req.plan.node_args = plan.getNodeArgsForExecution();
 }
 
+/** 将计划的维修方式和策略转换为 Scheduler 的泡澡预检配置。 */
+export function buildBathRepairConfig(
+  repairMethod: RepairMethod | undefined,
+  repairMode: number | number[] | undefined,
+): BathRepairConfig | undefined {
+  if ((repairMethod ?? 'quick') !== 'bath') return undefined;
+
+  const modes = Array.isArray(repairMode) ? repairMode : [repairMode ?? 1];
+  const validModes = modes.filter(mode => Number.isFinite(mode));
+  const mode = validModes.length > 0 ? Math.min(...validModes) : 1;
+
+  // 与游戏损伤档位保持一致：中破约 50% HP，大破约 25% HP；数组沿用后端最小模式。
+  return {
+    enabled: true,
+    defaultThreshold: {
+      type: 'percent',
+      value: mode <= 1 ? 50 : 25,
+    },
+  };
+}
+
 export function buildPlanQueueRequest(
   item: TaskGroupItem,
   plan: PlanModel,
@@ -55,6 +81,10 @@ export function buildPlanQueueRequest(
 ): {
   req: NormalFightReq | EventFightReq;
   selectedFleetId: number | undefined;
+  bathRepairConfig?: BathRepairConfig;
+  bathFleetId?: number;
+  fleetPresets?: FleetPreset[];
+  currentPresetIndex?: number;
 } {
   const req: NormalFightReq | EventFightReq = {
     type: plan.isEvent ? 'event_fight' : 'normal_fight',
@@ -93,7 +123,26 @@ export function buildPlanQueueRequest(
     throw new Error('作战计划中已没有所选使用舰队');
   }
 
-  return { req, selectedFleetId };
+  const bathRepairConfig = buildBathRepairConfig(
+    plan.repairMethod,
+    plan.data.repair_mode,
+  );
+  const fleetPresets = bathRepairConfig && plan.data.fleet_presets?.length
+    ? plan.data.fleet_presets
+    : undefined;
+
+  return {
+    req,
+    selectedFleetId,
+    bathRepairConfig,
+    bathFleetId: bathRepairConfig
+      ? selectedFleetId ?? plan.data.fleet_id ?? 1
+      : undefined,
+    fleetPresets,
+    currentPresetIndex: fleetPresets
+      ? item.fleetPresetIndex ?? 0
+      : undefined,
+  };
 }
 
 interface PlanQueueHost {
@@ -146,7 +195,14 @@ function addPlanTaskToQueue(
   planId: string,
   host: PlanQueueHost,
 ): void {
-  const { req, selectedFleetId } = buildPlanQueueRequest(
+  const {
+    req,
+    selectedFleetId,
+    bathRepairConfig,
+    bathFleetId,
+    fleetPresets,
+    currentPresetIndex,
+  } = buildPlanQueueRequest(
     item,
     plan,
     planId,
@@ -161,10 +217,10 @@ function addPlanTaskToQueue(
     TaskPriority.USER_TASK,
     item.times,
     plan.data.stop_condition,
-    undefined,
-    selectedFleetId,
-    undefined,
-    undefined,
+    bathRepairConfig,
+    bathRepairConfig ? bathFleetId : selectedFleetId,
+    fleetPresets,
+    currentPresetIndex,
     !!item.forceRetry,
     !!item.allowPolling,
     plan.data.endpoint_nodes,
@@ -212,6 +268,11 @@ function addPresetTaskToQueue(
   const effectiveTimes = preset.task_type === 'exercise'
     ? 1
     : Math.max(1, item.times || preset.times || 1);
+  const bathRepairConfig = (
+    preset.task_type === 'normal_fight' || preset.task_type === 'event_fight'
+  )
+    ? buildBathRepairConfig(preset.repair_method, undefined)
+    : undefined;
   scheduler.addTask(
     item.label,
     preset.task_type,
@@ -219,8 +280,8 @@ function addPresetTaskToQueue(
     TaskPriority.USER_TASK,
     effectiveTimes,
     preset.stop_condition,
-    undefined,
-    preset.fleet_id,
+    bathRepairConfig,
+    bathRepairConfig ? preset.fleet_id ?? 1 : undefined,
   );
 }
 
