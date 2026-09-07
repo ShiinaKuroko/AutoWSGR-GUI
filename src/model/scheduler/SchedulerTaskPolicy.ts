@@ -11,10 +11,27 @@ import { TaskPriority, type SchedulerTaskType, type SchedulerTask } from '../../
 
 export const CAMPAIGN_OUT_OF_TIMES_RESULT = 'out of times';
 
+const MANUAL_REPAIR_TERMINATION_MARKERS = [
+  '需要进行手动修理',
+  '手动维修处理失败',
+];
+
 export function getNonRetryableTaskResult(
   task: Pick<SchedulerTask, 'type'>,
   result?: TaskResult | null,
+  error?: string | null,
 ): string | null {
+  const errors = [
+    ...(error ? [error] : []),
+    ...(result?.details ?? [])
+      .map(detail => detail.error)
+      .filter((message): message is string => typeof message === 'string'),
+  ];
+  const manualRepairError = errors.find(message =>
+    MANUAL_REPAIR_TERMINATION_MARKERS.some(marker => message.includes(marker)),
+  );
+  if (manualRepairError) return manualRepairError;
+
   if (task.type !== 'campaign') return null;
   return result?.details.some(
     detail => detail.result === CAMPAIGN_OUT_OF_TIMES_RESULT,

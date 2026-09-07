@@ -708,8 +708,9 @@ export class Scheduler {
     if (!success) {
       this.callbacks.onTaskCompleted?.(finished.id, false, result, error);
       this.currentTask = null;
-      const terminalResult = getNonRetryableTaskResult(finished, result);
+      const terminalResult = getNonRetryableTaskResult(finished, result, error);
       if (terminalResult) {
+        this.discardLogicalTask(finished.logicalId);
         this.emitLog(
           'warn',
           `任务「${finished.name}」返回不可重试结果：${terminalResult}，逻辑任务已结束`,
@@ -885,6 +886,19 @@ export class Scheduler {
       clearTimeout(entry.timer);
     }
     this.waitingTasks.clear();
+  }
+
+  private discardLogicalTask(logicalId: string): void {
+    if (this.currentTask?.logicalId === logicalId) {
+      this.currentTask = null;
+    }
+    this._taskQueue.removeTasksByLogicalId(logicalId);
+    for (const [taskId, entry] of this.waitingTasks) {
+      if (entry.task.logicalId !== logicalId) continue;
+      clearTimeout(entry.timer);
+      this.waitingTasks.delete(taskId);
+    }
+    this.notifyQueueChange();
   }
 
   /**

@@ -251,6 +251,40 @@ const followUp = taskPolicy.buildFollowUpTask(task, 2, 'task-2');
 assert.equal(followUp.logicalId, task.logicalId);
 assert.equal(followUp.remainingTimes, 2);
 assert.equal(followUp.retryCount, 0);
+assert.equal(
+  taskPolicy.getNonRetryableTaskResult(
+    { type: 'normal_fight' },
+    null,
+    '需要进行手动修理',
+  ),
+  '需要进行手动修理',
+  '手动修理终止错误必须绕过通用重试',
+);
+assert.equal(
+  taskPolicy.getNonRetryableTaskResult(
+    { type: 'normal_fight' },
+    null,
+    '网络暂时不可用',
+  ),
+  null,
+  '普通执行错误仍必须允许通用重试',
+);
+assert.equal(
+  taskPolicy.getNonRetryableTaskResult(
+    { type: 'decisive' },
+    {
+      total_runs: 1,
+      success_runs: 0,
+      details: [{
+        round: 1,
+        success: false,
+        error: '手动维修处理失败',
+      }],
+    },
+  ),
+  '手动维修处理失败',
+  '失败轮次中的手动维修错误也必须终止逻辑任务',
+);
 assert.equal(repairPolicy.calculateRepairWaitMs(new Map([['a', { repairEndTime: 110_000 }]]), 100_000), 15_000);
 assert.equal(repairPolicy.calculateRepairWaitMs(new Map([['a', { repairEndTime: 0 }]]), 100_000), -1);
 
@@ -2472,6 +2506,83 @@ assert.deepEqual(
   '战役次数耗尽必须直接结束逻辑任务',
 );
 await terminalCampaignScheduler.stop();
+
+// 手动维修终止时，即使当前进度为 998/999，也必须删除整个 logical task。
+const terminalRepairApi = createSchedulerApi();
+const terminalRepairScheduler = new schedulerModule.Scheduler(terminalRepairApi);
+terminalRepairScheduler.setAutoExpedition(false);
+const terminalRepairEvents = [];
+const terminalRepairCanceled = [];
+assert.equal(await terminalRepairScheduler.start(), true);
+terminalRepairScheduler.setCallbacks({
+  onLogicalTaskCompleted: (logicalId, success, _error, _countedRound, reason) => {
+    terminalRepairEvents.push([logicalId, success, reason]);
+  },
+  onLogicalTaskCanceled: (logicalId, reason) => {
+    terminalRepairCanceled.push([logicalId, reason]);
+  },
+});
+const terminalRepairTask = taskPolicy.createSchedulerTask({
+  id: 'terminal-repair-current',
+  name: '手动维修终止 998/999',
+  type: 'normal_fight',
+  request: { type: 'normal_fight' },
+  priority: 10,
+  times: 999,
+});
+terminalRepairTask.remainingTimes = 1;
+terminalRepairTask.backendTaskId = 'terminal-repair-1';
+const terminalRepairReady = taskPolicy.buildFollowUpTask(
+  terminalRepairTask,
+  500,
+  'terminal-repair-ready',
+);
+const terminalRepairDeferred = taskPolicy.buildFollowUpTask(
+  terminalRepairTask,
+  250,
+  'terminal-repair-deferred',
+);
+const terminalRepairWaiting = taskPolicy.buildFollowUpTask(
+  terminalRepairTask,
+  100,
+  'terminal-repair-waiting',
+);
+terminalRepairScheduler.currentTask = terminalRepairTask;
+terminalRepairScheduler._taskQueue.insertByPriority(terminalRepairReady);
+terminalRepairScheduler._taskQueue.deferTask(terminalRepairDeferred);
+terminalRepairScheduler.scheduleWaitingTask(
+  terminalRepairWaiting,
+  60_000,
+  'retry',
+  false,
+);
+terminalRepairApi.callbacks.onTaskCompleted({
+  type: 'task_completed',
+  task_id: 'terminal-repair-1',
+  success: false,
+  result: {
+    total_runs: 1,
+    success_runs: 0,
+    details: [{
+      round: 1,
+      success: false,
+      error: '需要进行手动修理',
+    }],
+  },
+  error: '需要进行手动修理',
+});
+await wait(0);
+assert.equal(terminalRepairScheduler.currentRunningTask, null);
+assert.equal(terminalRepairScheduler.taskQueue.length, 0);
+assert.equal(terminalRepairScheduler._taskQueue.deferredItems.length, 0);
+assert.equal(terminalRepairScheduler.waitingTaskList.length, 0);
+assert.deepEqual(
+  terminalRepairEvents,
+  [['terminal-repair-current', false, 'terminal']],
+  '手动维修终止必须报告逻辑任务终止，而不是普通失败',
+);
+assert.deepEqual(terminalRepairCanceled, []);
+await terminalRepairScheduler.stop();
 
 // 清空和系统停止必须给每个父任务发送明确的取消原因。
 const clearApi = createSchedulerApi();

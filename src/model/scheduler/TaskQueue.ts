@@ -195,6 +195,14 @@ export class TaskQueue {
     return this.deferredTasks.splice(deferredIdx, 1)[0];
   }
 
+  removeTasksByLogicalId(logicalId: string): void {
+    this.queue = this.queue.filter(task => task.logicalId !== logicalId);
+    this.deferredTasks = this.deferredTasks.filter(
+      task => task.logicalId !== logicalId,
+    );
+    if (this.deferredTasks.length === 0) this.clearDeferredTimer();
+  }
+
   /** 移动队列中的任务顺序 */
   moveTask(fromIndex: number, toIndex: number): void {
     if (fromIndex < 0 || fromIndex >= this.queue.length) return;
