@@ -90,7 +90,6 @@ View 不应自行合并 `node_defaults`，Controller 也不应为每个页面复
 有些规则属于一个领域，但不需要读取领域对象状态。例如：
 
 - `SchedulerTaskPolicy.ts`
-- `SchedulerRepairPolicy.ts`
 - Fleet 目录中的草稿变换函数
 - `src/controller/plan/selectedNodes.ts`
 
@@ -143,18 +142,20 @@ export function assertPlanRouteReadyForExecution(
 `Scheduler` 组合：
 
 - `TaskQueue`
-- `RepairManager`
 - `StopConditionChecker`
 - `ExpeditionTimer`
-- 任务和修理纯策略
+- 任务构建和生命周期回调
 
 它拥有：
 
 - 当前物理轮次。
 - 就绪队列。
-- 延迟和等待任务。
+- gap/retry 等待任务。
 - 系统和停止状态。
 - 重试和后续轮次推进。
+
+第一阶段的 `normal_fight` 和 `event_fight` 维修由后端负责。GUI 只在任务请求中
+传递 `repair_mode`、`repair_method`，后端通过 WebSocket 发送 `repairing` 状态；GUI 不在 Scheduler 中维护舰船维修状态、编队轮换或维修延迟队列。
 
 任务身份分两层：
 

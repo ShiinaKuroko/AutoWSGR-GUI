@@ -112,10 +112,7 @@ export class AppController {
       port = 8438;
     }
     this.api = new ApiClient(`http://localhost:${port}`);
-    this.scheduler = new Scheduler(
-      this.api,
-      () => this.configModel.current.ocr.ship_name_aliases,
-    );
+    this.scheduler = new Scheduler(this.api);
     this.navigationCtrl = new NavigationController({
       loadFleetPlanner: () => this.fleetPlannerCtrl.load(),
       ensureDefaultPlan: () => this.planCtrl.ensureDefaultPlan(),

@@ -3,11 +3,9 @@ import esbuild from 'esbuild';
 
 const entries = [
   'src/model/scheduler/SchedulerTaskPolicy.ts',
-  'src/model/scheduler/SchedulerRepairPolicy.ts',
   'src/model/scheduler/CronScheduler.ts',
   'src/controller/app/AutomaticDecisiveTask.ts',
   'src/controller/app/SchedulerBinder.ts',
-  'src/model/scheduler/RepairManager.ts',
   'src/model/scheduler/Scheduler.ts',
   'src/controller/app/ScheduledTaskLoader.ts',
   'src/model/scheduler/StopConditionChecker.ts',
@@ -30,20 +28,18 @@ const modules = await Promise.all(entries.map(async entry => {
   return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
 }));
 const taskPolicy = modules[0];
-const repairPolicy = modules[1];
-const cronModule = modules[2];
-const automaticDecisive = modules[3];
-const schedulerBinderModule = modules[4];
-const repairModule = modules[5];
-const schedulerModule = modules[6];
-const scheduledTaskLoaderModule = modules[7];
-const stopConditionModule = modules[8];
-const taskQueueModule = modules[9];
-const normalFightQuotaModule = modules[10];
-const campaignQuotaModule = modules[11];
-const renderingModule = modules[12];
-const queueLoaderModule = modules[13];
-const addItemsModule = modules[14];
+const cronModule = modules[1];
+const automaticDecisive = modules[2];
+const schedulerBinderModule = modules[3];
+const schedulerModule = modules[4];
+const scheduledTaskLoaderModule = modules[5];
+const stopConditionModule = modules[6];
+const taskQueueModule = modules[7];
+const normalFightQuotaModule = modules[8];
+const campaignQuotaModule = modules[9];
+const renderingModule = modules[10];
+const queueLoaderModule = modules[11];
+const addItemsModule = modules[12];
 
 assert.equal(normalFightQuotaModule.normalFightDailyLimit(undefined), 1);
 assert.equal(normalFightQuotaModule.normalFightDailyLimit(0), 1);
@@ -285,9 +281,6 @@ assert.equal(
   '手动维修处理失败',
   '失败轮次中的手动维修错误也必须终止逻辑任务',
 );
-assert.equal(repairPolicy.calculateRepairWaitMs(new Map([['a', { repairEndTime: 110_000 }]]), 100_000), 15_000);
-assert.equal(repairPolicy.calculateRepairWaitMs(new Map([['a', { repairEndTime: 0 }]]), 100_000), -1);
-
 const values = new Map();
 const storage = {
   get: key => values.get(key) ?? null,
@@ -562,12 +555,6 @@ assert.deepEqual(presetDecisiveRequest, {
   flagship_priority: ['旗舰优先'],
 });
 
-const repairData = JSON.stringify([{ key: 'ship', name: 'Ship', startTime: Date.now(), repairEndTime: Date.now() + 60_000, requestSent: true }]);
-storage.set('autowsgr_bathing_ships', repairData);
-const repair = new repairModule.RepairManager({}, storage);
-assert.equal(repair.getBathingShips().size, 1);
-assert.equal(repair.getBathingShips().get('ship').name, 'Ship');
-
 globalThis.localStorage = {
   getItem: key => values.get(key) ?? null,
   setItem: (key, value) => values.set(key, value),
@@ -690,12 +677,12 @@ assert.equal(
   '自动出征逻辑任务不得使用 YAML 中遗留的重复次数',
 );
 assert.deepEqual(
-  automaticSortieCalls[0][12],
+  automaticSortieCalls[0][8],
   ['A'],
   '自动出征必须把计划终点传给 Scheduler',
 );
 assert.equal(
-  automaticSortieCalls[0][13],
+  automaticSortieCalls[0][9],
   'S',
   '自动出征必须把计划战果要求传给 Scheduler',
 );
@@ -1302,6 +1289,8 @@ assert.deepEqual(automaticLootCall.slice(0, 6), [
       node_args: {
         A: { proceed: false },
       },
+      repair_mode: [1],
+      repair_method: 'quick',
       fleet_id: 3,
     },
   },
@@ -1631,6 +1620,7 @@ function createSchedulerApi(overrides = {}) {
     connectWebSockets() {},
     disconnectWebSockets() {},
     expeditionCheck: async () => ({ success: true }),
+    expeditionAutoCheck: async () => ({ success: true }),
     taskStart: async () => ({
       success: true,
       data: { task_id: 'backend-task-1', status: 'running' },
@@ -2537,11 +2527,6 @@ const terminalRepairReady = taskPolicy.buildFollowUpTask(
   500,
   'terminal-repair-ready',
 );
-const terminalRepairDeferred = taskPolicy.buildFollowUpTask(
-  terminalRepairTask,
-  250,
-  'terminal-repair-deferred',
-);
 const terminalRepairWaiting = taskPolicy.buildFollowUpTask(
   terminalRepairTask,
   100,
@@ -2549,7 +2534,6 @@ const terminalRepairWaiting = taskPolicy.buildFollowUpTask(
 );
 terminalRepairScheduler.currentTask = terminalRepairTask;
 terminalRepairScheduler._taskQueue.insertByPriority(terminalRepairReady);
-terminalRepairScheduler._taskQueue.deferTask(terminalRepairDeferred);
 terminalRepairScheduler.scheduleWaitingTask(
   terminalRepairWaiting,
   60_000,
@@ -2574,7 +2558,6 @@ terminalRepairApi.callbacks.onTaskCompleted({
 await wait(0);
 assert.equal(terminalRepairScheduler.currentRunningTask, null);
 assert.equal(terminalRepairScheduler.taskQueue.length, 0);
-assert.equal(terminalRepairScheduler._taskQueue.deferredItems.length, 0);
 assert.equal(terminalRepairScheduler.waitingTaskList.length, 0);
 assert.deepEqual(
   terminalRepairEvents,
@@ -2697,9 +2680,15 @@ assert.equal(conditionScheduler.status, 'idle');
 await conditionScheduler.stop();
 
 let expeditionChecks = 0;
+let expeditionAutoChecks = 0;
 const expeditionApi = createSchedulerApi({
   expeditionCheck: async () => {
     expeditionChecks += 1;
+    return { success: true };
+  },
+  expeditionAutoCheck: async (allowRepair) => {
+    expeditionAutoChecks += 1;
+    assert.equal(allowRepair, true);
     return { success: true };
   },
 });
@@ -2715,9 +2704,9 @@ assert.equal(
 expeditionScheduler.handleExpeditionTrigger();
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.equal(
-  expeditionChecks,
-  2,
-  '远征定时器触发后应通过 EXPEDITION 任务执行检查',
+  expeditionAutoChecks,
+  1,
+  '远征定时器触发后应通过后端自动远征接口执行检查',
 );
 expeditionScheduler.setAutoExpedition(false);
 
@@ -2743,7 +2732,8 @@ const expeditionQueueApi = createSchedulerApi({
     expeditionQueueStops += 1;
     return { success: true };
   },
-  expeditionCheck: async () => {
+  expeditionAutoCheck: async (allowRepair) => {
+    assert.equal(allowRepair, false);
     expeditionQueueEvents.push('expedition');
     return { success: true };
   },

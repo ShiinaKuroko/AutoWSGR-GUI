@@ -7,13 +7,11 @@
 | 组件 | 责任 |
 |---|---|
 | `Scheduler` | 消费任务、调用后端、停止、重试、后续轮次和回调 |
-| `TaskQueue` | 就绪队列、修理延迟队列、优先级插入和舰队切换 |
+| `TaskQueue` | 就绪队列、优先级插入、任务查找和移除 |
 | `SchedulerTaskPolicy` | 纯任务构建、后续轮次复制和插入策略 |
-| `SchedulerRepairPolicy` | 修理结果到调度动作的纯策略 |
 | `CronScheduler` | 每分钟检查自动任务触发条件 |
 | `ExpeditionTimer` | 远征间隔和秒级倒计时 |
 | `StopConditionChecker` | 启动前、运行中和轮次后的停止条件 |
-| `RepairManager` | 泡澡状态、阈值和轮换编队 |
 | `CampaignDailyQuota` | 自动战役当日正常结算次数 |
 | `NormalFightDailyQuota` | 自动常规出击按计划/舰队的每日有效次数 |
 | `SchedulerBinder` | 将 Scheduler/Cron、日志、额度和 UI 生命周期连接起来 |
@@ -72,29 +70,22 @@ Cron pending、等待条目和 UI 逻辑任务状态使用 `logicalId`。不能�
 ```mermaid
 flowchart TD
   A["consumeNext"] --> B["取最高优先级任务"]
-  B --> C{"需要修理检查?"}
-  C -->|是| D["RepairManager"]
-  D --> E{"可继续?"}
-  E -->|轮换| F["替换舰队预设"]
-  E -->|等待| G["TaskQueue 延迟 30 秒"]
-  C -->|否| H
-  F --> H{"停止条件预检?"}
-  H -->|已满足| I["逻辑完成"]
-  H -->|未满足| J["POST /api/task/start"]
-  J --> K["等待 WebSocket 完成"]
-  K --> L{"成功?"}
-  L -->|否| M{"retryCount < maxRetries?"}
-  M -->|是| N["5 秒后重试"]
-  M -->|否| O["逻辑失败结束"]
-  L -->|是| P["终点/战果/停止条件结算"]
-  P --> Q{"还有有效轮次?"}
-  Q -->|是| R["生成新 id，保留 logicalId"]
-  Q -->|否| I
+  B --> C{"停止条件预检?"}
+  C -->|已满足| D["逻辑完成"]
+  C -->|未满足| E["POST /api/task/start"]
+  E --> F["等待 WebSocket 完成"]
+  F --> G{"成功?"}
+  G -->|否| H{"retryCount < maxRetries?"}
+  H -->|是| I["5 秒后重试"]
+  H -->|否| J["逻辑失败结束"]
+  G -->|是| K["终点/战果/停止条件结算"]
+  K --> L{"还有有效轮次?"}
+  L -->|是| M["生成新 id，保留 logicalId"]
+  L -->|否| D
 ```
 
-gap、retry 和修理等待都必须保持可见、可取消，并仍属于原 `logicalId`。
-`Scheduler.isCompletelyIdle` 只有在运行、就绪、gap/retry 和修理延迟全部为空时
-才为真。
+gap 和 retry 等等待都必须保持可见、可取消，并仍属于原 `logicalId`。后端澡堂维修期间会通过 WebSocket 返回 `repairing`，不属于 GUI 的等待队列。
+`Scheduler.isCompletelyIdle` 只有在运行、就绪和 gap/retry 等待全部为空时才为真。
 
 ## 有效轮次计数
 
@@ -175,20 +166,18 @@ export const DAILY_CAMPAIGN_TIMES = 8;
 同一计划和舰队的重复配置先去重。`canStartNormalFight` 必须先读取任务与额度，
 同时确认 `Scheduler.isCompletelyIdle`。
 
-## 远征与修理
+## 远征与维修
 
 `ExpeditionTimer` 默认每 15 分钟触发一次，配置范围 1～120 分钟。它每秒提供倒
 计时，触发后生成 `EXPEDITION` 优先级任务。
 
-`RepairManager` 在任务前检查舰队状态：
+对于第一阶段支持的 `normal_fight` 和 `event_fight`，GUI 只把方案中的
+`repair_mode`、`repair_method` 写入 `request.plan`，不再读取游戏上下文或维护澡堂
+状态。后端根据这两个字段完成战前检测：`quick` 执行快速修理，`bath` 派入澡堂并
+等待目标舰船恢复；等待期间后端通过 WebSocket 发送任务状态 `repairing`；GUI 调度器仍将其视为运行中的当前任务，不在等待队列中重复维护。未显式传入
+`repair_method` 时，后端继续兼容全局 `repair_manually` 配置。
 
-1. 读取游戏上下文。
-2. 按默认和单船阈值判定。
-3. 发送修理请求。
-4. 有备用编队时轮换。
-5. 无可用编队时延迟任务，稍后重新检查。
-
-延迟不能消耗 `remainingTimes`。
+其他任务类型的维修行为不在本阶段统一范围内。
 
 ## 生命周期与验证
 

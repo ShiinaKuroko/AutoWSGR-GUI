@@ -28,9 +28,7 @@ import type {
   NormalFightReq,
 } from '../../types/api.js';
 import type {
-  BathRepairConfig,
   BattleResultGrade,
-  FleetPreset,
   NormalFightTaskConfig,
   StopCondition,
 } from '../../types/model.js';
@@ -141,10 +139,6 @@ export class ScheduledTaskLoader {
       request: NormalFightReq | EventFightReq;
       config: NormalFightTaskConfig;
       stopCondition?: StopCondition;
-      fleetId?: number;
-      bathRepairConfig?: BathRepairConfig;
-      fleetPresets?: FleetPreset[];
-      currentPresetIndex?: number;
       endpointNodes?: string[];
       endpointResult?: BattleResultGrade;
     }> = [];
@@ -158,14 +152,7 @@ export class ScheduledTaskLoader {
           resolved.content,
           resolved.path,
         );
-        const {
-          req: request,
-          selectedFleetId,
-          bathRepairConfig,
-          bathFleetId,
-          fleetPresets,
-          currentPresetIndex,
-        } = buildPlanQueueRequest(
+        const { req: request } = buildPlanQueueRequest(
           {
             path: resolved.path,
             kind: 'plan',
@@ -184,10 +171,6 @@ export class ScheduledTaskLoader {
           request,
           config: structuredClone(task),
           stopCondition: plan.data.stop_condition,
-          fleetId: bathRepairConfig ? bathFleetId : selectedFleetId,
-          bathRepairConfig,
-          fleetPresets,
-          currentPresetIndex,
           endpointNodes: plan.data.endpoint_nodes,
           endpointResult: plan.data.result,
         });
@@ -218,10 +201,6 @@ export class ScheduledTaskLoader {
           TaskPriority.DAILY,
           1,
           task.stopCondition,
-          task.bathRepairConfig,
-          task.fleetId,
-          task.fleetPresets,
-          task.currentPresetIndex,
           undefined,
           undefined,
           task.endpointNodes,
@@ -263,13 +242,7 @@ export class ScheduledTaskLoader {
 
     const planPath = loaded.runtimePath ?? loaded.path;
     const plan = PlanModel.fromYaml(loaded.content, planPath);
-    const {
-      req: request,
-      bathRepairConfig,
-      bathFleetId,
-      fleetPresets,
-      currentPresetIndex,
-    } = buildPlanQueueRequest(
+    const { req: request } = buildPlanQueueRequest(
       {
         path: planPath,
         kind: 'plan',
@@ -288,10 +261,8 @@ export class ScheduledTaskLoader {
       TaskPriority.DAILY,
       99,
       { loot_count_ge: stopCount },
-      bathRepairConfig,
-      bathFleetId,
-      fleetPresets,
-      currentPresetIndex,
+      undefined,
+      undefined,
     );
     Logger.info(
       `自动战利品已加入队列 (${

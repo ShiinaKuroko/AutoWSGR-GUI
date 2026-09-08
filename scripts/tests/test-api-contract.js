@@ -166,21 +166,11 @@ try {
 
 function buildFleetContractCase(name, sourceYaml) {
   const contractPlan = PlanModel.fromYaml(sourceYaml, `${name}.yaml`);
-  const contractRequest = {
-    type: 'normal_fight',
-    times: 1,
-    plan: {
-      chapter: contractPlan.data.chapter,
-      map: contractPlan.data.map,
-      fleet_id: 1,
-    },
-  };
-  new TaskQueue().switchTaskPreset({
-    request: contractRequest,
-    fleetId: 1,
-    fleetPresets: contractPlan.data.fleet_presets,
-    currentPresetIndex: -1,
-  }, 0);
+  const { req: contractRequest } = buildPlanQueueRequest(
+    { fleetPresetIndex: 0 },
+    contractPlan,
+    `${name}.yaml`,
+  );
   return {
     name,
     source_yaml: sourceYaml,
@@ -404,13 +394,13 @@ const request = {
   },
 };
 
-const task = {
-  request,
-  fleetId: 1,
-  fleetPresets: plan.data.fleet_presets,
-  currentPresetIndex: -1,
-};
-new TaskQueue().switchTaskPreset(task, 0);
+const presetRequest = buildPlanQueueRequest(
+  { fleetPresetIndex: 0 },
+  plan,
+  'candidate-only.yaml',
+).req;
+request.plan.fleet = presetRequest.plan.fleet;
+request.plan.fleet_rules = presetRequest.plan.fleet_rules;
 
 const [candidateOnly, strictPrimary, anonymousFilter] =
   request.plan.fleet_rules;
@@ -571,11 +561,9 @@ const moderateBathQueue = buildPlanQueueRequest(
   moderateBathPlan,
   'moderate-bath.yaml',
 );
-assert.deepEqual(moderateBathQueue.bathRepairConfig, {
-  enabled: true,
-  defaultThreshold: { type: 'percent', value: 50 },
-});
-assert.equal(moderateBathQueue.bathFleetId, 1);
+assert.equal(moderateBathQueue.req.plan.repair_method, 'bath');
+assert.deepEqual(moderateBathQueue.req.plan.repair_mode, [1]);
+assert.equal(moderateBathQueue.selectedFleetId, undefined);
 
 const severeBathPlan = PlanModel.fromYaml([
   'chapter: 1',
@@ -590,36 +578,30 @@ const severeBathQueue = buildPlanQueueRequest(
   severeBathPlan,
   'severe-bath.yaml',
 );
-assert.deepEqual(severeBathQueue.bathRepairConfig, {
-  enabled: true,
-  defaultThreshold: { type: 'percent', value: 25 },
-});
+assert.equal(severeBathQueue.req.plan.repair_method, 'bath');
+assert.deepEqual(severeBathQueue.req.plan.repair_mode, [2]);
 
 const quickQueue = buildPlanQueueRequest(
   {},
   legacyRepairPlan,
   'legacy-repair.yaml',
 );
-assert.equal(quickQueue.bathRepairConfig, undefined);
+assert.equal(quickQueue.req.plan.repair_method, 'quick');
+assert.deepEqual(quickQueue.req.plan.repair_mode, [2]);
 
 const repairTaskQueue = new TaskQueue();
 repairTaskQueue.addTask(
-  '泡澡维修参数传递',
+  '维修参数传递',
   'normal_fight',
   moderateBathQueue.req,
   undefined,
   1,
   undefined,
-  moderateBathQueue.bathRepairConfig,
-  moderateBathQueue.bathFleetId,
-  moderateBathQueue.fleetPresets,
-  moderateBathQueue.currentPresetIndex,
+  false,
+  false,
 );
-assert.deepEqual(repairTaskQueue.items[0].bathRepairConfig, {
-  enabled: true,
-  defaultThreshold: { type: 'percent', value: 50 },
-});
-assert.equal(repairTaskQueue.items[0].fleetId, 1);
+assert.equal(repairTaskQueue.items[0].request.plan.repair_method, 'bath');
+assert.deepEqual(repairTaskQueue.items[0].request.plan.repair_mode, [1]);
 
 const endpointRoundTripPlan = PlanModel.fromYaml(
   nodeFormationPlan.toYaml(),
@@ -720,22 +702,6 @@ for (const { source, times, expected } of [
     queuedDecisiveTask[2].flagship_priority,
   ], expected);
 }
-
-const rotatedAliasRequest = {
-  type: 'normal_fight',
-  times: 1,
-  plan: {},
-};
-new TaskQueue(() => shipNameAliases).switchTaskPreset({
-  request: rotatedAliasRequest,
-  fleetId: 1,
-  fleetPresets: aliasPlan.data.fleet_presets,
-  currentPresetIndex: -1,
-}, 0);
-assert.deepEqual(rotatedAliasRequest.plan.fleet_rules[0], {
-  name: '85工程',
-  search_name: '契卡洛夫',
-});
 
 assert.equal(request.plan.node_defaults.long_missile_support, true);
 assert.deepEqual(request.plan.node_defaults.proceed_stop, [1, 2]);

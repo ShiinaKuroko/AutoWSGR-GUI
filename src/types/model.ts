@@ -255,14 +255,3 @@ export interface TaskTemplate {
   defaultGap?: number;
   defaultStopCondition?: StopCondition;
 }
-
-export interface RepairThreshold {
-  type: 'percent' | 'absolute';
-  value: number;
-}
-
-export interface BathRepairConfig {
-  enabled: boolean;
-  defaultThreshold: RepairThreshold;
-  shipThresholds?: Record<string, RepairThreshold>;
-}

@@ -1,13 +1,13 @@
 # `src` TypeScript 模块索引
 
-本索引按当前工作区统计，共 134 个 TypeScript 文件。用途是快速定位，不替代
+本索引按当前工作区统计，共 132 个 TypeScript 文件。用途是快速定位，不替代
 具体专题文档。
 
 ```text
 src/
 ├─ adapter/      6
 ├─ controller/  42
-├─ model/       25
+├─ model/       23
 ├─ view/        40
 ├─ types/        7
 ├─ shared/      13
@@ -124,7 +124,7 @@ src/
 | `ShipMatcher.ts` | 舰船匹配 |
 | `index.ts` | Fleet 领域出口 |
 
-### `model/scheduler`（11）
+### `model/scheduler`（9）
 
 | 文件 | 责任 |
 |---|---|
@@ -132,12 +132,10 @@ src/
 | `CronScheduler.ts` | 每分钟自动任务触发 |
 | `ExpeditionTimer.ts` | 远征倒计时 |
 | `NormalFightDailyQuota.ts` | 自动出击每日额度状态 |
-| `RepairManager.ts` | 泡澡和轮换编队 |
 | `Scheduler.ts` | 任务生命周期 |
-| `SchedulerRepairPolicy.ts` | 修理调度纯策略 |
 | `SchedulerTaskPolicy.ts` | 任务构建和插入纯策略 |
 | `StopConditionChecker.ts` | 三阶段停止条件 |
-| `TaskQueue.ts` | 就绪/延迟队列 |
+| `TaskQueue.ts` | 就绪队列和优先级插入 |
 | `index.ts` | Scheduler 领域出口 |
 
 ### 统计（1）

@@ -3,8 +3,6 @@
 import type { TaskRequest, TaskResult } from '../../types/api.js';
 import type {
   StopCondition,
-  BathRepairConfig,
-  FleetPreset,
   BattleResultGrade,
 } from '../../types/model.js';
 import { TaskPriority, type SchedulerTaskType, type SchedulerTask } from '../../types/scheduler';
@@ -61,10 +59,6 @@ export interface SchedulerTaskOptions {
   priority?: TaskPriority;
   times?: number;
   stopCondition?: StopCondition;
-  bathRepairConfig?: BathRepairConfig;
-  fleetId?: number;
-  fleetPresets?: FleetPreset[];
-  currentPresetIndex?: number;
   forceRetry?: boolean;
   allowPolling?: boolean;
   endpointNodes?: string[];
@@ -92,10 +86,6 @@ export function createSchedulerTask(options: SchedulerTaskOptions): SchedulerTas
     retryCount: 0,
     forceRetry: options.forceRetry,
     allowPolling: !!options.allowPolling,
-    bathRepairConfig: options.bathRepairConfig,
-    fleetId: options.fleetId,
-    fleetPresets: options.fleetPresets,
-    currentPresetIndex: options.currentPresetIndex ?? -1,
     endpointNodes: options.endpointNodes,
     endpointResult: options.endpointResult,
     sortKey: options.sortKey,
@@ -118,10 +108,6 @@ export function buildFollowUpTask(task: SchedulerTask, remainingTimes: number, i
     retryCount: 0,
     forceRetry: task.forceRetry,
     allowPolling: task.allowPolling,
-    bathRepairConfig: task.bathRepairConfig,
-    fleetId: task.fleetId,
-    fleetPresets: task.fleetPresets,
-    currentPresetIndex: task.currentPresetIndex,
     endpointNodes: task.endpointNodes,
     endpointResult: task.endpointResult,
     sortKey: task.sortKey,

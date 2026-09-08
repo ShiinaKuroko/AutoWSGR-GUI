@@ -20,7 +20,7 @@ export interface TaskProgress {
 
 export interface TaskStatus {
   task_id: string | null;
-  status: 'idle' | 'running' | 'completed' | 'failed' | 'stopped';
+  status: 'idle' | 'running' | 'repairing' | 'completed' | 'failed' | 'stopped';
   progress: TaskProgress | null;
   result: TaskResult | null;
   error?: string | null;
@@ -62,6 +62,11 @@ export interface ExpeditionQueueData {
   slots: ExpeditionSlot[];
   active_count: number;
   idle_count: number;
+}
+
+export interface ExpeditionAutoCheckResult {
+  repair_skipped?: boolean;
+  repair_error?: string;
 }
 
 export interface BuildSlotData {
@@ -177,6 +182,7 @@ export interface CombatPlanReq {
   fleet?: string[] | null;
   fleet_rules?: Array<string | FleetRuleReq> | null;
   repair_mode?: number[];
+  repair_method?: 'quick' | 'bath';
   fight_condition?: number;
   selected_nodes?: string[];
   node_defaults?: NodeDecisionReq;

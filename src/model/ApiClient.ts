@@ -24,6 +24,7 @@ import type {
   TaskRequest,
   GameContextData,
   GameAcquisitionData,
+  ExpeditionAutoCheckResult,
   WsMessage,
   WsLogMessage,
   WsTaskUpdate,
@@ -193,6 +194,16 @@ export class ApiClient {
 
   async expeditionCheck(): Promise<ApiResponse> {
     return this.request('POST', '/api/expedition/check');
+  }
+
+  async expeditionAutoCheck(
+    allowRepair: boolean,
+  ): Promise<ApiResponse<ExpeditionAutoCheckResult>> {
+    return this.request(
+      'POST',
+      '/api/expedition/auto_check',
+      { allow_repair: allowRepair },
+    );
   }
 
   // ── 游戏状态查询 ──

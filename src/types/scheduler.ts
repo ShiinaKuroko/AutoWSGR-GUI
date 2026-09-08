@@ -2,8 +2,6 @@
 import type { TaskRequest, TaskResult, WsLogMessage } from './api.js';
 import type {
   StopCondition,
-  BathRepairConfig,
-  FleetPreset,
   BattleResultGrade,
 } from './model.js';
 
@@ -60,14 +58,6 @@ export interface SchedulerTask {
   forceRetry?: boolean;
   /** 是否允许同优先级轮询（true=轮询，false/未设置=连续执行） */
   allowPolling?: boolean;
-  /** 泡澡修理配置 (可选) */
-  bathRepairConfig?: BathRepairConfig;
-  /** 任务使用的编队号 (用于泡澡修理前检查编队状态) */
-  fleetId?: number;
-  /** 可用的编队预设列表 (用于泡澡修理时轮换舰船) */
-  fleetPresets?: FleetPreset[];
-  /** 当前使用的编队预设索引 (-1 = 未使用预设) */
-  currentPresetIndex?: number;
   /** 终点节点列表：经过其中任一节点即认定本轮完成。未设置时回退到最后一个 selected_node。 */
   endpointNodes?: string[];
   /** 终点节点的最低战果要求；未设置时仅判断是否经过终点。 */

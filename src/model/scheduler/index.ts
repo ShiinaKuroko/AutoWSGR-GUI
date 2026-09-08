@@ -5,7 +5,6 @@
  */
 export { Scheduler } from './Scheduler';
 export * from './SchedulerTaskPolicy';
-export * from './SchedulerRepairPolicy';
 export { CronScheduler } from './CronScheduler';
 export type { CronConfig, CronCallbacks, ScheduledTask } from './CronScheduler';
 export { CampaignDailyQuota } from './CampaignDailyQuota';

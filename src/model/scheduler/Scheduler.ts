@@ -21,13 +21,10 @@ import type {
 } from '../../types/api.js';
 import type {
   StopCondition,
-  BathRepairConfig,
-  FleetPreset,
   BattleResultGrade,
 } from '../../types/model.js';
 import { Logger } from '../../utils/Logger';
 import { jsonCodec } from '../../adapter/index.js';
-import { RepairManager } from './RepairManager';
 import { StopConditionChecker } from './StopConditionChecker';
 import { ExpeditionTimer } from './ExpeditionTimer';
 import { TaskQueue, generateTaskId, parseUiCount } from './TaskQueue';
@@ -40,7 +37,6 @@ import {
   type SchedulerCallbacks,
   type SchedulerWaitingTask,
 } from '../../types/scheduler';
-import { toBackendName } from '../../shared/shipNameNormalizer.js';
 import {
   buildFollowUpTask as createFollowUpTask,
   getNonRetryableTaskResult,
@@ -88,17 +84,9 @@ export class Scheduler {
   private expeditionTimer: ExpeditionTimer;
   private stopChecker: StopConditionChecker;
 
-  // ── 泡澡修理 ──
-  private repairManager: RepairManager;
-
-  constructor(
-    api: ApiClient,
-    getShipNameAliases:
-      () => Readonly<Record<string, string>> = () => ({}),
-  ) {
+  constructor(api: ApiClient) {
     this.api = api;
-    this._taskQueue = new TaskQueue(getShipNameAliases);
-    this.repairManager = new RepairManager(api);
+    this._taskQueue = new TaskQueue();
     this.stopChecker = new StopConditionChecker(api, (level, message) => this.emitLog(level, message));
     this.expeditionTimer = new ExpeditionTimer(DEFAULT_EXPEDITION_INTERVAL_MS, {
       onTick: (sec) => this.callbacks.onExpeditionTimerTick?.(sec),
@@ -147,7 +135,6 @@ export class Scheduler {
       && this._status === 'idle'
       && this.currentTask === null
       && this._taskQueue.length === 0
-      && !this._taskQueue.hasDeferredTasks
       && this.waitingTasks.size === 0;
   }
 
@@ -240,7 +227,6 @@ export class Scheduler {
     const canceledLogicalIds = this.collectLogicalIds([
       ...(this.currentTask ? [this.currentTask] : []),
       ...this._taskQueue.items,
-      ...this._taskQueue.deferredItems,
       ...this.waitingTaskList.map(item => item.task),
     ]);
     this.systemActive = false;
@@ -275,10 +261,7 @@ export class Scheduler {
     }
   }
 
-  /**
-   * 添加任务到队列。
-   * 当前没有生产调用方传入 bathRepairConfig，保留给泡澡维修后续接入。
-   */
+  /** 添加任务到队列。 */
   addTask(
     name: string,
     type: SchedulerTaskType,
@@ -286,10 +269,6 @@ export class Scheduler {
     priority: TaskPriority = TaskPriority.USER_TASK,
     times: number = 1,
     stopCondition?: StopCondition,
-    bathRepairConfig?: BathRepairConfig,
-    fleetId?: number,
-    fleetPresets?: FleetPreset[],
-    currentPresetIndex?: number,
     forceRetry?: boolean,
     allowPolling?: boolean,
     endpointNodes?: string[],
@@ -303,10 +282,6 @@ export class Scheduler {
       priority,
       times,
       stopCondition,
-      bathRepairConfig,
-      fleetId,
-      fleetPresets,
-      currentPresetIndex,
       forceRetry,
       allowPolling,
       endpointNodes,
@@ -350,7 +325,6 @@ export class Scheduler {
 
     const runningTask = this.currentTask;
     if (!runningTask) {
-      this._taskQueue.clearDeferredTimer();
       this.setStatus('idle');
       this.notifyQueueChange();
       return;
@@ -384,7 +358,7 @@ export class Scheduler {
         if (
           response.success
           && response.data
-          && response.data.status !== 'running'
+          && ['completed', 'failed', 'stopped'].includes(response.data.status)
         ) {
           this.finishManualStop(runningTask);
           return;
@@ -413,8 +387,6 @@ export class Scheduler {
     this.currentTask = null;
     this._taskQueue.insertByPriority(runningTask, !runningTask.allowPolling);
     this.stopRequest = null;
-
-    this._taskQueue.clearDeferredTimer();
     this.setStatus('idle');
     this.notifyQueueChange();
   }
@@ -460,12 +432,10 @@ export class Scheduler {
   clearQueue(): void {
     const canceledLogicalIds = this.collectLogicalIds([
       ...this._taskQueue.items,
-      ...this._taskQueue.deferredItems,
       ...this.waitingTaskList.map(item => item.task),
     ]);
     this.clearWaitingTasks();
     this._taskQueue.clear();
-    this.repairManager.clearAll();
     this.emitLogicalCancellations(
       canceledLogicalIds,
       'queue_cleared',
@@ -485,16 +455,7 @@ export class Scheduler {
     if (!this.systemActive) return;
     if (this.currentTask) return; // 还有任务在跑
     if (this._taskQueue.length === 0) {
-      if (this._taskQueue.hasDeferredTasks) {
-        this._taskQueue.scheduleDeferredRetry(
-          () => this.consumeNext(),
-          (level, msg) => this.emitLog(level, msg),
-          this.repairManager.getBathingShips(),
-        );
-        this.setStatus('idle');
-      } else {
-        this.setStatus('idle');
-      }
+      this.setStatus('idle');
       return;
     }
 
@@ -507,9 +468,6 @@ export class Scheduler {
 
     // 远征任务: 直接调用远征 API，不走 taskStart 流程
     if (task.type === 'expedition') {
-      await this.checkExpedition();
-
-      if (!this.systemActive || this.currentTask?.id !== task.id) return;
       await this.handlePostExpedition();
 
       if (!this.systemActive || this.currentTask?.id !== task.id) return;
@@ -538,51 +496,7 @@ export class Scheduler {
       }
     }
 
-    // 泡澡修理编排: 检查 → 送泡澡 → 轮换预设 → 是否 defer
-    if (task.bathRepairConfig?.enabled && task.fleetId) {
-      const repairResult = await this.prepareRepair(task);
-      if (!this.systemActive || this.currentTask?.id !== task.id) return;
-      if (repairResult === 'deferred') return;
-    }
-
     await this.executeTaskStart(task);
-  }
-
-  // ── 内部: 泡澡修理编排 ──
-
-  /**
-   * 任务执行前的泡澡修理检查与编排。
-   * @returns 'proceed' 表示可以继续执行任务, 'deferred' 表示任务已被延迟。
-   */
-  private async prepareRepair(task: SchedulerTask): Promise<'proceed' | 'deferred'> {
-    const checkResult = await this.repairManager.checkFleetHealth(task.fleetId!, task.bathRepairConfig!);
-    if (checkResult.ready) return 'proceed';
-
-    // 有舰船需要修理 → 送入泡澡
-    if (checkResult.shipsNeedRepair.length > 0) {
-      this.emitLog('info', `任务「${task.name}」: ${checkResult.shipsNeedRepair.join('、')} 需要修理，送入泡澡`);
-      await this.repairManager.sendToBath(checkResult.shipsNeedRepair);
-    }
-
-    // 尝试编队预设轮换
-    const presets = task.fleetPresets;
-    if (presets && presets.length > 1) {
-      const healthyIdx = this.repairManager.findHealthyPreset(presets, task.currentPresetIndex ?? -1);
-      if (healthyIdx >= 0) {
-        this.emitLog('info', `任务「${task.name}」: 轮换至编队预设「${presets[healthyIdx].name}」`);
-        this._taskQueue.switchTaskPreset(task, healthyIdx);
-        this.notifyQueueChange();
-        return 'proceed';
-      }
-      this.emitLog('info', `任务「${task.name}」: 所有编队预设的舰船都在修理中，任务延迟`);
-    } else if (checkResult.shipsInBath.length > 0) {
-      this.emitLog('info', `任务「${task.name}」: ${checkResult.shipsInBath.join('、')} 正在泡澡中，任务延迟`);
-    } else {
-      this.emitLog('info', `任务「${task.name}」: 舰船正在修理，任务延迟`);
-    }
-
-    this.deferCurrentTask(task);
-    return 'deferred';
   }
 
   // ── 内部: 任务启动 + 重试 ──
@@ -1037,7 +951,7 @@ export class Scheduler {
         if (
           response.success
           && response.data
-          && response.data.status !== 'running'
+          && ['completed', 'failed', 'stopped'].includes(response.data.status)
         ) {
           this.finishStopCondition(runningTask);
           return;
@@ -1061,75 +975,27 @@ export class Scheduler {
     }
   }
 
-  // ── 泡澡延迟 ──
-
-  /** 延迟当前任务（因修理阻塞） */
-  private deferCurrentTask(task: SchedulerTask): void {
-    this.currentTask = null;
-    this._taskQueue.deferTask(task);
-    this.notifyQueueChange();
-    if (this._taskQueue.length > 0) {
-      this.consumeNext();
-    } else {
-      this._taskQueue.scheduleDeferredRetry(
-        () => this.consumeNext(),
-        (level, msg) => this.emitLog(level, msg),
-        this.repairManager.getBathingShips(),
-      );
-      this.setStatus('idle');
-    }
-  }
-
   // ── 内部: 远征后处理 ──
 
-  /**
-   * 远征检查完成后的附加操作:
-   * 1. 自动领取任务奖励
-   * 2. 智能浴室维修（仅在无战斗任务时执行）
-   */
+  /** 远征检查、奖励领取和空闲时的自动维修均由后端统一执行。 */
   private async handlePostExpedition(): Promise<void> {
-    try {
-      const rewardResp = await this.api.rewardCollect();
-      if (rewardResp.success) {
-        this.emitLog('info', '任务奖励已自动领取');
-      }
-    } catch {
-      this.emitLog('debug', '任务奖励领取跳过');
-    }
-
-    const hasCombatTask = this._taskQueue.items.some(t =>
-      t.type === 'normal_fight' || t.type === 'event_fight'
-        || t.type === 'campaign' || t.type === 'exercise' || t.type === 'decisive',
-    );
-    const currentIsCombat = this.currentTask
-      && (this.currentTask.type === 'normal_fight' || this.currentTask.type === 'event_fight'
-        || this.currentTask.type === 'campaign' || this.currentTask.type === 'exercise'
-        || this.currentTask.type === 'decisive');
-    if (hasCombatTask || currentIsCombat) return;
+    const hasCombatTask = this._taskQueue.items.some(task => (
+      task.type === 'normal_fight' || task.type === 'event_fight'
+        || task.type === 'campaign' || task.type === 'exercise' || task.type === 'decisive'
+    ));
 
     try {
-      const resp = await this.api.gameContext();
-      if (!resp.success || !resp.data?.fleets) return;
-
-      const shipsNeedRepair: string[] = [];
-      for (const fleet of resp.data.fleets) {
-        for (const ship of fleet.ships) {
-          if (!ship || !ship.name) continue;
-          if (ship.health < ship.max_health && ship.max_health > 0) {
-            const key = toBackendName(ship.name);
-            if (!this.repairManager.getBathingShips().has(key)) {
-              shipsNeedRepair.push(ship.name);
-            }
-          }
-        }
+      const response = await this.api.expeditionAutoCheck(!hasCombatTask);
+      if (!response.success) {
+        this.emitLog('debug', '自动远征检查跳过');
+        return;
       }
-
-      if (shipsNeedRepair.length > 0) {
-        this.emitLog('info', `远征后自动送修: ${shipsNeedRepair.join('、')}`);
-        await this.repairManager.sendToBath(shipsNeedRepair);
+      if (response.data?.repair_skipped || response.data?.repair_error) {
+        this.emitLog('debug', '远征后自动维修跳过');
       }
+      this.emitLog('info', '远征检查完成');
     } catch {
-      this.emitLog('debug', '远征后自动维修检查跳过');
+      this.emitLog('debug', '自动远征检查跳过');
     }
   }
 
@@ -1217,13 +1083,6 @@ export class Scheduler {
   private hasLogicalTask(logicalId: string): boolean {
     if (this.currentTask?.logicalId === logicalId) return true;
     if (this._taskQueue.items.some(task => task.logicalId === logicalId)) {
-      return true;
-    }
-    if (
-      this._taskQueue.deferredItems.some(
-        task => task.logicalId === logicalId,
-      )
-    ) {
       return true;
     }
     return [...this.waitingTasks.values()].some(

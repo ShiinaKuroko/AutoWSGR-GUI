@@ -69,7 +69,6 @@ Scheduler 的权威状态仍在：
 它拥有运行任务、队列、等待任务、状态和子模块。可独立计算的规则被提取为：
 
 - `SchedulerTaskPolicy.ts`
-- `SchedulerRepairPolicy.ts`
 
 例如任务创建规则不需要访问 Scheduler 私有状态：
 

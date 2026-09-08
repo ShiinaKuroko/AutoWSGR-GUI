@@ -13,9 +13,6 @@ import type {
   ShipLibraryShip,
 } from '../../types/ipc.js';
 import type {
-  BathRepairConfig,
-  FleetPreset,
-  RepairMethod,
   TaskPreset,
 } from '../../types/model.js';
 import { resolveFleetPreset } from '../../model/fleet/ShipMatcher';
@@ -50,27 +47,11 @@ export function applyPlanNodeOverrides(
   req.plan.selected_nodes = selectedNodes;
   req.plan.node_defaults = structuredClone(plan.data.node_defaults ?? {});
   req.plan.node_args = plan.getNodeArgsForExecution();
-}
-
-/** 将计划的维修方式和策略转换为 Scheduler 的泡澡预检配置。 */
-export function buildBathRepairConfig(
-  repairMethod: RepairMethod | undefined,
-  repairMode: number | number[] | undefined,
-): BathRepairConfig | undefined {
-  if ((repairMethod ?? 'quick') !== 'bath') return undefined;
-
-  const modes = Array.isArray(repairMode) ? repairMode : [repairMode ?? 1];
-  const validModes = modes.filter(mode => Number.isFinite(mode));
-  const mode = validModes.length > 0 ? Math.min(...validModes) : 1;
-
-  // 与游戏损伤档位保持一致：中破约 50% HP，大破约 25% HP；数组沿用后端最小模式。
-  return {
-    enabled: true,
-    defaultThreshold: {
-      type: 'percent',
-      value: mode <= 1 ? 50 : 25,
-    },
-  };
+  const repairMode = plan.repairMode;
+  req.plan.repair_mode = Array.isArray(repairMode)
+    ? [...repairMode]
+    : [repairMode];
+  req.plan.repair_method = plan.repairMethod;
 }
 
 export function buildPlanQueueRequest(
@@ -81,10 +62,6 @@ export function buildPlanQueueRequest(
 ): {
   req: NormalFightReq | EventFightReq;
   selectedFleetId: number | undefined;
-  bathRepairConfig?: BathRepairConfig;
-  bathFleetId?: number;
-  fleetPresets?: FleetPreset[];
-  currentPresetIndex?: number;
 } {
   const req: NormalFightReq | EventFightReq = {
     type: plan.isEvent ? 'event_fight' : 'normal_fight',
@@ -123,25 +100,9 @@ export function buildPlanQueueRequest(
     throw new Error('作战计划中已没有所选使用舰队');
   }
 
-  const bathRepairConfig = buildBathRepairConfig(
-    plan.repairMethod,
-    plan.data.repair_mode,
-  );
-  const fleetPresets = bathRepairConfig && plan.data.fleet_presets?.length
-    ? plan.data.fleet_presets
-    : undefined;
-
   return {
     req,
     selectedFleetId,
-    bathRepairConfig,
-    bathFleetId: bathRepairConfig
-      ? selectedFleetId ?? plan.data.fleet_id ?? 1
-      : undefined,
-    fleetPresets,
-    currentPresetIndex: fleetPresets
-      ? item.fleetPresetIndex ?? 0
-      : undefined,
   };
 }
 
@@ -195,14 +156,7 @@ function addPlanTaskToQueue(
   planId: string,
   host: PlanQueueHost,
 ): void {
-  const {
-    req,
-    selectedFleetId,
-    bathRepairConfig,
-    bathFleetId,
-    fleetPresets,
-    currentPresetIndex,
-  } = buildPlanQueueRequest(
+  const { req } = buildPlanQueueRequest(
     item,
     plan,
     planId,
@@ -217,10 +171,6 @@ function addPlanTaskToQueue(
     TaskPriority.USER_TASK,
     item.times,
     plan.data.stop_condition,
-    bathRepairConfig,
-    bathRepairConfig ? bathFleetId : selectedFleetId,
-    fleetPresets,
-    currentPresetIndex,
     !!item.forceRetry,
     !!item.allowPolling,
     plan.data.endpoint_nodes,
@@ -265,14 +215,16 @@ function addPresetTaskToQueue(
       fleet_id: preset.fleet_id,
     };
   }
+  if (req.type === 'normal_fight' || req.type === 'event_fight') {
+    req.plan = {
+      ...(req.plan ?? {}),
+      repair_method: preset.repair_method ?? 'quick',
+    };
+  }
+
   const effectiveTimes = preset.task_type === 'exercise'
     ? 1
     : Math.max(1, item.times || preset.times || 1);
-  const bathRepairConfig = (
-    preset.task_type === 'normal_fight' || preset.task_type === 'event_fight'
-  )
-    ? buildBathRepairConfig(preset.repair_method, undefined)
-    : undefined;
   scheduler.addTask(
     item.label,
     preset.task_type,
@@ -280,8 +232,8 @@ function addPresetTaskToQueue(
     TaskPriority.USER_TASK,
     effectiveTimes,
     preset.stop_condition,
-    bathRepairConfig,
-    bathRepairConfig ? preset.fleet_id ?? 1 : undefined,
+    !!item.forceRetry,
+    !!item.allowPolling,
   );
 }
 
@@ -437,12 +389,12 @@ export function loadTemplateToQueue(
   switch (tpl.type) {
     case 'exercise':
       req = { type: 'exercise', fleet_id: item.fleet_id ?? tpl.fleet_id ?? 1 };
-      host.scheduler.addTask(item.label || tpl.name, 'exercise', req, TaskPriority.USER_TASK, 1, undefined, undefined, undefined, undefined, undefined, undefined, allowPolling);
+      host.scheduler.addTask(item.label || tpl.name, 'exercise', req, TaskPriority.USER_TASK, 1, undefined, undefined, allowPolling);
       break;
     case 'campaign': {
       const cName = item.campaignName ?? tpl.campaign_name ?? '困难潜艇';
       req = { type: 'campaign', campaign_name: cName, times: 1 };
-      host.scheduler.addTask(item.label || tpl.name, 'campaign', req, TaskPriority.USER_TASK, times, undefined, undefined, undefined, undefined, undefined, undefined, allowPolling);
+      host.scheduler.addTask(item.label || tpl.name, 'campaign', req, TaskPriority.USER_TASK, times, undefined, undefined, allowPolling);
       break;
     }
     case 'decisive': {
@@ -452,7 +404,7 @@ export function loadTemplateToQueue(
         ...toBackendDecisiveShipNames(tpl, ships),
         use_quick_repair: tpl.use_quick_repair,
       };
-      host.scheduler.addTask(item.label || tpl.name, 'decisive', req, TaskPriority.USER_TASK, times, undefined, undefined, undefined, undefined, undefined, undefined, allowPolling);
+      host.scheduler.addTask(item.label || tpl.name, 'decisive', req, TaskPriority.USER_TASK, times, undefined, undefined, allowPolling);
       break;
     }
     default:
