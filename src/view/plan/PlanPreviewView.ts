@@ -54,7 +54,6 @@ export class PlanPreviewView {
   private shipEnabledInput: HTMLInputElement;
   private shipGeInput: HTMLInputElement;
   private shipFieldsEl: HTMLElement;
-  private collectResultInput: HTMLInputElement;
   private eventMapCatalog: EventMapCatalogEntry[] = [];
 
   private mapView: MapView;
@@ -71,7 +70,7 @@ export class PlanPreviewView {
   onNodeClick?: (nodeId: string) => void;
   onMapChange?: (chapter: string, map: number | string) => void;
   onPresetNameChange?: (name: string) => void;
-  onPlanFieldChange?: (field: 'repair_mode' | 'repair_method' | 'fight_condition' | 'fleet_id' | 'times' | 'gap' | 'loot_count_ge' | 'ship_count_ge' | 'collect_result_info', value: number | boolean | RepairMethod | undefined) => void;
+  onPlanFieldChange?: (field: 'repair_mode' | 'repair_method' | 'fight_condition' | 'fleet_id' | 'times' | 'gap' | 'loot_count_ge' | 'ship_count_ge', value: number | RepairMethod | undefined) => void;
 
   set onAddFleetPreset(
     fn: ((planId: string) => void) | undefined,
@@ -110,7 +109,6 @@ export class PlanPreviewView {
     this.shipEnabledInput = document.getElementById('plan-edit-ship-enabled') as HTMLInputElement;
     this.shipGeInput = document.getElementById('plan-edit-ship-ge') as HTMLInputElement;
     this.shipFieldsEl = document.getElementById('plan-edit-ship-fields')!;
-    this.collectResultInput = document.getElementById('plan-edit-collect-result') as HTMLInputElement;
 
     this.mapView = new MapView();
     this.nodeEditor = new NodeEditorView();
@@ -189,9 +187,6 @@ export class PlanPreviewView {
       const v = parseInt(this.gapInput.value, 10);
       this.onPlanFieldChange?.('gap', v >= 0 ? v : 0);
     });
-    this.collectResultInput.addEventListener('change', () => {
-      this.onPlanFieldChange?.('collect_result_info', this.collectResultInput.checked);
-    });
     this.bindStopConditionControl(
       this.lootEnabledInput,
       this.lootGeInput,
@@ -240,7 +235,6 @@ export class PlanPreviewView {
       vo.shipCountGe,
       500,
     );
-    this.collectResultInput.checked = !!vo.collectResultInfo;
 
     this.fleetPresetView.render(vo.fleetPresetSelector);
     this.mapView.renderNodes(

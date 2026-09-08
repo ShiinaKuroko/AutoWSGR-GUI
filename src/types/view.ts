@@ -287,7 +287,6 @@ export interface PlanPreviewViewObject {
   gap?: number;
   lootCountGe?: number;
   shipCountGe?: number;
-  collectResultInfo?: boolean;
 }
 
 export type FleetPresetCatalogStatus = 'loading' | 'ready' | 'error';

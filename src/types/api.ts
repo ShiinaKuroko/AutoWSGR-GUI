@@ -182,7 +182,6 @@ export interface CombatPlanReq {
   node_defaults?: NodeDecisionReq;
   node_args?: Record<string, NodeDecisionReq>;
   event_name?: string | null;
-  collect_result_info?: boolean;
 }
 
 export interface NormalFightReq {
