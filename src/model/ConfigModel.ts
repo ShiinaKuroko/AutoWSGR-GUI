@@ -27,6 +27,7 @@ import {
   normalizeDecisiveAutomationSource,
 } from '../shared/decisiveAutomation.js';
 import { DAILY_CAMPAIGN_TIMES } from '../shared/campaign.js';
+import { normalizeExpeditionInterval } from '../shared/expedition.js';
 import { normalFightDailyLimit } from './scheduler/NormalFightDailyQuota.js';
 import { Logger } from '../utils/Logger';
 
@@ -371,9 +372,8 @@ export class ConfigModel {
       this.guiAutomation.lootPlanId,
     );
     const fallbackLootPlan = lootPlans[0] ?? DEFAULT_LOOT_PLANS[0];
-    this.guiAutomation.expeditionInterval = Math.max(
-      1,
-      Math.min(120, Math.trunc(this.guiAutomation.expeditionInterval || 15)),
+    this.guiAutomation.expeditionInterval = normalizeExpeditionInterval(
+      this.guiAutomation.expeditionInterval,
     );
     this.guiAutomation.battleTimes = DAILY_CAMPAIGN_TIMES;
     this.guiAutomation.autoDecisive =

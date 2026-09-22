@@ -528,7 +528,7 @@ function testGuiConfigurationService() {
     lootPlanId: 'bettle-捞胖次-8-5.yaml',
     lootStopCount: 0,
   }), {
-    expeditionInterval: 120,
+    expeditionInterval: 1440,
     battleTimes: 8,
     autoDecisive: true,
     decisiveTemplateId: 'system_preset',
@@ -541,7 +541,7 @@ function testGuiConfigurationService() {
   assert.deepEqual(service.automation(), {
     exists: true,
     settings: {
-      expeditionInterval: 120,
+      expeditionInterval: 1440,
       battleTimes: 8,
       autoDecisive: true,
       decisiveTemplateId: 'system_preset',
@@ -595,7 +595,7 @@ function testGuiConfigurationService() {
   assert.deepEqual(service.automation(), {
     exists: true,
     settings: {
-      expeditionInterval: 120,
+      expeditionInterval: 1440,
       battleTimes: 8,
       autoDecisive: true,
       decisiveTemplateId: 'system_preset',
@@ -648,7 +648,7 @@ function testGuiConfigurationService() {
     cuda_path: '',
     save_backend_screenshots: false,
     automation: {
-      expeditionInterval: 120,
+      expeditionInterval: 1440,
       battleTimes: 8,
       autoDecisive: true,
       decisiveTemplateId: 'system_preset',

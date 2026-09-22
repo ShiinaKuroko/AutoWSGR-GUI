@@ -3,6 +3,7 @@ import type { Scheduler } from '../../model/scheduler';
 import { DailySortieStats } from '../../model/statistics/DailySortieStats';
 import type { DailySortieStatsSnapshot } from '../../types/statistics.js';
 import { Logger } from '../../utils/Logger';
+import { formatExpeditionCountdown } from '../../shared/expedition.js';
 
 const DEFAULT_EXERCISE_TOTAL = 5;
 const LOG_DEDUP_WINDOW_MS = 1200;
@@ -64,11 +65,7 @@ export class SchedulerRuntimeTracker {
   }
 
   updateExpeditionTimer(seconds: number): string {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    this.expeditionTimerText = `${
-      String(minutes).padStart(2, '0')
-    }:${String(remainingSeconds).padStart(2, '0')}`;
+    this.expeditionTimerText = formatExpeditionCountdown(seconds);
     return this.expeditionTimerText;
   }
 
