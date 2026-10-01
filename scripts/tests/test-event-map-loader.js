@@ -113,9 +113,10 @@ async function main() {
   const eventChapterOptions = view.chapterSelect.options
     .filter(option => option.dataset.eventMap)
     .map(option => option.value);
+  const latestEvent = catalog[0].event;
   assert.deepEqual(
     eventChapterOptions.slice(0, 2),
-    ['event:20260730:E', 'event:20260730:H'],
+    [`event:${latestEvent}:E`, `event:${latestEvent}:H`],
   );
   assert.equal(eventChapterOptions.includes('event:20260212:E'), true);
   view.updateMapOptions('event:20260730:E');
