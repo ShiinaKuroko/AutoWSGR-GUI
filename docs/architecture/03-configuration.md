@@ -81,7 +81,7 @@ Stable 通道，`true` 表示个人仓库 GUI + 个人仓库后端的 Alpha 通�
 
 | 字段 | 语义 |
 |---|---|
-| `expeditionInterval` | 远征检查间隔，1～120 分钟 |
+| `expeditionInterval` | 远征检查间隔，0.5～1440 分钟（支持小数，默认 15） |
 | `battleTimes` | 旧结构兼容字段，运行时固定为 8 |
 | `autoDecisive` | 每日自动决战 |
 | `decisiveTemplateId` | `user_plan` 或 `system_preset` |

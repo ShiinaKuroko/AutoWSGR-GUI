@@ -17,6 +17,7 @@ import {
   normalizeDecisiveAutomationSource,
 } from '../../shared/decisiveAutomation.js';
 import { DAILY_CAMPAIGN_TIMES } from '../../shared/campaign.js';
+import { normalizeExpeditionInterval } from '../../shared/expedition.js';
 import {
   ConfigAutomationView,
 } from './ConfigAutomationView';
@@ -319,7 +320,9 @@ export class ConfigView {
         : 'auto',
       allowTestUpdates: this.allowTestUpdates.checked,
       autoExpedition: this.autoExpedition.checked,
-      expeditionInterval: this.clamp(this.expeditionInterval.value, 1, 120, 15),
+      expeditionInterval: normalizeExpeditionInterval(
+        Number(this.expeditionInterval.value),
+      ),
       autoBattle: this.autoBattle.checked,
       battleType: this.battleType.value,
       autoExercise: this.autoExercise.checked,

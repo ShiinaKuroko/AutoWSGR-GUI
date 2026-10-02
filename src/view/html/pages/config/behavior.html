@@ -27,9 +27,15 @@
               <div class="config-setting-row">
                 <div class="config-setting-copy">
                   <strong>自动远征</strong>
-                  <span>定期检查并收取已完成远征，然后重新派遣。</span>
+                  <span>定期检查并收取已完成远征，然后重新派遣；检查间隔可自行设置，最短 0.5 分钟，最长 1440 分钟（24 小时）。</span>
                 </div>
-                <div class="config-setting-control">
+                <div class="config-setting-control config-auto-task-control">
+                  <div class="config-inline-options config-auto-task-options" id="cfg-auto-expedition-body">
+                    <span>检查间隔</span>
+                    <input type="number" id="cfg-expedition-interval" class="input config-inline-number"
+                           min="0.5" max="1440" step="0.5" value="15">
+                    <span>分钟</span>
+                  </div>
                   <label class="config-switch">
                     <input type="checkbox" id="cfg-auto-expedition" checked>
                     <span class="config-switch-track" aria-hidden="true"></span>
