@@ -977,21 +977,15 @@ export class Scheduler {
 
   // ── 内部: 远征后处理 ──
 
-  /** 远征检查、奖励领取和空闲时的自动维修均由后端统一执行。 */
+  /** 远征检查 + 奖励领取由后端统一执行; 远征后的浴室维修已关闭。 */
   private async handlePostExpedition(): Promise<void> {
-    const hasCombatTask = this._taskQueue.items.some(task => (
-      task.type === 'normal_fight' || task.type === 'event_fight'
-        || task.type === 'campaign' || task.type === 'exercise' || task.type === 'decisive'
-    ));
-
+    // 远征后不再自动浴室维修: allow_repair 固定 false, 后端(/api/expedition/auto_check)
+    // 会跳过第 3 步 repair_in_bath。手动「浴室修理」按钮不受影响。
     try {
-      const response = await this.api.expeditionAutoCheck(!hasCombatTask);
+      const response = await this.api.expeditionAutoCheck(false);
       if (!response.success) {
         this.emitLog('debug', '自动远征检查跳过');
         return;
-      }
-      if (response.data?.repair_skipped || response.data?.repair_error) {
-        this.emitLog('debug', '远征后自动维修跳过');
       }
       this.emitLog('info', '远征检查完成');
     } catch {
