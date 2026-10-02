@@ -468,7 +468,12 @@ export class Scheduler {
 
     // 远征任务: 直接调用远征 API，不走 taskStart 流程
     if (task.type === 'expedition') {
-      await this.handlePostExpedition();
+      try {
+        await this.handlePostExpedition();
+      } finally {
+        // 远征收取结束(成功 / 失败 / 跳过)才重置倒计时
+        this.expeditionTimer.markCompleted();
+      }
 
       if (!this.systemActive || this.currentTask?.id !== task.id) return;
       this.currentTask = null;
@@ -1022,7 +1027,9 @@ export class Scheduler {
     };
     this._taskQueue.insertByPriority(task);
     this.notifyQueueChange();
-    Logger.debug('远征定时器触发，已插入远征任务到队列', 'scheduler');
+    // 倒计时挂起: 等收取任务真正结束后再由 markCompleted() 重置
+    this.expeditionTimer.hold();
+    Logger.debug('远征定时器触发，已插入远征任务到队列，倒计时挂起（等收取结束后重置）', 'scheduler');
 
     if (!this.currentTask && this._status === 'idle') {
       this.consumeNext();
