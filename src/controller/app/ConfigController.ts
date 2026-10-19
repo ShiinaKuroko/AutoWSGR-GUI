@@ -43,6 +43,7 @@ import { showAlert, showSaveSuccess } from '../../view/shared/DialogHelper';
 
 const GUI_AUTOMATION_FIELDS = [
   'expeditionInterval',
+  'expeditionAutoRepair',
   'battleTimes',
   'autoDecisive',
   'decisiveTemplateId',
@@ -335,6 +336,7 @@ export class ConfigController {
       allowTestUpdates: this.gateway?.getAllowTestUpdates?.() === true,
       autoExpedition: cfg.daily_automation.auto_expedition,
       expeditionInterval: gui.expeditionInterval,
+      expeditionAutoRepair: gui.expeditionAutoRepair,
       autoBattle: cfg.daily_automation.auto_battle,
       battleType: cfg.daily_automation.battle_type,
       autoExercise: cfg.daily_automation.auto_exercise,
@@ -512,6 +514,7 @@ export class ConfigController {
       });
       this.host.scheduler.setAutoExpedition(da.auto_expedition);
       this.host.scheduler.setExpeditionInterval(gui.expeditionInterval);
+      this.host.scheduler.setExpeditionAutoRepair(gui.expeditionAutoRepair);
       this.refreshNormalFightRemaining();
       this.savedConfigSnapshot = this.configSnapshot(collected);
 
@@ -615,6 +618,7 @@ export class ConfigController {
     });
     model.updateGuiAutomation({
       expeditionInterval: collected.expeditionInterval,
+      expeditionAutoRepair: collected.expeditionAutoRepair,
       battleTimes: collected.battleTimes,
       autoDecisive: collected.autoDecisive,
       decisiveTemplateId: collected.decisiveTemplateId,

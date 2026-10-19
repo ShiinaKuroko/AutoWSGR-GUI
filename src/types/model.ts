@@ -70,6 +70,8 @@ export interface LogConfig {
 
 export interface GuiAutomationSettings {
   expeditionInterval: number;
+  /** 远征检查后是否自动进入浴室维修，默认关。 */
+  expeditionAutoRepair: boolean;
   /** 兼容持久化结构，自动战役运行时固定为 8。 */
   battleTimes: number;
   autoDecisive: boolean;

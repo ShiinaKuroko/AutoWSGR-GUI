@@ -35,6 +35,8 @@ export type BackendUpdateMode = 'auto' | 'manual';
 
 export interface GuiAutomationSettings {
   expeditionInterval: number;
+  /** 远征检查后是否自动进入浴室维修，默认关。 */
+  expeditionAutoRepair: boolean;
   /** 兼容持久化结构，自动战役运行时固定为 8。 */
   battleTimes: number;
   autoDecisive: boolean;
@@ -255,6 +257,9 @@ export class GuiConfigurationService {
     if (expeditionInterval !== null) {
       settings.expeditionInterval = expeditionInterval;
     }
+    if (typeof value.expeditionAutoRepair === 'boolean') {
+      settings.expeditionAutoRepair = value.expeditionAutoRepair;
+    }
     const battleTimes = finiteNumber(value.battleTimes);
     if (battleTimes !== null) {
       settings.battleTimes = DAILY_CAMPAIGN_TIMES;
@@ -474,6 +479,7 @@ export class GuiConfigurationService {
           Math.trunc(Number(settings?.expeditionInterval) || 15),
         ),
       ),
+      expeditionAutoRepair: settings?.expeditionAutoRepair === true,
       battleTimes: DAILY_CAMPAIGN_TIMES,
       autoDecisive: settings?.autoDecisive === true,
       decisiveTemplateId,

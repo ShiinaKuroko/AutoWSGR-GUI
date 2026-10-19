@@ -83,6 +83,7 @@ export class ConfigView {
   private allowTestUpdates = element<HTMLInputElement>('cfg-allow-test-updates');
   private autoExpedition = element<HTMLInputElement>('cfg-auto-expedition');
   private expeditionInterval = element<HTMLInputElement>('cfg-expedition-interval');
+  private expeditionRepair = element<HTMLInputElement>('cfg-expedition-repair');
   private autoBattle = element<HTMLInputElement>('cfg-auto-battle');
   private battleType = element<HTMLSelectElement>('cfg-battle-type');
   private autoExercise = element<HTMLInputElement>('cfg-auto-exercise');
@@ -230,6 +231,7 @@ export class ConfigView {
     this.allowTestUpdates.checked = vo.allowTestUpdates;
     this.autoExpedition.checked = vo.autoExpedition;
     this.expeditionInterval.value = String(vo.expeditionInterval);
+    this.expeditionRepair.checked = vo.expeditionAutoRepair;
     this.autoBattle.checked = vo.autoBattle;
     this.battleType.value = vo.battleType;
     this.autoExercise.checked = vo.autoExercise;
@@ -320,6 +322,7 @@ export class ConfigView {
       allowTestUpdates: this.allowTestUpdates.checked,
       autoExpedition: this.autoExpedition.checked,
       expeditionInterval: this.clamp(this.expeditionInterval.value, 1, 120, 15),
+      expeditionAutoRepair: this.expeditionRepair.checked,
       autoBattle: this.autoBattle.checked,
       battleType: this.battleType.value,
       autoExercise: this.autoExercise.checked,

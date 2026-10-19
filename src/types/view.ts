@@ -29,6 +29,8 @@ export interface ConfigViewObject {
   allowTestUpdates: boolean;
   autoExpedition: boolean;
   expeditionInterval: number;
+  /** 远征检查后是否自动进入浴室维修。 */
+  expeditionAutoRepair: boolean;
   autoBattle: boolean;
   battleType: string;
   autoExercise: boolean;

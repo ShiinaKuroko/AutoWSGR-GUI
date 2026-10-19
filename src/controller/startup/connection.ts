@@ -37,6 +37,7 @@ export async function startSystem(host: StartupHost): Promise<boolean> {
   const guiAutomation = host.configModel.currentGuiAutomation;
   host.scheduler.setAutoExpedition(automation.auto_expedition);
   host.scheduler.setExpeditionInterval(guiAutomation.expeditionInterval);
+  host.scheduler.setExpeditionAutoRepair(guiAutomation.expeditionAutoRepair);
 
   try {
     const ok = await host.scheduler.start(configPath);

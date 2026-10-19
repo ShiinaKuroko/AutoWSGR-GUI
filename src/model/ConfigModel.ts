@@ -77,6 +77,7 @@ const DEFAULT_SETTINGS: UserSettings = {
 
 const DEFAULT_GUI_AUTOMATION: GuiAutomationSettings = {
   expeditionInterval: 15,
+  expeditionAutoRepair: false,
   battleTimes: DAILY_CAMPAIGN_TIMES,
   autoDecisive: false,
   decisiveTemplateId: SYSTEM_DECISIVE_PRESET_ID,
@@ -375,6 +376,8 @@ export class ConfigModel {
       1,
       Math.min(120, Math.trunc(this.guiAutomation.expeditionInterval || 15)),
     );
+    this.guiAutomation.expeditionAutoRepair =
+      this.guiAutomation.expeditionAutoRepair === true;
     this.guiAutomation.battleTimes = DAILY_CAMPAIGN_TIMES;
     this.guiAutomation.autoDecisive =
       this.guiAutomation.autoDecisive === true;
