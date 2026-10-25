@@ -211,6 +211,23 @@ export class CronScheduler {
     this.exercisePending = false;
   }
 
+  /**
+   * 演习返回不可重试终态 (今日次数已用完 / 需要手动修理) —
+   * 记录运行时间使本刷新时段不再触发;
+   * 下一刷新时段 (0/12/18 点) 次数重置后恢复正常触发。
+   */
+  markExerciseExhausted(): void {
+    this.lastExerciseRun = new Date();
+    this.exercisePending = false;
+    try {
+      this.storage.set(
+        LS_KEY_LAST_EXERCISE_RUN,
+        this.lastExerciseRun.toISOString(),
+      );
+    } catch { /* ignore */ }
+    this.log('info', '演习本时段无法完成，下一刷新时段自动恢复');
+  }
+
   /** 战役已有进展但目标未完成，清除 pending 以便下次 tick 补跑。 */
   clearBattlePending(): void {
     this.battlePending = false;

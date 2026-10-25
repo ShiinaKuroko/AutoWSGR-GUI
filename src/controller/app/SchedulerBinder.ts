@@ -141,7 +141,7 @@ export class SchedulerBinder {
       onLogicalTaskCompleted: (
         logicalId,
         success,
-        _error,
+        error,
         countedRound,
         completionReason,
       ) => {
@@ -149,6 +149,13 @@ export class SchedulerBinder {
         if (logicalId === this.pendingExerciseTaskId) {
           if (success) {
             this.host.cronScheduler.markExerciseCompleted();
+          } else if (completionReason === 'terminal') {
+            // 不可重试终态: 今日次数已用完或需要手动修理,
+            // 本时段不再重复触发
+            Logger.warn(
+              `自动演习本时段无法完成（${error || '不可重试结果'}），本时段不再重复触发`,
+            );
+            this.host.cronScheduler.markExerciseExhausted();
           } else {
             this.host.cronScheduler.clearExercisePending();
           }

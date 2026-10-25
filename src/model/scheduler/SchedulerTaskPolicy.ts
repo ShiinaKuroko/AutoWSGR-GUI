@@ -14,6 +14,12 @@ const MANUAL_REPAIR_TERMINATION_MARKERS = [
   '手动维修处理失败',
 ];
 
+// 演习零轮次: 5 个对手全部打过 (今日次数已用完),
+// 重试不可能成功, 属终态
+const EXERCISE_NO_ROUND_MARKERS = [
+  '任务未执行任何轮次',
+];
+
 export function getNonRetryableTaskResult(
   task: Pick<SchedulerTask, 'type'>,
   result?: TaskResult | null,
@@ -29,6 +35,14 @@ export function getNonRetryableTaskResult(
     MANUAL_REPAIR_TERMINATION_MARKERS.some(marker => message.includes(marker)),
   );
   if (manualRepairError) return manualRepairError;
+
+  if (task.type === 'exercise') {
+    return (
+      errors.find(message =>
+        EXERCISE_NO_ROUND_MARKERS.some(marker => message.includes(marker)),
+      ) ?? null
+    );
+  }
 
   if (task.type !== 'campaign') return null;
   return result?.details.some(
