@@ -520,7 +520,7 @@ function testGuiConfigurationService() {
     lootStopCount: 16,
   });
   assert.deepEqual(service.setAutomation({
-    expeditionInterval: 999,
+    expeditionInterval: 9999,
     battleTimes: 0,
     autoDecisive: true,
     decisiveTemplateId: '  builtin_decisive_6  ',
