@@ -158,13 +158,13 @@ try {
   assert.equal(stableDistribution.ref, 'main');
   assert.equal(
     stableDistribution.commit,
-    'a5effbfc606794ec30fa8bfd2f8edd2cc15d3852',
+    'c78a435d5335abed7f5e848d3196110f58085425',
   );
   assert.equal(alphaDistribution.repository, 'ShiinaKuroko/AutoWSGR');
   assert.equal(alphaDistribution.ref, 'ShiinaKuroko');
   assert.equal(
     alphaDistribution.commit,
-    '77f34b7b30d18f7b86cf736bdd5cf17ae35d5f78',
+    '76614eae4433549660cfa152df02097785040f10',
   );
   assert.equal(stableDistribution.forceUpdateOnInstall, true);
   assert.equal(alphaDistribution.forceUpdateOnInstall, true);

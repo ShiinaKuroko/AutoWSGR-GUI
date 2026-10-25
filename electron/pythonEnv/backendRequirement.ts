@@ -27,14 +27,14 @@ const DEFAULT_DISTRIBUTIONS: BackendDistributionManifest = {
     id: 'stable',
     repository: 'OpenWSGR/AutoWSGR',
     ref: 'main',
-    commit: 'a5effbfc606794ec30fa8bfd2f8edd2cc15d3852',
+    commit: 'c78a435d5335abed7f5e848d3196110f58085425',
     forceUpdateOnInstall: true,
   },
   alpha: {
     id: 'alpha',
     repository: 'ShiinaKuroko/AutoWSGR',
     ref: 'ShiinaKuroko',
-    commit: '77f34b7b30d18f7b86cf736bdd5cf17ae35d5f78',
+    commit: '76614eae4433549660cfa152df02097785040f10',
     forceUpdateOnInstall: true,
   },
 };
