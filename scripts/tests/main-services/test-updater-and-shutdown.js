@@ -26,6 +26,7 @@ const {
   validateGuiUpdateCandidate,
 } = require('../../../dist/electron/services/GuiUpdatePolicy.js');
 const {
+  terminateBackendProcessTree,
   requestBackendSystemStop,
   shutdownBackendProcess,
 } = require(
@@ -622,7 +623,41 @@ async function testWindowsProcessTreeAndFileLock() {
   }
 }
 
+async function testWindowsShutdownWithoutSystemPath() {
+  const childProcess = require('node:child_process');
+  const originalExecFile = childProcess.execFile;
+  const originalRoot = process.env.SystemRoot;
+  const originalPath = process.env.PATH;
+  const commands = [];
+  try {
+    process.env.SystemRoot = 'D:\\Windows';
+    process.env.PATH = '';
+    childProcess.execFile = (command, args, options, callback) => {
+      commands.push({ command, args });
+      if (command !== 'D:\\Windows\\System32\\taskkill.exe') {
+        callback(Object.assign(new Error('not found'), { code: 'ENOENT' }), '', '');
+        return;
+      }
+      callback(null, '', '');
+    };
+    const backend = { pid: 1234, exitCode: null, signalCode: null };
+    await terminateBackendProcessTree(backend, false, 'win32');
+    await terminateBackendProcessTree(backend, true, 'win32');
+    assert.deepEqual(commands.map(value => value.args), [
+      ['/PID', '1234', '/T'],
+      ['/PID', '1234', '/T', '/F'],
+    ]);
+  } finally {
+    childProcess.execFile = originalExecFile;
+    if (originalRoot === undefined) delete process.env.SystemRoot;
+    else process.env.SystemRoot = originalRoot;
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+  }
+}
+
 async function testUpdaterAndBackendShutdown() {
+  await testWindowsShutdownWithoutSystemPath();
   testGuiUpdatePolicy();
   await testGuiUpdateStartupGateAndInstaller();
   await testSystemStopRequest();

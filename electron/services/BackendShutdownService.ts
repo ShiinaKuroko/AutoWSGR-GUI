@@ -12,7 +12,8 @@
 import { execFile } from 'child_process';
 import type { ChildProcess } from 'child_process';
 import * as http from 'http';
-import { platform as nodePlatform } from 'process';
+import { win32 as windowsPath } from 'path';
+import { env, platform as nodePlatform } from 'process';
 
 export interface BackendShutdownOptions {
   backendPort: number;
@@ -165,7 +166,12 @@ export async function terminateBackendProcessTree(
     if (!process.pid) throw new Error('后端进程没有可用 PID');
     const args = ['/PID', String(process.pid), '/T'];
     if (force) args.push('/F');
-    await executeFile('taskkill.exe', args);
+    // GUI 启动环境可能缺少 System32 的 PATH，直接定位系统工具。
+    const systemRoot = env.SystemRoot || env.SYSTEMROOT || env.WINDIR;
+    const taskkill = systemRoot
+      ? windowsPath.join(systemRoot, 'System32', 'taskkill.exe')
+      : 'taskkill.exe';
+    await executeFile(taskkill, args);
     return;
   }
 
