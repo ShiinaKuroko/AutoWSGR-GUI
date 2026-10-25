@@ -41,6 +41,7 @@ import {
   buildFollowUpTask as createFollowUpTask,
   getNonRetryableTaskResult,
 } from './SchedulerTaskPolicy.js';
+import { normalizeExpeditionInterval } from '../../shared/expedition';
 
 const RESULT_GRADE_ORDER: BattleResultGrade[] = ['D', 'C', 'B', 'A', 'S', 'SS'];
 
@@ -101,9 +102,9 @@ export class Scheduler {
     this.callbacks = cb;
   }
 
-  /** 更新远征检查间隔（分钟），立即重启定时器 */
+  /** 更新远征检查间隔（分钟，支持小数），立即重启定时器 */
   setExpeditionInterval(minutes: number): void {
-    const clamped = Math.max(1, Math.min(120, minutes));
+    const clamped = normalizeExpeditionInterval(minutes);
     this.expeditionTimer.setInterval(clamped * 60 * 1000);
   }
 

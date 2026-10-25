@@ -20,6 +20,7 @@ import {
   type DecisiveAutomationSource,
 } from '../../src/shared/decisiveAutomation';
 import { DAILY_CAMPAIGN_TIMES } from '../../src/shared/campaign';
+import { normalizeExpeditionInterval } from '../../src/shared/expedition';
 import {
   DEFAULT_DECISIVE_PLAN_SETTINGS,
   type DecisivePlanSettings,
@@ -467,12 +468,8 @@ export class GuiConfigurationService {
       settings?.decisiveTemplateId,
     );
     const normalized: GuiAutomationSettings = {
-      expeditionInterval: Math.max(
-        1,
-        Math.min(
-          120,
-          Math.trunc(Number(settings?.expeditionInterval) || 15),
-        ),
+      expeditionInterval: normalizeExpeditionInterval(
+        Number(settings?.expeditionInterval),
       ),
       battleTimes: DAILY_CAMPAIGN_TIMES,
       autoDecisive: settings?.autoDecisive === true,
