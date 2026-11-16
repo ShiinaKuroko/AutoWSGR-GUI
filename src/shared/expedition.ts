@@ -20,6 +20,16 @@ export function normalizeExpeditionInterval(minutes: number): number {
   );
 }
 
+/**
+ * 把远征检查间隔（分钟）换算成毫秒。
+ *
+ * 小数分钟直接乘 60000 会得到 911999.99... 这类浮点结果（15.2 分钟），
+ * 因此在这里一次性取整，避免定时器持有亚毫秒误差的间隔。
+ */
+export function expeditionIntervalToMilliseconds(minutes: number): number {
+  return Math.round(normalizeExpeditionInterval(minutes) * 60 * 1000);
+}
+
 /** 远征倒计时文本；不足 1 小时为 MM:SS，达到 1 小时为 H:MM:SS。 */
 export function formatExpeditionCountdown(seconds: number): string {
   const total = Math.max(0, Math.floor(Number(seconds) || 0));
