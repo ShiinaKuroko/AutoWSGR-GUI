@@ -664,12 +664,18 @@ export class ConfigModel {
 
   private destroyMode(value: unknown): number {
     const aliases: Record<string, number> = {
-      '不启用': 0,
-      disable: 0,
-      '黑名单': 1,
-      include: 1,
-      '白名单': 2,
-      exclude: 2,
+      '拆解全部': 0,
+      '不启用': 0, // 旧值
+      all: 0,
+      disable: 0, // 旧值
+      '拆解舰种': 1,
+      '黑名单': 1, // 旧值
+      destroy_only: 1,
+      include: 1, // 旧值
+      '保留舰种': 2,
+      '白名单': 2, // 旧值
+      keep_only: 2,
+      exclude: 2, // 旧值
     };
     if (typeof value === 'string' && value.trim() in aliases) {
       return aliases[value.trim()];
